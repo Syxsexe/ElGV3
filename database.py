@@ -183,7 +183,7 @@ def crear_tablas():
     """)
 
     # ── Ventas ────────────────────────────────────────────────────────────────
-    # tipo: 'tienda' | 'cocina'  — permite reportes por línea de negocio
+    # metodo_pago: 'mixto' cuando se usan dos métodos a la vez
     cur.execute("""
         CREATE TABLE IF NOT EXISTS ventas (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,12 +191,23 @@ def crear_tablas():
             total        REAL    NOT NULL CHECK(total >= 0),
             descuento    REAL             DEFAULT 0,
             metodo_pago  TEXT    NOT NULL DEFAULT 'efectivo'
-                             CHECK(metodo_pago IN ('efectivo','transferencia','tarjeta','nequi','daviplata')),
+                             CHECK(metodo_pago IN ('efectivo','transferencia','tarjeta','nequi','daviplata','mixto')),
             tipo         TEXT    NOT NULL DEFAULT 'tienda'
                              CHECK(tipo IN ('tienda','cocina')),
             usuario_id   INTEGER NOT NULL REFERENCES usuarios(id),
             sesion_id    INTEGER          REFERENCES sesiones_caja(id),
             notas        TEXT
+        )
+    """)
+
+    # ── Pagos de venta (detalle cuando hay pago mixto) ────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pagos_venta (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            venta_id    INTEGER NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
+            metodo      TEXT    NOT NULL
+                            CHECK(metodo IN ('efectivo','transferencia','tarjeta','nequi','daviplata')),
+            monto       REAL    NOT NULL CHECK(monto > 0)
         )
     """)
 

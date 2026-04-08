@@ -160,21 +160,44 @@ def registrar_venta(
     metodo_pago: str = "efectivo",
     descuento: float = 0,
     sesion_id: int = None,
-    notas: str = None
+    notas: str = None,
+    pagos: list[dict] = None
 ) -> int:
     """
     Confirma la venta, persiste todo en la base de datos y
     descuenta stock de productos e insumos en una sola transacción.
+
+    pagos: lista para pago mixto, ej:
+        [{"metodo": "efectivo", "monto": 10000},
+         {"metodo": "nequi",    "monto": 5000}]
+    Si se omite, se usa metodo_pago como único método por el total.
     Retorna el ID de la venta generada.
     """
     if carrito.esta_vacio():
         raise ValueError("El carrito está vacío.")
 
-    metodos_validos = {"efectivo", "transferencia", "tarjeta", "nequi", "daviplata"}
-    if metodo_pago not in metodos_validos:
-        raise ValueError(f"Método de pago inválido: {metodo_pago}")
+    METODOS = {"efectivo", "transferencia", "tarjeta", "nequi", "daviplata"}
 
-    total        = max(0, carrito.total() - descuento)
+    # — Resolver método y pagos —
+    total = max(0, carrito.total() - descuento)
+
+    if pagos:
+        # Validar métodos
+        for p in pagos:
+            if p["metodo"] not in METODOS:
+                raise ValueError(f"Método de pago inválido: {p['metodo']}")
+        suma_pagos = sum(p["monto"] for p in pagos)
+        if round(suma_pagos, 2) < round(total, 2):
+            raise ValueError(
+                f"Los pagos suman {suma_pagos:,.0f} pero el total es {total:,.0f}."
+            )
+        metodo_final = "mixto" if len(pagos) > 1 else pagos[0]["metodo"]
+    else:
+        if metodo_pago not in METODOS:
+            raise ValueError(f"Método de pago inválido: {metodo_pago}")
+        metodo_final = metodo_pago
+        pagos = [{"metodo": metodo_pago, "monto": total}]
+
     tipo_venta   = carrito.determinar_tipo_venta()
     usuario_id   = get_usuario_id()
     items        = carrito.get_items()
@@ -182,11 +205,13 @@ def registrar_venta(
     conn = get_connection()
     try:
         # 1. Insertar cabecera de venta
+        from datetime import datetime
+        fecha_ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = conn.execute("""
             INSERT INTO ventas
-                (total, descuento, metodo_pago, tipo, usuario_id, sesion_id, notas)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (total, descuento, metodo_pago, tipo_venta, usuario_id, sesion_id, notas))
+                (fecha, total, descuento, metodo_pago, tipo, usuario_id, sesion_id, notas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (fecha_ahora, total, descuento, metodo_final, tipo_venta, usuario_id, sesion_id, notas))
 
         venta_id = cur.lastrowid
 
@@ -241,6 +266,13 @@ def registrar_venta(
                 SET total_ventas = total_ventas + ?
                 WHERE id = ?
             """, (total, sesion_id))
+
+        # 3b. Insertar detalle de pagos
+        for pago in pagos:
+            conn.execute("""
+                INSERT INTO pagos_venta (venta_id, metodo, monto)
+                VALUES (?, ?, ?)
+            """, (venta_id, pago["metodo"], pago["monto"]))
 
         conn.commit()
         carrito.limpiar()

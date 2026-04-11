@@ -123,6 +123,8 @@ class DialogPago(tk.Toplevel):
         self.entry_efectivo = self._input(self.frame_mixto, width=16)
         self.entry_efectivo.grid(row=0, column=1, padx=(8, 0), ipady=5)
         self.entry_efectivo.bind("<KeyRelease>", self._recalcular_digital)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_efectivo, "monto")
 
         # Digital
         tk.Label(self.frame_mixto, text="Método digital",

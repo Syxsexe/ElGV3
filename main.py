@@ -45,6 +45,9 @@ class LoginWindow(tk.Tk):
         self.configure(bg=COLORS["bg"])
         self.resizable(False, False)
         self._center(400, 500)
+        # Registrar validaciones globales una sola vez
+        from modules.validaciones import registrar_validaciones
+        registrar_validaciones(self)
         self._build()
 
     def _center(self, w, h):
@@ -212,12 +215,76 @@ class MainWindow(tk.Tk):
             activeforeground=COLORS["danger"],
         ).pack(padx=16, pady=(0, 20), anchor="w")
 
-        # ── Área de contenido ─────────────────────────────────────────────────
-        self.content = tk.Frame(self, bg=COLORS["bg"])
-        self.content.pack(side="right", expand=True, fill="both")
+        # ── Área de contenido con scroll ──────────────────────────────────────
+        # Contenedor externo que ocupa el espacio disponible
+        self._content_outer = tk.Frame(self, bg=COLORS["bg"])
+        self._content_outer.pack(side="right", expand=True, fill="both")
+
+        # Canvas que permite el scroll
+        self._canvas = tk.Canvas(
+            self._content_outer, bg=COLORS["bg"],
+            highlightthickness=0, bd=0
+        )
+        self._scrollbar = ttk.Scrollbar(
+            self._content_outer, orient="vertical",
+            command=self._canvas.yview
+        )
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+
+        self._scrollbar.pack(side="right", fill="y")
+        self._canvas.pack(side="left", expand=True, fill="both")
+
+        # Frame interno donde viven los frames de contenido
+        self.content = tk.Frame(self._canvas, bg=COLORS["bg"])
+        self._canvas_window = self._canvas.create_window(
+            (0, 0), window=self.content, anchor="nw"
+        )
+
+        # Ajustar el ancho del frame interno al canvas
+        self._canvas.bind("<Configure>", self._on_canvas_resize)
+        self.content.bind("<Configure>",  self._on_content_resize)
+
+        # Scroll con rueda del mouse
+        self._canvas.bind_all("<MouseWheel>",     self._on_mousewheel)
+        self._canvas.bind_all("<Button-4>",        self._on_mousewheel)  # Linux
+        self._canvas.bind_all("<Button-5>",        self._on_mousewheel)  # Linux
 
         # Cargar inicio por defecto
         self._mostrar_inicio()
+
+    # ── Scroll helpers ────────────────────────────────────────────────────────
+    def _on_canvas_resize(self, event):
+        """Ajusta el ancho del frame interno cuando cambia el canvas."""
+        self._canvas.itemconfig(self._canvas_window, width=event.width)
+
+    def _on_content_resize(self, event):
+        """Actualiza la región de scroll cuando cambia el contenido."""
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        # Mostrar u ocultar scrollbar según si hay contenido que scrollear
+        canvas_h  = self._canvas.winfo_height()
+        content_h = self.content.winfo_reqheight()
+        if content_h > canvas_h:
+            self._scrollbar.pack(side="right", fill="y")
+        else:
+            self._scrollbar.pack_forget()
+
+    def _on_mousewheel(self, event):
+        """Desplaza el canvas con la rueda del mouse."""
+        # Solo activo si hay scroll disponible
+        canvas_h  = self._canvas.winfo_height()
+        content_h = self.content.winfo_reqheight()
+        if content_h <= canvas_h:
+            return
+        if event.num == 4:          # Linux scroll up
+            self._canvas.yview_scroll(-1, "units")
+        elif event.num == 5:        # Linux scroll down
+            self._canvas.yview_scroll(1, "units")
+        else:                       # Windows / Mac
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _resetear_scroll(self):
+        """Vuelve al tope del scroll al cambiar de sección."""
+        self._canvas.yview_moveto(0)
 
     def _nav_btn(self, icono, label, cmd):
         """Crea un botón de navegación en el sidebar."""
@@ -252,6 +319,7 @@ class MainWindow(tk.Tk):
             self._frame_actual.destroy()
         self._frame_actual = nuevo_frame_cls(self.content, **kwargs)
         self._frame_actual.pack(expand=True, fill="both")
+        self._resetear_scroll()
 
     # ── Navegación ────────────────────────────────────────────────────────────
     def _mostrar_inicio(self):
@@ -672,7 +740,8 @@ class FrameVentas(FrameBase):
             metodos   = " + ".join(p["metodo"] for p in pagos)
             messagebox.showinfo("Venta registrada",
                                 f"✓ Venta #{venta_id} registrada\nTotal: {total_str}\nMétodo: {metodos}")
-            self._buscar()
+            self._actualizar_carrito()   # limpia el carrito en pantalla
+            self._buscar()               # refresca stock en el catálogo
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -813,6 +882,8 @@ class FrameCaja(FrameBase):
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=30)
         self.entry_base = self._input(card)
         self.entry_base.pack(padx=30, fill="x", pady=(4, 20), ipady=6)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_base, "monto")
 
         self._btn_primary(card, "Abrir caja", self._abrir).pack(
             padx=30, fill="x", ipady=10, pady=(0, 20))
@@ -823,8 +894,7 @@ class FrameCaja(FrameBase):
             monto = float(self.entry_base.get().replace(".", "").replace(",", "."))
             abrir_caja(monto)
             messagebox.showinfo("Caja abierta", "✓ Caja abierta correctamente.")
-            self.destroy()
-            FrameCaja(self.master).pack(expand=True, fill="both")
+            self.winfo_toplevel()._mostrar_caja()
         except ValueError as e:
             messagebox.showerror("Error", str(e))
 
@@ -858,6 +928,8 @@ class FrameCaja(FrameBase):
             entry.insert(0, "0")
             entry.pack(side="left", padx=8, ipady=4)
             entry.bind("<KeyRelease>", lambda e: self._actualizar_contado())
+            from modules.validaciones import aplicar_validacion
+            aplicar_validacion(entry, "entero")
 
             subtotal_lbl = tk.Label(fila, text="$0", font=FONT_SMALL,
                                      bg=COLORS["surface"], fg=COLORS["text_muted"],
@@ -951,8 +1023,7 @@ class FrameCaja(FrameBase):
                 f"Diferencia: {formatear_pesos(dif)}"
             )
             messagebox.showinfo("Cierre de caja", msg)
-            self.destroy()
-            FrameCaja(self.master).pack(expand=True, fill="both")
+            self.winfo_toplevel()._mostrar_caja()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -1060,15 +1131,20 @@ class FrameReportes(FrameBase):
 
     def _exportar(self):
         from tkinter.filedialog import asksaveasfilename
-        from modules.reportes import exportar_ventas_csv
+        from modules.reportes import exportar_ventas_excel
         ini = self.entry_ini.get().strip()
         fin = self.entry_fin.get().strip()
-        ruta = asksaveasfilename(defaultextension=".csv",
-                                  filetypes=[("CSV", "*.csv")],
-                                  initialfile=f"ventas_{ini}_{fin}.csv")
+        ruta = asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            initialfile=f"ventas_{ini}_{fin}.xlsx"
+        )
         if ruta:
-            exportar_ventas_csv(ini, fin, ruta)
-            messagebox.showinfo("Exportado", f"✓ Archivo guardado en:\n{ruta}")
+            try:
+                exportar_ventas_excel(ini, fin, ruta)
+                messagebox.showinfo("Exportado", f"✓ Archivo Excel guardado en:\n{ruta}")
+            except Exception as e:
+                messagebox.showerror("Error al exportar", str(e))
 
 
 # ════════════════════════════════════════════════════════════
@@ -1305,6 +1381,8 @@ class FrameCuentas(FrameBase):
         self.entry_cant = self._input(right, width=6)
         self.entry_cant.insert(0, "1")
         self.entry_cant.pack(anchor="w", padx=16, pady=(2, 8), ipady=4)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_cant, "cantidad")
 
         self._btn_primary(right, "+ Agregar ítem",
                           self._agregar_item).pack(fill="x", padx=16, ipady=8)
@@ -1379,16 +1457,35 @@ class FrameCuentas(FrameBase):
         self.lst_buscar.delete(0, "end")
         self._resultados_busqueda = []
 
+        # Todos los productos activos — tienda y cocina sin distinción
         prods  = buscar_productos(texto) if texto else listar_productos()
-        combos = [c for c in listar_combos() if texto.lower() in c["nombre"].lower() or not texto]
+        combos = [c for c in listar_combos()
+                  if not texto or texto.lower() in c["nombre"].lower()]
 
-        for p in prods[:8]:
-            self.lst_buscar.insert("end", f"[P] {p['nombre']}")
-            self._resultados_busqueda.append(("producto", p["id"]))
+        # Agrupar productos por tipo para que sea más fácil encontrarlos
+        tienda = [p for p in prods if p["categoria_tipo"] == "tienda"]
+        cocina = [p for p in prods if p["categoria_tipo"] == "cocina"]
 
-        for c in combos[:4]:
-            self.lst_buscar.insert("end", f"[C] {c['nombre']}")
-            self._resultados_busqueda.append(("combo", c["id"]))
+        if tienda:
+            self.lst_buscar.insert("end", "── Tienda ──")
+            self._resultados_busqueda.append(None)   # separador, no seleccionable
+            for p in tienda[:12]:
+                self.lst_buscar.insert("end", f"  {p['nombre']}")
+                self._resultados_busqueda.append(("producto", p["id"]))
+
+        if cocina:
+            self.lst_buscar.insert("end", "── Cocina ──")
+            self._resultados_busqueda.append(None)
+            for p in cocina[:8]:
+                self.lst_buscar.insert("end", f"  {p['nombre']}")
+                self._resultados_busqueda.append(("producto", p["id"]))
+
+        if combos:
+            self.lst_buscar.insert("end", "── Combos ──")
+            self._resultados_busqueda.append(None)
+            for c in combos[:6]:
+                self.lst_buscar.insert("end", f"  {c['nombre']}")
+                self._resultados_busqueda.append(("combo", c["id"]))
 
     def _abrir_cuenta(self):
         from modules.cuentas import abrir_cuenta
@@ -1418,13 +1515,18 @@ class FrameCuentas(FrameBase):
             messagebox.showwarning("Sin selección", "Selecciona un producto de la lista.")
             return
 
+        # Ignorar clic en separadores de categoría
+        resultado = self._resultados_busqueda[sel_idx[0]]
+        if resultado is None:
+            return
+
         try:
             cantidad = float(self.entry_cant.get() or 1)
         except ValueError:
             messagebox.showwarning("Cantidad inválida", "Ingresa un número válido.")
             return
 
-        tipo, item_id = self._resultados_busqueda[sel_idx[0]]
+        tipo, item_id = resultado
         try:
             if tipo == "producto":
                 agregar_item(self._cuenta_sel, producto_id=item_id, cantidad=cantidad)

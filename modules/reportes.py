@@ -455,49 +455,253 @@ def kpis_generales(fecha_inicio: str, fecha_fin: str) -> dict:
 
 
 # ════════════════════════════════════════════════════════════
-# EXPORTAR A CSV
+# EXPORTAR A EXCEL
 # ════════════════════════════════════════════════════════════
 
 @requiere_admin
-def exportar_ventas_csv(
+def exportar_ventas_excel(
     fecha_inicio: str,
     fecha_fin: str,
-    ruta: str = "ventas_export.csv"
+    ruta: str = "ventas_export.xlsx"
 ) -> str:
     """
-    Exporta las ventas del período a un archivo CSV.
+    Exporta las ventas del período a un archivo Excel (.xlsx).
+    Genera tres hojas: Ventas, Detalle y Resumen.
     Retorna la ruta del archivo generado.
     """
-    import csv
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
 
-    conn  = get_connection()
-    filas = conn.execute("""
-        SELECT
-            v.id, v.fecha, v.tipo, v.metodo_pago,
-            v.total, v.descuento, u.usuario AS vendedor,
-            p.nombre AS producto, c.nombre AS categoria,
-            dv.cantidad, dv.precio_unit, dv.subtotal
+    # ── Colores ──────────────────────────────────────────────
+    COLOR_HEADER   = "1B4F8A"   # azul oscuro
+    COLOR_HEADER2  = "2E86DE"   # azul medio
+    COLOR_SUBTOTAL = "EBF3FB"   # azul muy claro
+    COLOR_TIENDA   = "E8F5EE"   # verde claro
+    COLOR_COCINA   = "FEF3E2"   # naranja claro
+    BLANCO         = "FFFFFF"
+
+    def estilo_header(celda, color=COLOR_HEADER):
+        celda.font      = Font(bold=True, color=BLANCO, size=10)
+        celda.fill      = PatternFill("solid", fgColor=color)
+        celda.alignment = Alignment(horizontal="center", vertical="center")
+        celda.border    = Border(
+            bottom=Side(style="thin", color="CCCCCC"),
+            right=Side(style="thin",  color="CCCCCC"),
+        )
+
+    def estilo_dato(celda, negrita=False, alineacion="left", fondo=None):
+        celda.font      = Font(bold=negrita, size=9)
+        celda.alignment = Alignment(horizontal=alineacion, vertical="center")
+        if fondo:
+            celda.fill = PatternFill("solid", fgColor=fondo)
+
+    def autoajustar(hoja, min_ancho=10, max_ancho=50):
+        for col in hoja.columns:
+            ancho = min_ancho
+            for celda in col:
+                if celda.value:
+                    ancho = max(ancho, min(len(str(celda.value)) + 2, max_ancho))
+            hoja.column_dimensions[get_column_letter(col[0].column)].width = ancho
+
+    conn = get_connection()
+
+    # ── Datos ─────────────────────────────────────────────────
+    ventas = conn.execute("""
+        SELECT v.id, v.fecha, v.tipo, v.metodo_pago,
+               v.total, v.descuento, u.usuario AS vendedor, v.notas
         FROM ventas v
-        JOIN usuarios u      ON v.usuario_id    = u.id
-        JOIN detalle_venta dv ON dv.venta_id    = v.id
-        LEFT JOIN productos p ON dv.producto_id = p.id
-        LEFT JOIN categorias c ON p.categoria_id = c.id
+        JOIN usuarios u ON v.usuario_id = u.id
         WHERE date(v.fecha) BETWEEN ? AND ?
         ORDER BY v.fecha, v.id
     """, (fecha_inicio, fecha_fin)).fetchall()
+
+    detalle = conn.execute("""
+        SELECT
+            v.id AS venta_id, v.fecha, v.tipo,
+            COALESCE(p.nombre, cb.nombre, 'Combo') AS producto,
+            COALESCE(c.nombre, 'Combo')             AS categoria,
+            dv.cantidad, dv.precio_unit, dv.subtotal
+        FROM detalle_venta dv
+        JOIN ventas v      ON dv.venta_id    = v.id
+        LEFT JOIN productos p  ON dv.producto_id = p.id
+        LEFT JOIN categorias c ON p.categoria_id = c.id
+        LEFT JOIN combos cb    ON dv.combo_id    = cb.id
+        WHERE date(v.fecha) BETWEEN ? AND ?
+        ORDER BY v.fecha, v.id
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    por_dia = conn.execute("""
+        SELECT date(fecha) AS dia,
+               COUNT(*)      AS num_ventas,
+               SUM(total)    AS total,
+               SUM(CASE WHEN tipo='tienda' THEN total ELSE 0 END) AS tienda,
+               SUM(CASE WHEN tipo='cocina' THEN total ELSE 0 END) AS cocina
+        FROM ventas
+        WHERE date(fecha) BETWEEN ? AND ?
+        GROUP BY dia ORDER BY dia
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    por_metodo = conn.execute("""
+        SELECT metodo_pago, COUNT(*) AS num, SUM(total) AS total
+        FROM ventas
+        WHERE date(fecha) BETWEEN ? AND ?
+        GROUP BY metodo_pago ORDER BY total DESC
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    top_productos = conn.execute("""
+        SELECT COALESCE(p.nombre, cb.nombre) AS nombre,
+               SUM(dv.cantidad)  AS unidades,
+               SUM(dv.subtotal)  AS ingresos
+        FROM detalle_venta dv
+        JOIN ventas v ON dv.venta_id = v.id
+        LEFT JOIN productos p ON dv.producto_id = p.id
+        LEFT JOIN combos cb   ON dv.combo_id    = cb.id
+        WHERE date(v.fecha) BETWEEN ? AND ?
+        GROUP BY COALESCE(p.nombre, cb.nombre)
+        ORDER BY ingresos DESC LIMIT 10
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
     conn.close()
 
-    with open(ruta, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "ID Venta", "Fecha", "Tipo", "Método Pago", "Total Venta",
-            "Descuento", "Vendedor", "Producto", "Categoría",
-            "Cantidad", "Precio Unitario", "Subtotal"
-        ])
-        for fila in filas:
-            writer.writerow(list(fila))
+    wb = Workbook()
 
+    # ══════════════════════════════════════════
+    # HOJA 1 — Ventas
+    # ══════════════════════════════════════════
+    ws1 = wb.active
+    ws1.title = "Ventas"
+    ws1.row_dimensions[1].height = 20
+    ws1.freeze_panes = "A2"
+
+    hdrs1 = ["ID", "Fecha", "Tipo", "Método Pago", "Total ($)", "Descuento ($)", "Vendedor", "Notas"]
+    for col, h in enumerate(hdrs1, 1):
+        c = ws1.cell(row=1, column=col, value=h)
+        estilo_header(c)
+
+    for fila_n, v in enumerate(ventas, 2):
+        fondo = COLOR_TIENDA if v["tipo"] == "tienda" else COLOR_COCINA
+        datos = [v["id"], v["fecha"][:16], v["tipo"], v["metodo_pago"],
+                 v["total"], v["descuento"] or 0, v["vendedor"], v["notas"] or ""]
+        for col, val in enumerate(datos, 1):
+            c = ws1.cell(row=fila_n, column=col, value=val)
+            alin = "right" if col in (1, 5, 6) else "left"
+            estilo_dato(c, alineacion=alin, fondo=fondo if col > 1 else None)
+
+    # Fila de totales
+    fila_tot = len(ventas) + 2
+    ws1.cell(row=fila_tot, column=4, value="TOTAL").font = Font(bold=True, size=9)
+    c_tot = ws1.cell(row=fila_tot, column=5, value=sum(v["total"] for v in ventas))
+    c_tot.font      = Font(bold=True, size=9)
+    c_tot.fill      = PatternFill("solid", fgColor=COLOR_SUBTOTAL)
+    c_tot.alignment = Alignment(horizontal="right")
+
+    autoajustar(ws1)
+
+    # ══════════════════════════════════════════
+    # HOJA 2 — Detalle por ítem
+    # ══════════════════════════════════════════
+    ws2 = wb.create_sheet("Detalle")
+    ws2.freeze_panes = "A2"
+
+    hdrs2 = ["Venta ID", "Fecha", "Tipo", "Producto / Combo", "Categoría",
+             "Cantidad", "Precio Unit ($)", "Subtotal ($)"]
+    for col, h in enumerate(hdrs2, 1):
+        estilo_header(ws2.cell(row=1, column=col, value=h), COLOR_HEADER2)
+
+    for fila_n, d in enumerate(detalle, 2):
+        fondo = COLOR_TIENDA if d["tipo"] == "tienda" else COLOR_COCINA
+        datos = [d["venta_id"], d["fecha"][:16], d["tipo"], d["producto"],
+                 d["categoria"], d["cantidad"], d["precio_unit"], d["subtotal"]]
+        for col, val in enumerate(datos, 1):
+            alin = "right" if col in (1, 6, 7, 8) else "left"
+            estilo_dato(ws2.cell(row=fila_n, column=col, value=val),
+                        alineacion=alin, fondo=fondo if col > 2 else None)
+
+    autoajustar(ws2)
+
+    # ══════════════════════════════════════════
+    # HOJA 3 — Resumen
+    # ══════════════════════════════════════════
+    ws3 = wb.create_sheet("Resumen")
+    fila = 1
+
+    def seccion(titulo, color=COLOR_HEADER):
+        nonlocal fila
+        c = ws3.cell(row=fila, column=1, value=titulo)
+        c.font      = Font(bold=True, color=BLANCO, size=10)
+        c.fill      = PatternFill("solid", fgColor=color)
+        c.alignment = Alignment(horizontal="left", vertical="center")
+        ws3.row_dimensions[fila].height = 18
+        fila += 1
+
+    def dato_res(label, valor, negrita=False, fondo=None):
+        nonlocal fila
+        c1 = ws3.cell(row=fila, column=1, value=label)
+        c2 = ws3.cell(row=fila, column=2, value=valor)
+        c1.font = Font(bold=negrita, size=9)
+        c2.font = Font(bold=negrita, size=9)
+        c2.alignment = Alignment(horizontal="right")
+        if fondo:
+            c1.fill = PatternFill("solid", fgColor=fondo)
+            c2.fill = PatternFill("solid", fgColor=fondo)
+        fila += 1
+
+    # Período
+    seccion(f"Período: {fecha_inicio}  →  {fecha_fin}")
+    total_general = sum(v["total"] for v in ventas)
+    tienda_total  = sum(v["total"] for v in ventas if v["tipo"] == "tienda")
+    cocina_total  = sum(v["total"] for v in ventas if v["tipo"] == "cocina")
+    dato_res("Total de ventas (transacciones)", len(ventas))
+    dato_res("Ingresos totales ($)",            total_general, negrita=True, fondo=COLOR_SUBTOTAL)
+    dato_res("Ingresos tienda ($)",             tienda_total,  fondo=COLOR_TIENDA)
+    dato_res("Ingresos cocina ($)",             cocina_total,  fondo=COLOR_COCINA)
+    dato_res("Ticket promedio ($)",
+             round(total_general / len(ventas), 0) if ventas else 0)
+    fila += 1
+
+    # Por día
+    seccion("Ventas por día", COLOR_HEADER2)
+    dato_res("Día", "Total ($)", negrita=True)
+    for d in por_dia:
+        dato_res(d["dia"], d["total"])
+    fila += 1
+
+    # Por método de pago
+    seccion("Por método de pago", COLOR_HEADER2)
+    dato_res("Método", "Total ($)", negrita=True)
+    for m in por_metodo:
+        dato_res(m["metodo_pago"], m["total"])
+    fila += 1
+
+    # Top productos
+    seccion("Top 10 productos más vendidos", COLOR_HEADER2)
+    ws3.cell(row=fila, column=1, value="Producto").font = Font(bold=True, size=9)
+    ws3.cell(row=fila, column=2, value="Unidades").font = Font(bold=True, size=9)
+    ws3.cell(row=fila, column=3, value="Ingresos ($)").font = Font(bold=True, size=9)
+    fila += 1
+    for p in top_productos:
+        ws3.cell(row=fila, column=1, value=p["nombre"]).font = Font(size=9)
+        ws3.cell(row=fila, column=2, value=p["unidades"]).font = Font(size=9)
+        ws3.cell(row=fila, column=3, value=p["ingresos"]).font = Font(size=9)
+        ws3.cell(row=fila, column=3).alignment = Alignment(horizontal="right")
+        fila += 1
+
+    ws3.column_dimensions["A"].width = 35
+    ws3.column_dimensions["B"].width = 18
+    ws3.column_dimensions["C"].width = 18
+
+    wb.save(ruta)
     return ruta
+
+
+# Alias para compatibilidad con código anterior
+@requiere_admin
+def exportar_ventas_csv(fecha_inicio: str, fecha_fin: str,
+                         ruta: str = "ventas_export.csv") -> str:
+    """Alias — redirige a exportar_ventas_excel cambiando la extensión."""
+    ruta_xlsx = ruta.replace(".csv", ".xlsx") if ruta.endswith(".csv") else ruta + ".xlsx"
+    return exportar_ventas_excel(fecha_inicio, fecha_fin, ruta_xlsx)
 
 
 # ════════════════════════════════════════════════════════════

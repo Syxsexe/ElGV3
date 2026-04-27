@@ -16,107 +16,102 @@ import tkinter as tk
 
 
 # ── Registro global ───────────────────────────────────────────────────────────
-# Se guardan las referencias a los comandos registrados para reutilizarlos
 _cmds: dict = {}
 
 
 def registrar_validaciones(root: tk.Misc):
     """
     Registra todas las funciones de validación en el widget raíz.
-    Llamar UNA sola vez al arrancar la aplicación (en LoginWindow.__init__).
+    Usa %d (acción) y %S (carácter) juntos:
+      %d == "1"  → inserción → validar el carácter
+      %d == "0"  → borrado (Backspace/Delete) → siempre permitir
+      %d == "-1" → foco/otros → siempre permitir
     """
-    _cmds["entero"]    = (root.register(_validar_entero),    "%P")
-    _cmds["positivo"]  = (root.register(_validar_positivo),  "%P")
-    _cmds["monto"]     = (root.register(_validar_monto),     "%P")
-    _cmds["cantidad"]  = (root.register(_validar_cantidad),  "%P")
-    _cmds["codigo"]    = (root.register(_validar_codigo),    "%P")
+    _cmds["entero"]   = (root.register(_validar_entero),  "%d", "%S")
+    _cmds["positivo"] = (root.register(_validar_entero),  "%d", "%S")
+    _cmds["monto"]    = (root.register(_validar_entero),  "%d", "%S")
+    _cmds["cantidad"] = (root.register(_validar_entero),  "%d", "%S")
+    _cmds["decimal"]  = (root.register(_validar_decimal), "%d", "%S")
+    _cmds["codigo"]   = (root.register(_validar_codigo),  "%d", "%S")
 
 
 # ── Funciones de validación ───────────────────────────────────────────────────
 
-def _validar_entero(valor_propuesto: str) -> bool:
-    """
-    Acepta solo dígitos enteros positivos o campo vacío.
-    Úsalo para: stock, cantidades, denominaciones de caja.
-    """
-    return valor_propuesto == "" or valor_propuesto.isdigit()
+def _validar_entero(accion: str, char: str) -> bool:
+    """Solo dígitos 0-9. Permite borrado y foco."""
+    if accion != "1":
+        return True
+    return char.isdigit()
 
 
-def _validar_positivo(valor_propuesto: str) -> bool:
+def _validar_decimal(accion: str, char: str) -> bool:
     """
-    Acepta enteros positivos mayores a cero o campo vacío.
-    Úsalo para: cantidad mínima de 1 en carrito.
+    Dígitos y un único punto decimal.
+    Usado para stock de insumos (ej: 3000.5g, 1.5L).
+    No valida el punto duplicado aquí — eso se maneja al leer el valor.
     """
-    return valor_propuesto == "" or valor_propuesto.isdigit()
+    if accion != "1":
+        return True
+    return char.isdigit() or char == "."
 
 
-def _validar_monto(valor_propuesto: str) -> bool:
-    """
-    Acepta enteros sin signo negativo o campo vacío.
-    Úsalo para: precios, costos, montos de caja, descuentos.
-    """
-    return valor_propuesto == "" or valor_propuesto.isdigit()
-
-
-def _validar_cantidad(valor_propuesto: str) -> bool:
-    """
-    Acepta enteros positivos o campo vacío.
-    Úsalo para: cantidades en carrito y cuentas.
-    """
-    return valor_propuesto == "" or (valor_propuesto.isdigit() and int(valor_propuesto) >= 0)
-
-
-def _validar_codigo(valor_propuesto: str) -> bool:
-    """
-    Acepta letras, números, guiones y guiones bajos (sin espacios ni tildes).
-    Úsalo para: códigos de producto (SKU).
-    """
-    if valor_propuesto == "":
+def _validar_codigo(accion: str, char: str) -> bool:
+    """Letras, números, guiones y guiones bajos."""
+    if accion != "1":
         return True
     permitidos = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
-    return all(c in permitidos for c in valor_propuesto)
+    return char in permitidos
 
 
 # ── Aplicar validación a un Entry existente ───────────────────────────────────
 
 def aplicar_validacion(entry: tk.Entry, tipo: str):
     """
-    Aplica una validación registrada a un Entry.
+    Aplica una validación de caracteres a un Entry.
 
     tipos disponibles:
-        'entero'   — solo dígitos, sin límite (stock, denominaciones)
-        'positivo' — solo dígitos positivos (cantidad mínima 1)
-        'monto'    — enteros sin negativo (precios, montos de caja)
-        'cantidad' — enteros >= 0 (carrito, cuentas)
-        'codigo'   — alfanumérico + guión (SKU de producto)
-
-    Si las validaciones no están registradas aún, hace un registro
-    automático usando el widget raíz del entry.
+        'entero'   — solo dígitos (stock, denominaciones, stock mínimo)
+        'positivo' — solo dígitos (alias de entero)
+        'monto'    — solo dígitos (precios, costos, montos de caja)
+        'cantidad' — solo dígitos (carrito, cuentas)
+        'codigo'   — alfanumérico + guión/guión_bajo (SKU de producto)
     """
     if not _cmds:
         registrar_validaciones(entry.winfo_toplevel())
 
     if tipo not in _cmds:
-        raise ValueError(f"Tipo de validación desconocido: '{tipo}'. "
-                         f"Opciones: {list(_cmds.keys())}")
+        raise ValueError(f"Tipo desconocido: '{tipo}'. Opciones: {list(_cmds.keys())}")
 
     vcmd = _cmds[tipo]
+    # invalidcommand vacío evita que Tkinter emita un beep al rechazar
+    invcmd = (entry.register(lambda: None),)
     entry.config(
         validate="key",
         validatecommand=vcmd,
+        invalidcommand=invcmd,
     )
 
 
 # ── Helpers de lectura segura ─────────────────────────────────────────────────
 
 def leer_entero(entry: tk.Entry, default: int = 0) -> int:
+    """Lee un entero de un Entry. Retorna default si está vacío o inválido."""
+    valor = entry.get().strip()
+    try:
+        return int(float(valor)) if valor else default
+    except ValueError:
+        return default
+
+
+def leer_decimal(entry: tk.Entry, default: float = 0.0) -> float:
     """
-    Lee el valor de un Entry numérico de forma segura.
-    Retorna default si el campo está vacío o contiene un valor inválido.
+    Lee un número decimal de un Entry.
+    Usado para stock de insumos (ej: 3000.5g, 1500ml).
+    Retorna default si está vacío o inválido.
     """
     valor = entry.get().strip()
     try:
-        return int(valor) if valor else default
+        return float(valor) if valor else default
     except ValueError:
         return default
 

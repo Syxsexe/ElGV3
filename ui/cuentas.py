@@ -19,8 +19,50 @@ class FrameCuentas(FrameBase):
 
         main = tk.Frame(self, bg=COLORS["bg"])
         main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
+        self._main = main
 
-        # ── Panel izquierdo: lista de cuentas abiertas ────────────────────────
+        # ── Panel derecho PRIMERO (orden de pack importa) ─────────────────────
+        right_outer = tk.Frame(main, bg=COLORS["border"],
+                               highlightbackground=COLORS["border"],
+                               highlightthickness=1, width=292)
+        right_outer.pack(side="right", fill="y")
+        right_outer.pack_propagate(False)
+
+        right_canvas = tk.Canvas(right_outer, bg=COLORS["surface"],
+                                  highlightthickness=0, bd=0, width=290)
+        right_scroll = tk.Scrollbar(right_outer, orient="vertical",
+                                     command=right_canvas.yview)
+        right_canvas.configure(yscrollcommand=right_scroll.set)
+        right_scroll.pack(side="right", fill="y")
+        right_canvas.pack(side="left", fill="both", expand=True)
+
+        right = tk.Frame(right_canvas, bg=COLORS["surface"])
+        right_win = right_canvas.create_window((0, 0), window=right, anchor="nw")
+
+        right_canvas.bind("<Configure>",
+            lambda e: right_canvas.itemconfig(right_win, width=e.width))
+        right.bind("<Configure>",
+            lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all")))
+
+        def _on_right_wheel(event):
+            try:
+                rx = right_outer.winfo_rootx()
+                rw = right_outer.winfo_width()
+                if not (rx <= event.x_root <= rx + rw):
+                    return
+            except Exception:
+                return
+            if event.num == 4:
+                right_canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                right_canvas.yview_scroll(1, "units")
+            else:
+                right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        right_canvas.bind_all("<MouseWheel>", _on_right_wheel)
+        right_canvas.bind_all("<Button-4>",   _on_right_wheel)
+        right_canvas.bind_all("<Button-5>",   _on_right_wheel)
+
+        # ── Panel izquierdo DESPUÉS ───────────────────────────────────────────
         left = tk.Frame(main, bg=COLORS["bg"])
         left.pack(side="left", fill="both", expand=True, padx=(0, 12))
 
@@ -83,11 +125,6 @@ class FrameCuentas(FrameBase):
         # Quitar ítem
         self._btn_danger(left, "✕ Quitar ítem seleccionado",
                          self._quitar_item).pack(anchor="w", pady=(6, 0))
-
-        # ── Panel derecho ─────────────────────────────────────────────────────
-        right = self._card(main, width=280)
-        right.pack(side="right", fill="y")
-        right.pack_propagate(False)
 
         # — Abrir cuenta nueva —
         tk.Label(right, text="Abrir cuenta", font=FONT_BOLD,
@@ -377,4 +414,3 @@ class FrameCuentas(FrameBase):
             self._cargar_mesas()
         except ValueError as e:
             messagebox.showerror("Error", str(e))
-

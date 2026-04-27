@@ -3,7 +3,7 @@ main.py — El G POS
 Punto de entrada. Lanza el login y construye la interfaz principal.
 """
 
-import tkinter as tk
+import tkinter as tk 
 from tkinter import ttk, messagebox
 from database import inicializar
 import auth

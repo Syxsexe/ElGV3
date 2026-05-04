@@ -3,7 +3,7 @@ main.py — El G POS
 Punto de entrada. Lanza el login y construye la interfaz principal.
 """
 
-import tkinter as tk 
+import tkinter as tk
 from tkinter import ttk, messagebox
 from database import inicializar
 import auth
@@ -12,6 +12,7 @@ from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SM
 from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
+    FrameProveedores,
 )
 
 
@@ -140,6 +141,7 @@ class MainWindow(tk.Tk):
             ("Nueva Venta", self._mostrar_ventas),
             ("Cuentas",     self._mostrar_cuentas),
             ("Inventario",  self._mostrar_inventario),
+            ("Proveedores", self._mostrar_proveedores),
             ("Caja",        self._mostrar_caja),
         ]
         if sesion["rol"] == "admin":
@@ -253,6 +255,10 @@ class MainWindow(tk.Tk):
     def _mostrar_inventario(self):
         self._nav_click("Inventario", lambda: None)
         self._cambiar_frame(FrameInventario)
+
+    def _mostrar_proveedores(self):
+        self._nav_click("Proveedores", lambda: None)
+        self._cambiar_frame(FrameProveedores)
 
     def _mostrar_caja(self):
         self._nav_click("Caja", lambda: None)

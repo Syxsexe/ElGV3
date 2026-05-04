@@ -6,4 +6,6 @@ from ui.inventario import FrameInventario
 from ui.caja       import FrameCaja
 from ui.reportes   import FrameReportes
 from ui.usuarios   import FrameUsuarios
-from ui.cuentas    import FrameCuentas
+from ui.cuentas      import FrameCuentas
+from ui.proveedores  import FrameProveedores
+ 

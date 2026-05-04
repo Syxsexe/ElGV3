@@ -159,15 +159,18 @@ def crear_tablas():
     # ── Sesiones de caja ──────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sesiones_caja (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id  INTEGER NOT NULL REFERENCES usuarios(id),
-            apertura    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-            cierre      TEXT,
-            monto_base  REAL    NOT NULL DEFAULT 0,
-            total_ventas REAL            DEFAULT 0,
-            monto_cierre REAL,
-            diferencia   REAL,
-            notas        TEXT
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id       INTEGER NOT NULL REFERENCES usuarios(id),
+            apertura         TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            cierre           TEXT,
+            monto_base       REAL    NOT NULL DEFAULT 0,
+            total_ventas     REAL             DEFAULT 0,
+            total_efectivo   REAL             DEFAULT 0,
+            total_digital    REAL             DEFAULT 0,
+            monto_cierre     REAL,
+            diferencia       REAL,
+            diferencia_digital REAL,
+            notas            TEXT
         )
     """)
 

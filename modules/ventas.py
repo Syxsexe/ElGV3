@@ -12,6 +12,27 @@ from modules.inventario import (
     obtener_receta,
 )
 
+def _actualizar_cajas_sesion(conn, sesion_id: int, pagos: list, signo: float = 1):
+    """
+    Actualiza total_ventas, total_efectivo y total_digital en la sesion.
+    signo=1 para ingresos (ventas), signo=-1 para egresos (pedidos).
+    """
+    if not sesion_id:
+        return
+    from modules.caja import METODOS_DIGITALES
+    efectivo = sum(p["monto"] for p in pagos if p["metodo"] == "efectivo")
+    digital  = sum(p["monto"] for p in pagos if p["metodo"] in METODOS_DIGITALES)
+    total    = efectivo + digital
+    conn.execute("""
+        UPDATE sesiones_caja
+        SET total_ventas   = total_ventas   + ?,
+            total_efectivo = total_efectivo + ?,
+            total_digital  = total_digital  + ?
+        WHERE id = ?
+    """, (total * signo, efectivo * signo, digital * signo, sesion_id))
+
+
+
 
 # ════════════════════════════════════════════════════════════
 # CARRITO (estado en memoria durante una venta activa)
@@ -259,13 +280,9 @@ def registrar_venta(
                             conn=conn
                         )
 
-        # 3. Actualizar total acumulado de la sesión de caja
+        # 3. Actualizar total acumulado por caja
         if sesion_id:
-            conn.execute("""
-                UPDATE sesiones_caja
-                SET total_ventas = total_ventas + ?
-                WHERE id = ?
-            """, (total, sesion_id))
+            _actualizar_cajas_sesion(conn, sesion_id, pagos, signo=1)
 
         # 3b. Insertar detalle de pagos
         for pago in pagos:

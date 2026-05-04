@@ -100,26 +100,36 @@ class FrameCaja(FrameBase):
                  font=FONT_BOLD, bg=COLORS["surface"],
                  fg=COLORS["text"]).pack(anchor="w", padx=20, pady=(16, 12))
 
-        from modules.caja import formatear_pesos
-        datos = [
-            ("Monto base:",        formatear_pesos(sesion["monto_base"])),
-            ("Ventas del turno:",  formatear_pesos(sesion["total_ventas"])),
-            ("Total esperado:",    formatear_pesos(sesion["monto_base"] + sesion["total_ventas"])),
-        ]
-        for label, valor in datos:
+        from modules.caja import formatear_pesos, migrar_dos_cajas
+        migrar_dos_cajas()
+
+        total_ef  = sesion.get("total_efectivo", 0) or 0
+        total_dig = sesion.get("total_digital",  0) or 0
+        esperado_ef = sesion["monto_base"] + total_ef
+
+        # ── Caja efectivo ─────────────────────────────────────────────────────
+        tk.Label(resumen_card, text="CAJA EFECTIVO",
+                 font=FONT_BOLD, bg=COLORS["surface"],
+                 fg=COLORS["accent"]).pack(anchor="w", padx=20, pady=(0, 4))
+
+        for label, valor in [
+            ("Monto base:",       formatear_pesos(sesion["monto_base"])),
+            ("Ventas efectivo:",  formatear_pesos(total_ef)),
+            ("Esperado efectivo:", formatear_pesos(esperado_ef)),
+        ]:
             fila = tk.Frame(resumen_card, bg=COLORS["surface"])
-            fila.pack(fill="x", padx=20, pady=4)
+            fila.pack(fill="x", padx=20, pady=2)
             tk.Label(fila, text=label, font=FONT_LABEL,
                      bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
             tk.Label(fila, text=valor, font=FONT_BOLD,
                      bg=COLORS["surface"], fg=COLORS["text"]).pack(side="right")
 
-        sep = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
-        sep.pack(fill="x", padx=20, pady=12)
+        sep1 = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
+        sep1.pack(fill="x", padx=20, pady=8)
 
         fila_contado = tk.Frame(resumen_card, bg=COLORS["surface"])
         fila_contado.pack(fill="x", padx=20)
-        tk.Label(fila_contado, text="Monto contado:", font=FONT_BOLD,
+        tk.Label(fila_contado, text="Contado efectivo:", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(side="left")
         self.lbl_contado = tk.Label(fila_contado, text="$0", font=FONT_KPI,
                                      bg=COLORS["surface"], fg=COLORS["accent"])
@@ -128,6 +138,41 @@ class FrameCaja(FrameBase):
         self.lbl_diferencia = tk.Label(resumen_card, text="",
                                         font=FONT_BOLD, bg=COLORS["surface"])
         self.lbl_diferencia.pack(anchor="e", padx=20, pady=4)
+
+        # ── Caja digital ──────────────────────────────────────────────────────
+        sep2 = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
+        sep2.pack(fill="x", padx=20, pady=(4, 8))
+
+        tk.Label(resumen_card, text="CAJA DIGITAL",
+                 font=FONT_BOLD, bg=COLORS["surface"],
+                 fg=COLORS["success"]).pack(anchor="w", padx=20, pady=(0, 4))
+
+        fila_dig = tk.Frame(resumen_card, bg=COLORS["surface"])
+        fila_dig.pack(fill="x", padx=20, pady=2)
+        tk.Label(fila_dig, text="Total digital (Nequi/Transfer.):",
+                 font=FONT_LABEL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(side="left")
+        tk.Label(fila_dig, text=formatear_pesos(total_dig),
+                 font=FONT_BOLD, bg=COLORS["surface"],
+                 fg=COLORS["success"]).pack(side="right")
+
+        tk.Label(resumen_card,
+                 text="Verificar contra Nequi / banco",
+                 font=("Segoe UI", 8), bg=COLORS["surface"],
+                 fg=COLORS["text_dim"]).pack(anchor="e", padx=20)
+
+        sep3 = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
+        sep3.pack(fill="x", padx=20, pady=8)
+
+        # ── Total general ─────────────────────────────────────────────────────
+        fila_tot = tk.Frame(resumen_card, bg=COLORS["surface"])
+        fila_tot.pack(fill="x", padx=20, pady=2)
+        tk.Label(fila_tot, text="Total ventas turno:",
+                 font=FONT_LABEL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(side="left")
+        tk.Label(fila_tot, text=formatear_pesos(sesion["total_ventas"] or 0),
+                 font=FONT_BOLD, bg=COLORS["surface"],
+                 fg=COLORS["text"]).pack(side="right")
 
         # Notas
         tk.Label(resumen_card, text="Notas (opcional)", font=FONT_SMALL,
@@ -181,4 +226,3 @@ class FrameCaja(FrameBase):
             self.winfo_toplevel()._mostrar_caja()
         except Exception as e:
             messagebox.showerror("Error", str(e))
-

@@ -10,6 +10,26 @@ from auth import get_usuario_id, requiere_admin
 # Denominaciones válidas en pesos colombianos
 DENOMINACIONES_COP = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
 
+# Métodos considerados digitales
+METODOS_DIGITALES = {"transferencia", "tarjeta", "nequi", "daviplata"}
+
+
+def migrar_dos_cajas():
+    """Agrega columnas de caja dual si no existen (migración no destructiva)."""
+    conn = get_connection()
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(sesiones_caja)").fetchall()]
+    for col, default in [
+        ("total_efectivo",    "0"),
+        ("total_digital",     "0"),
+        ("diferencia_digital","0"),
+    ]:
+        if col not in cols:
+            conn.execute(
+                f"ALTER TABLE sesiones_caja ADD COLUMN {col} REAL DEFAULT {default}"
+            )
+    conn.commit()
+    conn.close()
+
 
 # ════════════════════════════════════════════════════════════
 # SESIÓN DE CAJA
@@ -45,6 +65,8 @@ def abrir_caja(monto_base: float, notas: str = None) -> int:
     Retorna el ID de la sesión creada.
     Lanza un error si ya hay una sesión abierta.
     """
+    migrar_dos_cajas()
+
     if hay_sesion_abierta():
         raise ValueError("Ya existe una sesión de caja abierta. Ciérrela antes de abrir una nueva.")
 
@@ -55,8 +77,10 @@ def abrir_caja(monto_base: float, notas: str = None) -> int:
     conn = get_connection()
     try:
         cur = conn.execute("""
-            INSERT INTO sesiones_caja (usuario_id, monto_base, total_ventas, notas)
-            VALUES (?, ?, 0, ?)
+            INSERT INTO sesiones_caja
+                (usuario_id, monto_base, total_ventas,
+                 total_efectivo, total_digital, notas)
+            VALUES (?, ?, 0, 0, 0, ?)
         """, (usuario_id, monto_base, notas))
         conn.commit()
         return cur.lastrowid
@@ -70,20 +94,17 @@ def cerrar_caja(
 ) -> dict:
     """
     Cierra la sesión de caja activa.
+    Calcula el cuadre de caja efectivo y caja digital por separado.
 
     denominaciones: {50: 2, 100: 5, 1000: 3, ...}
-        clave   = denominación (int)
-        valor   = cantidad de billetes/monedas contados (int)
-
-    Retorna un dict con el resumen del cierre:
-        sesion_id, monto_base, total_ventas, monto_contado,
-        monto_esperado, diferencia, denominaciones
+    Retorna resumen completo con ambas cajas.
     """
+    migrar_dos_cajas()
     sesion = get_sesion_activa()
     if not sesion:
         raise ValueError("No hay sesión de caja abierta.")
 
-    # Calcular monto contado desde las denominaciones
+    # ── Caja efectivo ─────────────────────────────────────────────────────────
     monto_contado = 0.0
     detalle_denom = []
     for denom in DENOMINACIONES_COP:
@@ -96,22 +117,27 @@ def cerrar_caja(
             "subtotal":     subtotal,
         })
 
-    monto_esperado = sesion["monto_base"] + sesion["total_ventas"]
-    diferencia     = round(monto_contado - monto_esperado, 2)
+    total_efectivo  = sesion.get("total_efectivo", 0) or 0
+    total_digital   = sesion.get("total_digital",  0) or 0
+    esperado_ef     = sesion["monto_base"] + total_efectivo
+    diferencia_ef   = round(monto_contado - esperado_ef, 2)
+
+    # ── Caja digital ──────────────────────────────────────────────────────────
+    # La caja digital no tiene conteo físico — se verifica contra lo esperado
+    diferencia_dig  = 0.0   # el admin verifica externamente (Nequi, etc.)
 
     conn = get_connection()
     try:
-        # Actualizar sesión con datos del cierre
         conn.execute("""
             UPDATE sesiones_caja
-            SET cierre       = datetime('now','localtime'),
-                monto_cierre = ?,
-                diferencia   = ?,
-                notas        = COALESCE(?, notas)
+            SET cierre             = datetime('now','localtime'),
+                monto_cierre       = ?,
+                diferencia         = ?,
+                diferencia_digital = ?,
+                notas              = COALESCE(?, notas)
             WHERE id = ?
-        """, (monto_contado, diferencia, notas, sesion["id"]))
+        """, (monto_contado, diferencia_ef, diferencia_dig, notas, sesion["id"]))
 
-        # Guardar denominaciones
         conn.executemany("""
             INSERT INTO denominaciones_caja (sesion_id, denominacion, cantidad, subtotal)
             VALUES (?, ?, ?, ?)
@@ -119,21 +145,22 @@ def cerrar_caja(
             (sesion["id"], d["denominacion"], d["cantidad"], d["subtotal"])
             for d in detalle_denom
         ])
-
         conn.commit()
     finally:
         conn.close()
 
     return {
-        "sesion_id":       sesion["id"],
-        "cajero":          sesion["cajero"],
-        "apertura":        sesion["apertura"],
-        "monto_base":      sesion["monto_base"],
-        "total_ventas":    sesion["total_ventas"],
-        "monto_esperado":  monto_esperado,
-        "monto_contado":   monto_contado,
-        "diferencia":      diferencia,
-        "denominaciones":  detalle_denom,
+        "sesion_id":        sesion["id"],
+        "cajero":           sesion["cajero"],
+        "apertura":         sesion["apertura"],
+        "monto_base":       sesion["monto_base"],
+        "total_ventas":     sesion["total_ventas"],
+        "total_efectivo":   total_efectivo,
+        "total_digital":    total_digital,
+        "esperado_efectivo": esperado_ef,
+        "monto_contado":    monto_contado,
+        "diferencia":       diferencia_ef,
+        "denominaciones":   detalle_denom,
     }
 
 

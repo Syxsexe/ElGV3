@@ -53,6 +53,11 @@ class FrameInicio(FrameBase):
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=20, pady=(16, 8))
 
         if sesion:
+            from modules.caja import migrar_dos_cajas
+            migrar_dos_cajas()
+            total_ef  = sesion.get("total_efectivo", 0) or 0
+            total_dig = sesion.get("total_digital",  0) or 0
+
             tk.Label(caja_card, text="● Caja abierta", font=FONT_LABEL,
                      bg=COLORS["surface"], fg=COLORS["success"]).pack(anchor="w", padx=20)
             tk.Label(caja_card, text=f"Cajero: {sesion['cajero']}",
@@ -61,10 +66,37 @@ class FrameInicio(FrameBase):
             tk.Label(caja_card, text=f"Desde: {sesion['apertura'][:16]}",
                      font=FONT_SMALL, bg=COLORS["surface"],
                      fg=COLORS["text_muted"]).pack(anchor="w", padx=20)
-            tk.Label(caja_card,
-                     text=f"Ventas acumuladas: {formatear_pesos(sesion['total_ventas'])}",
+
+            sep = tk.Frame(caja_card, bg=COLORS["border"], height=1)
+            sep.pack(fill="x", padx=20, pady=8)
+
+            # Efectivo
+            fila_ef = tk.Frame(caja_card, bg=COLORS["surface"])
+            fila_ef.pack(fill="x", padx=20, pady=2)
+            tk.Label(fila_ef, text="Efectivo:", font=FONT_LABEL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+            tk.Label(fila_ef, text=formatear_pesos(total_ef),
                      font=FONT_BOLD, bg=COLORS["surface"],
-                     fg=COLORS["accent"]).pack(anchor="w", padx=20, pady=(8, 16))
+                     fg=COLORS["accent"]).pack(side="right")
+
+            # Digital
+            fila_dig = tk.Frame(caja_card, bg=COLORS["surface"])
+            fila_dig.pack(fill="x", padx=20, pady=2)
+            tk.Label(fila_dig, text="Digital:", font=FONT_LABEL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+            tk.Label(fila_dig, text=formatear_pesos(total_dig),
+                     font=FONT_BOLD, bg=COLORS["surface"],
+                     fg=COLORS["success"]).pack(side="right")
+
+            # Total
+            fila_tot = tk.Frame(caja_card, bg=COLORS["surface"])
+            fila_tot.pack(fill="x", padx=20, pady=(6, 16))
+            tk.Label(fila_tot, text="Total turno:", font=FONT_BOLD,
+                     bg=COLORS["surface"], fg=COLORS["text"]).pack(side="left")
+            tk.Label(fila_tot,
+                     text=formatear_pesos(sesion["total_ventas"] or 0),
+                     font=FONT_BOLD, bg=COLORS["surface"],
+                     fg=COLORS["text"]).pack(side="right")
         else:
             tk.Label(caja_card, text="● Caja cerrada", font=FONT_LABEL,
                      bg=COLORS["surface"], fg=COLORS["danger"]).pack(anchor="w", padx=20, pady=(0, 16))
@@ -98,4 +130,3 @@ class FrameInicio(FrameBase):
             tk.Label(alertas_card, text="✓ Todo el stock en orden",
                      font=FONT_LABEL, bg=COLORS["surface"],
                      fg=COLORS["success"]).pack(anchor="w", padx=20, pady=(0, 16))
-

@@ -19,9 +19,10 @@ def migrar_dos_cajas():
     conn = get_connection()
     cols = [r[1] for r in conn.execute("PRAGMA table_info(sesiones_caja)").fetchall()]
     for col, default in [
-        ("total_efectivo",    "0"),
-        ("total_digital",     "0"),
-        ("diferencia_digital","0"),
+        ("total_efectivo",     "0"),
+        ("total_digital",      "0"),
+        ("monto_base_digital", "0"),
+        ("diferencia_digital", "0"),
     ]:
         if col not in cols:
             conn.execute(
@@ -59,29 +60,30 @@ def get_sesion_activa() -> dict | None:
     return dict(fila) if fila else None
 
 
-def abrir_caja(monto_base: float, notas: str = None) -> int:
+def abrir_caja(monto_base: float, monto_base_digital: float = 0,
+               notas: str = None) -> int:
     """
-    Abre una nueva sesión de caja con el monto base (efectivo inicial).
+    Abre una nueva sesión de caja.
+    monto_base:         efectivo físico inicial en caja.
+    monto_base_digital: saldo inicial en Nequi/transferencias.
     Retorna el ID de la sesión creada.
-    Lanza un error si ya hay una sesión abierta.
     """
     migrar_dos_cajas()
 
     if hay_sesion_abierta():
         raise ValueError("Ya existe una sesión de caja abierta. Ciérrela antes de abrir una nueva.")
-
-    if monto_base < 0:
-        raise ValueError("El monto base no puede ser negativo.")
+    if monto_base < 0 or monto_base_digital < 0:
+        raise ValueError("Los montos base no pueden ser negativos.")
 
     usuario_id = get_usuario_id()
     conn = get_connection()
     try:
         cur = conn.execute("""
             INSERT INTO sesiones_caja
-                (usuario_id, monto_base, total_ventas,
-                 total_efectivo, total_digital, notas)
-            VALUES (?, ?, 0, 0, 0, ?)
-        """, (usuario_id, monto_base, notas))
+                (usuario_id, monto_base, monto_base_digital,
+                 total_ventas, total_efectivo, total_digital, notas)
+            VALUES (?, ?, ?, 0, 0, 0, ?)
+        """, (usuario_id, monto_base, monto_base_digital, notas))
         conn.commit()
         return cur.lastrowid
     finally:
@@ -117,14 +119,13 @@ def cerrar_caja(
             "subtotal":     subtotal,
         })
 
-    total_efectivo  = sesion.get("total_efectivo", 0) or 0
-    total_digital   = sesion.get("total_digital",  0) or 0
-    esperado_ef     = sesion["monto_base"] + total_efectivo
-    diferencia_ef   = round(monto_contado - esperado_ef, 2)
-
-    # ── Caja digital ──────────────────────────────────────────────────────────
-    # La caja digital no tiene conteo físico — se verifica contra lo esperado
-    diferencia_dig  = 0.0   # el admin verifica externamente (Nequi, etc.)
+    total_efectivo       = sesion.get("total_efectivo",     0) or 0
+    total_digital        = sesion.get("total_digital",      0) or 0
+    monto_base_digital   = sesion.get("monto_base_digital", 0) or 0
+    esperado_ef          = sesion["monto_base"] + total_efectivo
+    diferencia_ef        = round(monto_contado - esperado_ef, 2)
+    esperado_digital     = monto_base_digital + total_digital
+    diferencia_dig       = 0.0   # el admin verifica externamente (Nequi, etc.)
 
     conn = get_connection()
     try:
@@ -150,17 +151,19 @@ def cerrar_caja(
         conn.close()
 
     return {
-        "sesion_id":        sesion["id"],
-        "cajero":           sesion["cajero"],
-        "apertura":         sesion["apertura"],
-        "monto_base":       sesion["monto_base"],
-        "total_ventas":     sesion["total_ventas"],
-        "total_efectivo":   total_efectivo,
-        "total_digital":    total_digital,
-        "esperado_efectivo": esperado_ef,
-        "monto_contado":    monto_contado,
-        "diferencia":       diferencia_ef,
-        "denominaciones":   detalle_denom,
+        "sesion_id":           sesion["id"],
+        "cajero":              sesion["cajero"],
+        "apertura":            sesion["apertura"],
+        "monto_base":          sesion["monto_base"],
+        "monto_base_digital":  monto_base_digital,
+        "total_ventas":        sesion["total_ventas"],
+        "total_efectivo":      total_efectivo,
+        "total_digital":       total_digital,
+        "esperado_efectivo":   esperado_ef,
+        "esperado_digital":    esperado_digital,
+        "monto_contado":       monto_contado,
+        "diferencia":          diferencia_ef,
+        "denominaciones":      detalle_denom,
     }
 
 

@@ -24,31 +24,47 @@ class FrameCaja(FrameBase):
             self._panel_cierre(main, sesion)
 
     def _panel_apertura(self, parent):
-        card = self._card(parent, width=360)
+        card = self._card(parent, width=400)
         card.pack(anchor="center", pady=40, ipadx=20, ipady=20)
 
         tk.Label(card, text="Abrir Caja", font=FONT_TITLE,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(20, 4))
-        tk.Label(card, text="Ingresa el monto base en efectivo",
+        tk.Label(card, text="Ingresa los montos iniciales de cada caja",
                  font=FONT_SMALL, bg=COLORS["surface"],
                  fg=COLORS["text_muted"]).pack(pady=(0, 20))
 
-        tk.Label(card, text="Monto base ($)", font=FONT_LABEL,
+        # Efectivo
+        tk.Label(card, text="Monto base efectivo ($)", font=FONT_LABEL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=30)
         self.entry_base = self._input(card)
-        self.entry_base.pack(padx=30, fill="x", pady=(4, 20), ipady=6)
+        self.entry_base.pack(padx=30, fill="x", pady=(4, 16), ipady=6)
         from modules.validaciones import aplicar_validacion
         aplicar_validacion(self.entry_base, "monto")
+
+        # Digital
+        tk.Label(card, text="Saldo inicial digital - Nequi/Transferencias ($)",
+                 font=FONT_LABEL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(anchor="w", padx=30)
+        self.entry_base_digital = self._input(card)
+        self.entry_base_digital.pack(padx=30, fill="x", pady=(4, 24), ipady=6)
+        aplicar_validacion(self.entry_base_digital, "monto")
 
         self._btn_primary(card, "Abrir caja", self._abrir).pack(
             padx=30, fill="x", ipady=10, pady=(0, 20))
 
     def _abrir(self):
         from modules.caja import abrir_caja
+        from modules.validaciones import leer_entero
         try:
-            monto = float(self.entry_base.get().replace(".", "").replace(",", "."))
-            abrir_caja(monto)
-            messagebox.showinfo("Caja abierta", "✓ Caja abierta correctamente.")
+            monto         = leer_entero(self.entry_base, default=0)
+            monto_digital = leer_entero(self.entry_base_digital, default=0)
+            if monto < 0 or monto_digital < 0:
+                raise ValueError("Los montos no pueden ser negativos.")
+            abrir_caja(monto, monto_base_digital=monto_digital)
+            messagebox.showinfo("Caja abierta",
+                                f"Caja abierta correctamente.\n"
+                                f"Efectivo: ${monto:,}\n"
+                                f"Digital:  ${monto_digital:,}")
             self.winfo_toplevel()._mostrar_caja()
         except ValueError as e:
             messagebox.showerror("Error", str(e))
@@ -101,31 +117,54 @@ class FrameCaja(FrameBase):
                  fg=COLORS["text"]).pack(anchor="w", padx=20, pady=(16, 12))
 
         from modules.caja import formatear_pesos, migrar_dos_cajas
+        from modules.proveedores import migrar_egresos
+        from database import get_connection
         migrar_dos_cajas()
+        migrar_egresos()
 
+        base_ef   = sesion.get("monto_base", 0) or 0
+        base_dig  = sesion.get("monto_base_digital", 0) or 0
         total_ef  = sesion.get("total_efectivo", 0) or 0
         total_dig = sesion.get("total_digital",  0) or 0
-        esperado_ef = sesion["monto_base"] + total_ef
 
-        # ── Caja efectivo ─────────────────────────────────────────────────────
-        tk.Label(resumen_card, text="CAJA EFECTIVO",
-                 font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["accent"]).pack(anchor="w", padx=20, pady=(0, 4))
+        # Egresos del turno separados por caja
+        conn = get_connection()
+        row_eg = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN metodo_pago='efectivo'
+                                 THEN total ELSE 0 END), 0) AS eg_ef,
+                COALESCE(SUM(CASE WHEN metodo_pago!='efectivo'
+                                 THEN total ELSE 0 END), 0) AS eg_dig
+            FROM egresos WHERE sesion_id = ?
+        """, (sesion["id"],)).fetchone()
+        conn.close()
+        eg_ef  = row_eg["eg_ef"]  if row_eg else 0
+        eg_dig = row_eg["eg_dig"] if row_eg else 0
 
-        for label, valor in [
-            ("Monto base:",       formatear_pesos(sesion["monto_base"])),
-            ("Ventas efectivo:",  formatear_pesos(total_ef)),
-            ("Esperado efectivo:", formatear_pesos(esperado_ef)),
-        ]:
-            fila = tk.Frame(resumen_card, bg=COLORS["surface"])
-            fila.pack(fill="x", padx=20, pady=2)
-            tk.Label(fila, text=label, font=FONT_LABEL,
+        esperado_ef  = base_ef  + total_ef  - eg_ef
+        esperado_dig = base_dig + total_dig - eg_dig
+
+        def fila_resumen(parent, label, valor, color=None):
+            f = tk.Frame(parent, bg=COLORS["surface"])
+            f.pack(fill="x", padx=20, pady=2)
+            tk.Label(f, text=label, font=FONT_LABEL,
                      bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
-            tk.Label(fila, text=valor, font=FONT_BOLD,
-                     bg=COLORS["surface"], fg=COLORS["text"]).pack(side="right")
+            tk.Label(f, text=formatear_pesos(valor), font=FONT_BOLD,
+                     bg=COLORS["surface"],
+                     fg=color or COLORS["text"]).pack(side="right")
 
-        sep1 = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
-        sep1.pack(fill="x", padx=20, pady=8)
+        # ── CAJA EFECTIVO ─────────────────────────────────────────────────────
+        tk.Label(resumen_card, text="CAJA EFECTIVO", font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(
+                     anchor="w", padx=20, pady=(0, 4))
+
+        fila_resumen(resumen_card, "Inicial:",        base_ef)
+        fila_resumen(resumen_card, "Ventas:",         total_ef,  COLORS["success"])
+        fila_resumen(resumen_card, "Gastos:",         eg_ef,     COLORS["danger"])
+        fila_resumen(resumen_card, "Esperado en caja:", esperado_ef, COLORS["accent"])
+
+        tk.Frame(resumen_card, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=20, pady=8)
 
         fila_contado = tk.Frame(resumen_card, bg=COLORS["surface"])
         fila_contado.pack(fill="x", padx=20)
@@ -139,54 +178,73 @@ class FrameCaja(FrameBase):
                                         font=FONT_BOLD, bg=COLORS["surface"])
         self.lbl_diferencia.pack(anchor="e", padx=20, pady=4)
 
-        # ── Caja digital ──────────────────────────────────────────────────────
-        sep2 = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
-        sep2.pack(fill="x", padx=20, pady=(4, 8))
+        # ── CAJA DIGITAL ──────────────────────────────────────────────────────
+        tk.Frame(resumen_card, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=20, pady=(4, 8))
 
-        tk.Label(resumen_card, text="CAJA DIGITAL",
-                 font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["success"]).pack(anchor="w", padx=20, pady=(0, 4))
+        tk.Label(resumen_card, text="CAJA DIGITAL", font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["success"]).pack(
+                     anchor="w", padx=20, pady=(0, 4))
 
-        fila_dig = tk.Frame(resumen_card, bg=COLORS["surface"])
-        fila_dig.pack(fill="x", padx=20, pady=2)
-        tk.Label(fila_dig, text="Total digital (Nequi/Transfer.):",
-                 font=FONT_LABEL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).pack(side="left")
-        tk.Label(fila_dig, text=formatear_pesos(total_dig),
-                 font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["success"]).pack(side="right")
+        fila_resumen(resumen_card, "Inicial:",          base_dig)
+        fila_resumen(resumen_card, "Ventas:",           total_dig, COLORS["success"])
+        fila_resumen(resumen_card, "Gastos:",           eg_dig,    COLORS["danger"])
+        fila_resumen(resumen_card, "Esperado en caja:", esperado_dig, COLORS["success"])
 
-        tk.Label(resumen_card,
-                 text="Verificar contra Nequi / banco",
-                 font=("Segoe UI", 8), bg=COLORS["surface"],
-                 fg=COLORS["text_dim"]).pack(anchor="e", padx=20)
+        tk.Frame(resumen_card, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=20, pady=8)
 
-        sep3 = tk.Frame(resumen_card, bg=COLORS["border"], height=1)
-        sep3.pack(fill="x", padx=20, pady=8)
+        # Campo conteo digital
+        tk.Label(resumen_card, text="Saldo actual digital ($)", font=FONT_LABEL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=20)
+        fila_dig_cont = tk.Frame(resumen_card, bg=COLORS["surface"])
+        fila_dig_cont.pack(fill="x", padx=20, pady=(2, 0))
+        self.entry_contado_digital = self._input(fila_dig_cont)
+        self.entry_contado_digital.insert(0, str(int(esperado_dig)))
+        self.entry_contado_digital.pack(side="left", fill="x", expand=True, ipady=5)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_contado_digital, "monto")
 
-        # ── Total general ─────────────────────────────────────────────────────
-        fila_tot = tk.Frame(resumen_card, bg=COLORS["surface"])
-        fila_tot.pack(fill="x", padx=20, pady=2)
-        tk.Label(fila_tot, text="Total ventas turno:",
-                 font=FONT_LABEL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).pack(side="left")
-        tk.Label(fila_tot, text=formatear_pesos(sesion["total_ventas"] or 0),
-                 font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["text"]).pack(side="right")
+        self.lbl_dif_digital = tk.Label(resumen_card, text="",
+                                         font=FONT_BOLD, bg=COLORS["surface"],
+                                         fg=COLORS["text_muted"])
+        self.lbl_dif_digital.pack(anchor="e", padx=20, pady=(2, 0))
+        self.entry_contado_digital.bind(
+            "<KeyRelease>",
+            lambda e: self._actualizar_dif_digital(base_dig, total_dig - eg_dig)
+        )
+        self._esperado_ef = esperado_ef
 
         # Notas
         tk.Label(resumen_card, text="Notas (opcional)", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=20, pady=(12, 4))
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=20, pady=(12, 4))
         self.txt_notas = tk.Text(resumen_card, height=3, font=FONT_SMALL,
                                   bg=COLORS["surface2"], fg=COLORS["text"],
                                   insertbackground=COLORS["accent"],
-                                  relief="flat",
-                                  highlightthickness=1,
+                                  relief="flat", highlightthickness=1,
                                   highlightbackground=COLORS["border"])
         self.txt_notas.pack(fill="x", padx=20)
 
         self._btn_danger(resumen_card, "Cerrar caja",
                          self._cerrar).pack(fill="x", padx=20, pady=20, ipady=10)
+
+    def _actualizar_dif_digital(self, base_digital, total_digital):
+        from modules.caja import formatear_pesos
+        from modules.validaciones import leer_entero
+        try:
+            contado = leer_entero(self.entry_contado_digital, default=0)
+            esperado = base_digital + total_digital
+            dif = contado - esperado
+            color = COLORS["success"] if dif >= 0 else COLORS["danger"]
+            signo = "+" if dif >= 0 else ""
+            self.lbl_dif_digital.config(
+                text=f"Diferencia digital: {signo}{formatear_pesos(dif)}",
+                fg=color
+            )
+        except Exception:
+            pass
 
     def _actualizar_contado(self):
         from modules.caja import formatear_pesos, calcular_desde_denominaciones, DENOMINACIONES_COP
@@ -204,6 +262,7 @@ class FrameCaja(FrameBase):
 
     def _cerrar(self):
         from modules.caja import cerrar_caja, get_sesion_activa, formatear_pesos
+        from modules.validaciones import leer_entero
         denominaciones = {}
         for denom, (entry, _) in self._denom_entries.items():
             try:
@@ -211,16 +270,29 @@ class FrameCaja(FrameBase):
             except ValueError:
                 denominaciones[denom] = 0
 
+        # Incluir saldo digital contado
+        denominaciones["digital"] = leer_entero(self.entry_contado_digital, default=0)
+
         notas = self.txt_notas.get("1.0", "end").strip()
         try:
             resumen = cerrar_caja(denominaciones, notas or None)
-            dif     = resumen["diferencia"]
-            color   = COLORS["success"] if dif >= 0 else COLORS["danger"]
-            msg     = (
+            dif_ef  = resumen["diferencia"]
+            dif_dig = resumen["diferencia_digital"]
+
+            def fmt_dif(d):
+                signo = "+" if d >= 0 else ""
+                return f"{signo}{formatear_pesos(d)}"
+
+            msg = (
                 f"Caja cerrada correctamente.\n\n"
-                f"Esperado:  {formatear_pesos(resumen['monto_esperado'])}\n"
-                f"Contado:   {formatear_pesos(resumen['monto_contado'])}\n"
-                f"Diferencia: {formatear_pesos(dif)}"
+                f"EFECTIVO\n"
+                f"  Esperado:  {formatear_pesos(resumen['esperado_efectivo'])}\n"
+                f"  Contado:   {formatear_pesos(resumen['monto_contado'])}\n"
+                f"  Diferencia: {fmt_dif(dif_ef)}\n\n"
+                f"DIGITAL\n"
+                f"  Esperado:  {formatear_pesos(resumen['esperado_digital'])}\n"
+                f"  Contado:   {formatear_pesos(resumen['monto_contado_digital'])}\n"
+                f"  Diferencia: {fmt_dif(dif_dig)}"
             )
             messagebox.showinfo("Cierre de caja", msg)
             self.winfo_toplevel()._mostrar_caja()

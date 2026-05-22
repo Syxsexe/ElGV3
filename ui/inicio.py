@@ -46,60 +46,117 @@ class FrameInicio(FrameBase):
         row2 = tk.Frame(self, bg=COLORS["bg"])
         row2.pack(fill="both", expand=True, padx=32, pady=(0, 28))
 
-        # Estado de caja
-        caja_card = self._card(row2)
-        caja_card.pack(side="left", fill="both", expand=True, padx=(0, 12))
-        tk.Label(caja_card, text="Estado de Caja", font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=20, pady=(16, 8))
+        # Estado de caja — dos tarjetas visuales
+        caja_frame = tk.Frame(row2, bg=COLORS["bg"])
+        caja_frame.pack(side="left", fill="both", expand=True, padx=(0, 12))
 
         if sesion:
             from modules.caja import migrar_dos_cajas
+            from modules.proveedores import migrar_egresos
+            from database import get_connection
             migrar_dos_cajas()
+            migrar_egresos()
+
+            base_ef   = sesion.get("monto_base", 0) or 0
+            base_dig  = sesion.get("monto_base_digital", 0) or 0
             total_ef  = sesion.get("total_efectivo", 0) or 0
             total_dig = sesion.get("total_digital",  0) or 0
 
-            tk.Label(caja_card, text="● Caja abierta", font=FONT_LABEL,
-                     bg=COLORS["surface"], fg=COLORS["success"]).pack(anchor="w", padx=20)
-            tk.Label(caja_card, text=f"Cajero: {sesion['cajero']}",
-                     font=FONT_SMALL, bg=COLORS["surface"],
-                     fg=COLORS["text_muted"]).pack(anchor="w", padx=20, pady=2)
-            tk.Label(caja_card, text=f"Desde: {sesion['apertura'][:16]}",
-                     font=FONT_SMALL, bg=COLORS["surface"],
-                     fg=COLORS["text_muted"]).pack(anchor="w", padx=20)
+            # Egresos del turno
+            conn = get_connection()
+            row_eg = conn.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN metodo_pago='efectivo'
+                                     THEN total ELSE 0 END), 0) AS eg_ef,
+                    COALESCE(SUM(CASE WHEN metodo_pago!='efectivo'
+                                     THEN total ELSE 0 END), 0) AS eg_dig
+                FROM egresos WHERE sesion_id = ?
+            """, (sesion["id"],)).fetchone()
+            conn.close()
+            eg_ef  = row_eg["eg_ef"]  if row_eg else 0
+            eg_dig = row_eg["eg_dig"] if row_eg else 0
 
-            sep = tk.Frame(caja_card, bg=COLORS["border"], height=1)
-            sep.pack(fill="x", padx=20, pady=8)
+            saldo_ef  = base_ef  + total_ef  - eg_ef
+            saldo_dig = base_dig + total_dig - eg_dig
 
-            # Efectivo
-            fila_ef = tk.Frame(caja_card, bg=COLORS["surface"])
-            fila_ef.pack(fill="x", padx=20, pady=2)
-            tk.Label(fila_ef, text="Efectivo:", font=FONT_LABEL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
-            tk.Label(fila_ef, text=formatear_pesos(total_ef),
-                     font=FONT_BOLD, bg=COLORS["surface"],
-                     fg=COLORS["accent"]).pack(side="right")
+            def mini_card(parent, titulo, color_fondo, color_acento, items, saldo, label_saldo):
+                """Tarjeta visual estilo imagen proporcionada."""
+                card = tk.Frame(parent, bg=color_fondo,
+                                highlightbackground=color_acento,
+                                highlightthickness=2)
+                card.pack(side="left", fill="both", expand=True,
+                          padx=(0, 6), ipady=8)
 
-            # Digital
-            fila_dig = tk.Frame(caja_card, bg=COLORS["surface"])
-            fila_dig.pack(fill="x", padx=20, pady=2)
-            tk.Label(fila_dig, text="Digital:", font=FONT_LABEL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
-            tk.Label(fila_dig, text=formatear_pesos(total_dig),
-                     font=FONT_BOLD, bg=COLORS["surface"],
-                     fg=COLORS["success"]).pack(side="right")
+                tk.Label(card, text=titulo, font=FONT_BOLD,
+                         bg=color_fondo, fg=COLORS["text"]).pack(pady=(10, 8))
 
-            # Total
-            fila_tot = tk.Frame(caja_card, bg=COLORS["surface"])
-            fila_tot.pack(fill="x", padx=20, pady=(6, 16))
-            tk.Label(fila_tot, text="Total turno:", font=FONT_BOLD,
-                     bg=COLORS["surface"], fg=COLORS["text"]).pack(side="left")
-            tk.Label(fila_tot,
-                     text=formatear_pesos(sesion["total_ventas"] or 0),
-                     font=FONT_BOLD, bg=COLORS["surface"],
-                     fg=COLORS["text"]).pack(side="right")
+                for lbl, val, icono in items:
+                    fila = tk.Frame(card, bg=color_fondo)
+                    fila.pack(fill="x", padx=16, pady=2)
+                    tk.Label(fila, text=f"{icono} {lbl}",
+                             font=FONT_SMALL, bg=color_fondo,
+                             fg=COLORS["text_muted"]).pack(side="left")
+                    tk.Label(fila, text=formatear_pesos(val),
+                             font=FONT_SMALL, bg=color_fondo,
+                             fg=COLORS["text"]).pack(side="right")
+
+                # Saldo neto
+                saldo_frame = tk.Frame(card, bg=color_acento)
+                saldo_frame.pack(fill="x", padx=0, pady=(10, 0))
+                tk.Label(saldo_frame, text=label_saldo,
+                         font=FONT_SMALL, bg=color_acento,
+                         fg=COLORS["text"]).pack(pady=(6, 0))
+                tk.Label(saldo_frame, text=formatear_pesos(saldo),
+                         font=("Segoe UI", 18, "bold"),
+                         bg=color_acento, fg=COLORS["text"]).pack(pady=(0, 8))
+
+            # Info turno
+            tk.Label(caja_frame,
+                     text=f"● Caja abierta  |  {sesion['cajero']}  |  Desde {sesion['apertura'][11:16]}",
+                     font=FONT_SMALL, bg=COLORS["bg"],
+                     fg=COLORS["success"]).pack(anchor="w", pady=(0, 6))
+
+            cards_row = tk.Frame(caja_frame, bg=COLORS["bg"])
+            cards_row.pack(fill="both", expand=True)
+
+            # Tarjeta efectivo
+            mini_card(
+                cards_row,
+                "CAJA EFECTIVO",
+                "#1A3A2A",   # verde oscuro
+                "#2E8B57",   # verde medio
+                [
+                    ("Inicial:",  base_ef,  "💵"),
+                    ("Ventas:",   total_ef, "🛒"),
+                    ("Gastos:",   eg_ef,    "📦"),
+                ],
+                saldo_ef,
+                "EFECTIVO EN CAJA"
+            )
+
+            # Tarjeta digital
+            mini_card(
+                cards_row,
+                "CAJA TRANSFERENCIAS",
+                "#1A1A3A",   # azul/morado oscuro
+                "#4B4BCC",   # azul/morado medio
+                [
+                    ("Inicial:",  base_dig,  "📱"),
+                    ("Ventas:",   total_dig, "🛒"),
+                    ("Gastos:",   eg_dig,    "📦"),
+                ],
+                saldo_dig,
+                "TRANSFERENCIAS EN CAJA"
+            )
+
         else:
+            caja_card = self._card(caja_frame)
+            caja_card.pack(fill="both", expand=True)
+            tk.Label(caja_card, text="Estado de Caja", font=FONT_BOLD,
+                     bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=20, pady=(16, 8))
             tk.Label(caja_card, text="● Caja cerrada", font=FONT_LABEL,
-                     bg=COLORS["surface"], fg=COLORS["danger"]).pack(anchor="w", padx=20, pady=(0, 16))
+                     bg=COLORS["surface"], fg=COLORS["danger"]).pack(
+                         anchor="w", padx=20, pady=(0, 16))
 
         # Alertas de stock
         alertas_card = self._card(row2)

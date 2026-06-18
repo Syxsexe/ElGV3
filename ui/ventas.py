@@ -194,10 +194,16 @@ class FrameVentas(FrameBase):
             )
             total_str = formatear_pesos(sum(p["monto"] for p in pagos))
             metodos   = " + ".join(p["metodo"] for p in pagos)
-            messagebox.showinfo("Venta registrada",
-                                f"✓ Venta #{venta_id} registrada\nTotal: {total_str}\nMétodo: {metodos}")
-            self._actualizar_carrito()   # limpia el carrito en pantalla
-            self._buscar()               # refresca stock en el catálogo
+            self._actualizar_carrito()
+            self._buscar()
+            self._ultimo_venta_id = venta_id
+
+            # Preguntar si desea imprimir ticket
+            if messagebox.askyesno(
+                "Venta registrada",
+                f"Venta #{venta_id} registrada\nTotal: {total_str}\nMetodo: {metodos}\n\n¿Imprimir ticket?"
+            ):
+                from ui.ticket_dialog import mostrar_ticket_venta
+                mostrar_ticket_venta(self, venta_id)
         except Exception as e:
             messagebox.showerror("Error", str(e))
-

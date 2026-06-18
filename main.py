@@ -117,7 +117,16 @@ class MainWindow(tk.Tk):
         sesion = auth.get_sesion()
         self.title(f"El G POS — {sesion['usuario']} ({sesion['rol']})")
         self.configure(bg=COLORS["bg"])
-        self.state("zoomed")
+        # Intentar maximizar la ventana; algunos WMs no soportan 'zoomed'
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            try:
+                # alternativa en algunos sistemas X11
+                self.attributes("-zoomed", True)
+            except Exception:
+                # último recurso: dejar ventana en estado normal
+                pass
         self._frame_actual = None
         self._build()
 

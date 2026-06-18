@@ -654,7 +654,10 @@ class FrameProveedores(FrameBase):
                 msg += f"\n\nEgreso: {formatear_pesos(total_pagado)}\nMetodo: {metodos}"
                 if not sesion:
                     msg += "\n\nAviso: no hay caja abierta. El egreso quedo registrado sin sesion."
-            messagebox.showinfo("Pedido recibido", msg)
+            if messagebox.askyesno("Pedido recibido",
+                                     msg + "\n\n¿Imprimir ticket del pedido?"):
+                from ui.ticket_dialog import mostrar_ticket_pedido
+                mostrar_ticket_pedido(self, pedido_id)
             self._cargar_pedidos()
             self._limpiar_panel()
             tk.Label(self._panel,

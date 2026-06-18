@@ -379,15 +379,18 @@ class FrameCuentas(FrameBase):
             )
             total_str = formatear_pesos(cuenta["total"])
             metodos   = " + ".join(p["metodo"] for p in pagos)
-            messagebox.showinfo(
-                "Cobro exitoso",
-                f"✓ Cuenta cobrada — Venta #{venta_id}\n"
-                f"Total: {total_str}\nMétodo: {metodos}"
-            )
+            cuenta_id_cobrada = self._cuenta_sel
             self._cuenta_sel = None
             self.tree_items.delete(*self.tree_items.get_children())
             self.lbl_total_cuenta.config(text="Total: $0")
             self._cargar_mesas()
+            if messagebox.askyesno(
+                "Cobro exitoso",
+                f"Cuenta cobrada — Venta #{venta_id}\n"
+                f"Total: {total_str}\nMetodo: {metodos}\n\n¿Imprimir ticket?"
+            ):
+                from ui.ticket_dialog import mostrar_ticket_cuenta
+                mostrar_ticket_cuenta(self, cuenta_id_cobrada, venta_id)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

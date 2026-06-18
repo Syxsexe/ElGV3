@@ -96,6 +96,35 @@ class FrameVentas(FrameBase):
         # Confirmar — el método de pago se elige en el diálogo
         self._btn_primary(right, "✓ Confirmar Venta",
                           self._confirmar_venta).pack(fill="x", padx=16, ipady=10)
+
+        # Cliente y factura
+        cliente_frame = tk.Frame(right, bg=COLORS["surface"])
+        cliente_frame.pack(fill="x", padx=16, pady=(16, 0))
+
+        tk.Label(cliente_frame, text="Cliente", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+        self.combo_cliente = ttk.Combobox(
+            cliente_frame, font=FONT_SMALL, state="readonly"
+        )
+        self.combo_cliente.pack(fill="x", pady=(4, 8), ipady=4)
+        self.combo_cliente.bind("<<ComboboxSelected>>", lambda e: None)
+
+        self._emitir_factura = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            cliente_frame,
+            text="Emitir factura",
+            variable=self._emitir_factura,
+            font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text"],
+            selectcolor=COLORS["surface2"], activebackground=COLORS["surface"],
+            activeforeground=COLORS["text"], cursor="hand2"
+        ).pack(anchor="w")
+
+        self._btn_primary(right, "Actualizar clientes", self._cargar_clientes).pack(
+            fill="x", padx=16, pady=(8, 0), ipady=8)
+
+        self._cargar_clientes()
+
         tk.Button(right, text="Limpiar carrito", font=FONT_SMALL,
                   bg=COLORS["surface"], fg=COLORS["text_muted"],
                   relief="flat", cursor="hand2",
@@ -190,7 +219,9 @@ class FrameVentas(FrameBase):
             venta_id = registrar_venta(
                 self.carrito,
                 pagos=pagos,
-                sesion_id=self.sesion_id
+                sesion_id=self.sesion_id,
+                cliente_id=self._get_cliente_id(),
+                emitir_factura=self._emitir_factura.get()
             )
             total_str = formatear_pesos(sum(p["monto"] for p in pagos))
             metodos   = " + ".join(p["metodo"] for p in pagos)
@@ -207,3 +238,20 @@ class FrameVentas(FrameBase):
                 mostrar_ticket_venta(self, venta_id)
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
+    def _cargar_clientes(self):
+        from modules.clientes import listar_clientes
+
+        clientes = listar_clientes(solo_activos=False)
+        opciones = ["-- Consumidor Final --"]
+        self._cliente_ids = {"-- Consumidor Final --": None}
+        for c in clientes:
+            texto = f"{c['id']} - {c['nombre']} ({c['tipo_documento']})"
+            opciones.append(texto)
+            self._cliente_ids[texto] = c["id"]
+        self.combo_cliente["values"] = opciones
+        self.combo_cliente.set(opciones[0])
+
+    def _get_cliente_id(self):
+        seleccionado = self.combo_cliente.get()
+        return self._cliente_ids.get(seleccionado)

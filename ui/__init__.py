@@ -7,5 +7,6 @@ from ui.caja       import FrameCaja
 from ui.reportes   import FrameReportes
 from ui.usuarios   import FrameUsuarios
 from ui.cuentas      import FrameCuentas
+from ui.clientes    import FrameClientes
 from ui.proveedores  import FrameProveedores
  

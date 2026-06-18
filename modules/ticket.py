@@ -107,13 +107,18 @@ def generar_ticket_venta(venta_id: int) -> str:
         WHERE dv.venta_id = ?
     """, (venta_id,)).fetchall()
 
-    pagos = conn.execute("""
-        SELECT metodo, monto FROM pagos_venta WHERE venta_id = ?
-    """, (venta_id,)).fetchall()
+    factura = conn.execute(
+        "SELECT numero, tipo_documento, documento, total_base, iva, iva_porcentaje"
+        " FROM facturas WHERE venta_id = ?",
+        (venta_id,)
+    ).fetchone()
     conn.close()
 
     lineas = _cabecera()
     lineas.append(_linea_dos_col(f"  Venta #{venta_id}", f"Vendedor: {venta['vendedor']}"))
+    if factura:
+        lineas.append(_linea_dos_col("  Factura:", factura["numero"]))
+        lineas.append(_linea_dos_col(f"  {factura['tipo_documento']}", factura['documento'] or ""))
     lineas.append(_separador("-"))
 
     # Encabezado columnas

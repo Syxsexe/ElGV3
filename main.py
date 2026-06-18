@@ -12,7 +12,7 @@ from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SM
 from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
-    FrameProveedores,
+    FrameClientes, FrameProveedores,
 )
 
 
@@ -148,6 +148,7 @@ class MainWindow(tk.Tk):
         nav_items = [
             ("Inicio",      self._mostrar_inicio),
             ("Nueva Venta", self._mostrar_ventas),
+            ("Clientes",    self._mostrar_clientes),
             ("Cuentas",     self._mostrar_cuentas),
             ("Inventario",  self._mostrar_inventario),
             ("Proveedores", self._mostrar_proveedores),
@@ -260,6 +261,10 @@ class MainWindow(tk.Tk):
     def _mostrar_cuentas(self):
         self._nav_click("Cuentas", lambda: None)
         self._cambiar_frame(FrameCuentas)
+
+    def _mostrar_clientes(self):
+        self._nav_click("Clientes", lambda: None)
+        self._cambiar_frame(FrameClientes)
 
     def _mostrar_inventario(self):
         self._nav_click("Inventario", lambda: None)

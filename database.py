@@ -131,6 +131,21 @@ def crear_tablas():
         )
     """)
 
+    # ── Clientes para facturación ────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clientes (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre          TEXT    NOT NULL,
+            tipo_documento  TEXT    NOT NULL CHECK(tipo_documento IN ('CC','NIT','CE','TI','CONSUMIDOR_FINAL')),
+            documento       TEXT    NOT NULL,
+            direccion       TEXT,
+            telefono        TEXT,
+            email           TEXT,
+            activo          INTEGER NOT NULL DEFAULT 1,
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+
     # ── Pedidos a proveedores ─────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS pedidos (
@@ -201,7 +216,29 @@ def crear_tablas():
                              CHECK(tipo IN ('tienda','cocina')),
             usuario_id   INTEGER NOT NULL REFERENCES usuarios(id),
             sesion_id    INTEGER          REFERENCES sesiones_caja(id),
+            cliente_id   INTEGER          REFERENCES clientes(id),
             notas        TEXT
+        )
+    """)
+
+    # ── Facturas y documentos fiscales ─────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS facturas (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            venta_id        INTEGER NOT NULL UNIQUE REFERENCES ventas(id) ON DELETE CASCADE,
+            cliente_id      INTEGER REFERENCES clientes(id),
+            numero          TEXT    NOT NULL UNIQUE,
+            tipo_documento  TEXT    NOT NULL CHECK(tipo_documento IN ('CC','NIT','CE','TI','CONSUMIDOR_FINAL')),
+            documento       TEXT    NOT NULL,
+            direccion       TEXT,
+            telefono        TEXT,
+            email           TEXT,
+            fecha           TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            total_base      REAL    NOT NULL DEFAULT 0,
+            iva_porcentaje  REAL    NOT NULL DEFAULT 0,
+            iva             REAL    NOT NULL DEFAULT 0,
+            total           REAL    NOT NULL DEFAULT 0,
+            notas           TEXT
         )
     """)
 
@@ -229,6 +266,11 @@ def crear_tablas():
             subtotal     REAL    NOT NULL
         )
     """)
+
+    # Asegura columna cliente_id en ventas para versiones previas de la base de datos.
+    columnas_ventas = [row[1] for row in conn.execute("PRAGMA table_info(ventas)").fetchall()]
+    if "cliente_id" not in columnas_ventas:
+        conn.execute("ALTER TABLE ventas ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)")
 
     conn.commit()
     conn.close()

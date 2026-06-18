@@ -5,12 +5,17 @@ Registro de ventas, manejo de carrito y coordinación con inventario.
 
 from database import get_connection
 from auth import get_usuario_id, requiere_admin
+from modules.clientes import obtener_cliente
 from modules.inventario import (
     obtener_producto,
     actualizar_stock,
     descontar_insumos_por_venta,
     obtener_receta,
 )
+from datetime import datetime
+
+IVA_POR_DEFECTO = 0.19
+
 
 def _actualizar_cajas_sesion(conn, sesion_id: int, pagos: list, signo: float = 1):
     """
@@ -181,6 +186,9 @@ def registrar_venta(
     metodo_pago: str = "efectivo",
     descuento: float = 0,
     sesion_id: int = None,
+    cliente_id: int = None,
+    emitir_factura: bool = False,
+    iva_porcentaje: float = IVA_POR_DEFECTO,
     notas: str = None,
     pagos: list[dict] = None
 ) -> int:
@@ -192,6 +200,7 @@ def registrar_venta(
         [{"metodo": "efectivo", "monto": 10000},
          {"metodo": "nequi",    "monto": 5000}]
     Si se omite, se usa metodo_pago como único método por el total.
+    Si cliente_id se proporciona o emitir_factura=True, se genera una factura.
     Retorna el ID de la venta generada.
     """
     if carrito.esta_vacio():
@@ -230,9 +239,9 @@ def registrar_venta(
         fecha_ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = conn.execute("""
             INSERT INTO ventas
-                (fecha, total, descuento, metodo_pago, tipo, usuario_id, sesion_id, notas)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (fecha_ahora, total, descuento, metodo_final, tipo_venta, usuario_id, sesion_id, notas))
+                (fecha, total, descuento, metodo_pago, tipo, usuario_id, sesion_id, cliente_id, notas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (fecha_ahora, total, descuento, metodo_final, tipo_venta, usuario_id, sesion_id, cliente_id, notas))
 
         venta_id = cur.lastrowid
 
@@ -291,6 +300,10 @@ def registrar_venta(
                 VALUES (?, ?, ?)
             """, (venta_id, pago["metodo"], pago["monto"]))
 
+        # 3c. Generar factura si aplica
+        if emitir_factura or cliente_id:
+            _crear_factura(conn, venta_id, cliente_id, total, iva_porcentaje, notas)
+
         conn.commit()
         carrito.limpiar()
         return venta_id
@@ -300,6 +313,74 @@ def registrar_venta(
         raise
     finally:
         conn.close()
+
+
+def _generar_numero_factura(conn) -> str:
+    """Genera un número de factura único basado en la fecha."""
+    prefijo = datetime.now().strftime("%Y%m%d")
+    fila = conn.execute(
+        "SELECT COUNT(*) FROM facturas WHERE numero LIKE ?",
+        (f"{prefijo}%",)
+    ).fetchone()
+    secuencia = (fila[0] or 0) + 1
+    return f"F{prefijo}-{secuencia:04d}"
+
+
+def _crear_factura(
+    conn,
+    venta_id: int,
+    cliente_id: int | None,
+    total: float,
+    iva_porcentaje: float,
+    notas: str | None = None
+) -> int:
+    """Crea la factura asociada a una venta."""
+    cliente = None
+    if cliente_id:
+        cliente = obtener_cliente(cliente_id)
+
+    if cliente:
+        tipo_documento = cliente["tipo_documento"]
+        documento = cliente["documento"]
+        direccion = cliente["direccion"]
+        telefono = cliente["telefono"]
+        email = cliente["email"]
+    else:
+        tipo_documento = "CONSUMIDOR_FINAL"
+        documento = ""
+        direccion = ""
+        telefono = ""
+        email = ""
+
+    total_base = round(total / (1 + iva_porcentaje), 2) if iva_porcentaje else total
+    iva = round(total - total_base, 2) if iva_porcentaje else 0.0
+
+    numero = _generar_numero_factura(conn)
+    cur = conn.execute(
+        """
+        INSERT INTO facturas
+            (venta_id, cliente_id, numero, tipo_documento, documento,
+             direccion, telefono, email, fecha, total_base,
+             iva_porcentaje, iva, total, notas)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?)
+        """,
+        (
+            venta_id,
+            cliente_id,
+            numero,
+            tipo_documento,
+            documento,
+            direccion,
+            telefono,
+            email,
+            total_base,
+            iva_porcentaje,
+            iva,
+            total,
+            notas,
+        )
+    )
+    return cur.lastrowid
 
 
 def _obtener_productos_combo(combo_id: int, conn) -> list:

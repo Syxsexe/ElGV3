@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block heading %}Sync Logs{% endblock %}
+{% set active = "sync-logs" %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3>Registro de Sincronización</h3>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>UUID</th>
+          <th>Entidad</th>
+          <th>ID Local</th>
+          <th>Acción</th>
+          <th>Estado</th>
+          <th>Error</th>
+          <th>Creado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in logs %}
+        <tr>
+          <td style="font-family:monospace;font-size:11px">{{ s.uuid_operacion[:24] }}…</td>
+          <td><span class="badge info">{{ s.entidad_tipo }}</span></td>
+          <td>{{ s.entidad_id_local }}</td>
+          <td class="text-muted">{{ s.accion }}</td>
+          <td>
+            {% set cls = {'pendiente': 'warning', 'sincronizado': 'success', 'error': 'danger', 'ignorado': 'neutral'} %}
+            <span class="badge {{ cls.get(s.estado, 'neutral') }}">{{ s.estado }}</span>
+          </td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--danger)">
+            {{ s.error[:40] if s.error else '—' }}
+          </td>
+          <td class="text-sm text-muted">{{ s.creado_en[:19] }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="7">No hay registros de sincronización</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

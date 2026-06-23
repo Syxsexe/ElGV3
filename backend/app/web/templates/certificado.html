@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block heading %}Certificado Digital{% endblock %}
+{% set active = "certificado" %}
+{% block content %}
+<div class="card">
+  <div class="card-header"><h3>Certificado de Firma</h3></div>
+  {% if certificado %}
+  <div style="margin-bottom:16px">
+    <table>
+      <tr><td style="border:none;color:var(--text-muted)">Archivo:</td><td style="border:none">{{ certificado.path }}</td></tr>
+      <tr><td style="border:none;color:var(--text-muted)">Tamaño:</td><td style="border:none">{{ certificado.size }} bytes</td></tr>
+      {% if certificado.info %}
+      <tr><td style="border:none;color:var(--text-muted)">Emisor:</td><td style="border:none">{{ certificado.info.emisor or '—' }}</td></tr>
+      <tr><td style="border:none;color:var(--text-muted)">Sujeto:</td><td style="border:none">{{ certificado.info.sujeto or '—' }}</td></tr>
+      <tr><td style="border:none;color:var(--text-muted)">Válido hasta:</td><td style="border:none">{{ certificado.info.valido_hasta or '—' }}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted mb-4">No hay certificado digital configurado. Debes subir un archivo .p12 o .pfx.</p>
+  {% endif %}
+
+  <form method="POST" action="/admin/certificado/subir" enctype="multipart/form-data">
+    <div class="form-group">
+      <label>Archivo del Certificado (.p12 / .pfx)</label>
+      <div class="file-upload" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">🔐</div>
+        <div class="text">Haz clic o arrastra tu archivo <strong>.p12</strong> aquí</div>
+        <input type="file" name="certificado" id="fileInput" accept=".p12,.pfx" required onchange="this.closest('.file-upload').querySelector('.text').innerHTML='<strong>'+this.files[0].name+'</strong>'">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Contraseña del Certificado</label>
+      <input type="password" name="password" placeholder="Ingresa la contraseña del archivo .p12">
+    </div>
+    <button type="submit" class="btn btn-primary">Subir Certificado</button>
+  </form>
+</div>
+{% endblock %}

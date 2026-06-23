@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}El G — Admin DIAN{% endblock %}</title>
+  <link rel="stylesheet" href="/admin/static/style.css">
+</head>
+<body>
+{% if not hide_sidebar %}
+<aside class="sidebar">
+  <div class="brand">
+    <h1>El G</h1>
+    <span>Admin DIAN</span>
+  </div>
+  <div class="divider"></div>
+  <nav>
+    <a href="/admin/" class="{% if active == 'dashboard' %}active{% endif %}">
+      📊 Dashboard
+    </a>
+    <a href="/admin/facturas" class="{% if active == 'facturas' %}active{% endif %}">
+      📄 Facturas
+    </a>
+    <a href="/admin/resoluciones" class="{% if active == 'resoluciones' %}active{% endif %}">
+      🔢 Resoluciones
+    </a>
+    <a href="/admin/certificado" class="{% if active == 'certificado' %}active{% endif %}">
+      🔐 Certificado
+    </a>
+    <a href="/admin/configuracion" class="{% if active == 'configuracion' %}active{% endif %}">
+      ⚙ Configuración
+    </a>
+    <a href="/admin/sync-logs" class="{% if active == 'sync-logs' %}active{% endif %}">
+      🔄 Sync Logs
+    </a>
+  </nav>
+  <div class="user-info">
+    <div class="name">{{ usuario }}</div>
+    <div class="email">Administrador</div>
+    <a href="/admin/logout">Cerrar sesión</a>
+  </div>
+</aside>
+{% endif %}
+<div class="main">
+  {% if not hide_sidebar %}
+  <header class="topbar">
+    <h2>{% block heading %}Dashboard{% endblock %}</h2>
+    <span class="env-badge {{ 'test' if environment == 'test' else 'prod' if environment == 'prod' else 'test' }}">
+      {% if environment == 'mock' %}🔬 MOCK{% elif environment == 'test' %}🧪 TEST{% else %}🚀 PROD{% endif %}
+    </span>
+  </header>
+  {% endif %}
+  <div class="content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+</div>
+{% block modals %}{% endblock %}
+</body>
+</html>

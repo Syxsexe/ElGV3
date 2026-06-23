@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}El G — Login{% endblock %}
+{% block heading %}Acceso Administrativo{% endblock %}
+{% block content %}
+<div class="login-page">
+  <div class="login-card">
+    <h1>El G</h1>
+    <p>Panel de Administración DIAN</p>
+    <form method="POST">
+      <div class="form-group">
+        <label>Usuario</label>
+        <input type="text" name="username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" name="password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Ingresar</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

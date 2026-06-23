@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     dian_test_url: str = "https://vpfe-hab.dian.gov.co/WcfDianCustomerServices.svc?wsdl"
     dian_prod_url: str = "https://vpfe.dian.gov.co/WcfDianCustomerServices.svc?wsdl"
     dian_environment: str = "test"
+    dian_mock_url: str = "http://localhost:8081"
 
     # Digital Certificate
     certificate_path: str = ""

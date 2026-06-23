@@ -62,14 +62,19 @@ def generar_xml_factura(
     numero = f"{prefijo}{consecutivo}"
 
     inv = etree.Element(
-        "Invoice",
+        "{" + "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" + "}Invoice",
         attrib={
-            "xmlns": "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
-            "xmlns:cac": CAC.strip("{}"),
-            "xmlns:cbc": CBC.strip("{}"),
-            "xmlns:ext": EXT.strip("{}"),
-            "xmlns:sts": STS.strip("{}"),
-            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation":
+                "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 "
+                "http://docs.oasis-open.org/ubl/os-UBL-2.1/xsd/Invoice.xsd",
+        },
+        nsmap={
+            None: "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
+            "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+            "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+            "ext": "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2",
+            "sts": "dian:gov:co:facturaelectronica:Structures-2-1",
+            "xsi": "http://www.w3.org/2001/XMLSchema-instance",
         },
     )
 

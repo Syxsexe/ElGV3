@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block heading %}Facturas{% endblock %}
+{% set active = "facturas" %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3>Facturas Electrónicas</h3>
+    <form method="GET" class="flex gap-2">
+      <input name="q" placeholder="Buscar NIT o razón social..."
+             value="{{ query or '' }}" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;color:var(--text);font-size:12px;width:220px">
+      <button class="btn btn-ghost btn-sm">Buscar</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Número</th>
+          <th>Cliente</th>
+          <th>NIT</th>
+          <th>Total</th>
+          <th>CUFE</th>
+          <th>Estado</th>
+          <th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in facturas %}
+        <tr>
+          <td><strong>{{ f.prefijo }}{{ f.consecutivo }}</strong></td>
+          <td>{{ f.adquiriente_razon_social[:35] }}</td>
+          <td class="text-muted">{{ f.adquiriente_nit }}</td>
+          <td>${{ "%.0f"|format(f.total) }}</td>
+          <td style="font-family:monospace;font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis">
+            {{ f.cufe[:30] ~ '...' if f.cufe else '—' }}
+          </td>
+          <td>
+            {% set cls = {'pendiente': 'warning', 'enviada': 'info', 'aceptada': 'success', 'rechazada': 'danger', 'contingencia': 'warning'} %}
+            <span class="badge {{ cls.get(f.estado_dian, 'neutral') }}">{{ f.estado_dian }}</span>
+          </td>
+          <td class="text-sm text-muted">{{ f.fecha_emision[:19] }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="7">No hay facturas registradas</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,42 +1,31 @@
 """
 DIAN SOAP Web Service Client
 Comunicación con servicios web de la DIAN para facturación electrónica.
+Soporta modo mock para pruebas locales sin conexión a DIAN real.
 """
 
 import logging
 from typing import Any
 
-import zeep
-from zeep import Client, Settings
-from zeep.transports import Transport
-from requests import Session
-from requests.adapters import HTTPAdapter
-
 from config import settings
 
 logger = logging.getLogger(__name__)
 
+MOCK_BASE_URL = "http://localhost:8081"
+
+
+def _is_mock() -> bool:
+    """Returns True when DIAN_ENVIRONMENT is 'mock'."""
+    return settings.dian_environment == "mock"
+
 
 def _get_service_url() -> str:
     """Returns the appropriate DIAN web service URL based on environment."""
+    if _is_mock():
+        return f"{MOCK_BASE_URL}/WcfDianCustomerServices.svc"
     if settings.dian_environment == "test":
         return settings.dian_test_url
     return settings.dian_prod_url
-
-
-def _create_client() -> Client:
-    """Creates a zeep SOAP client for DIAN web services."""
-    session = Session()
-    adapter = HTTPAdapter(max_retries=3)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-
-    transport = Transport(session=session, timeout=30)
-    client_settings = Settings(strict=False, xml_huge_tree=True)
-
-    wsdl_url = _get_service_url()
-    client = Client(wsdl_url, transport=transport, settings=client_settings)
-    return client
 
 
 def transmitir_factura(xml_signed: bytes, test_set_id: str = "123456") -> dict:
@@ -54,17 +43,30 @@ def transmitir_factura(xml_signed: bytes, test_set_id: str = "123456") -> dict:
         - error_message: str (if rejected)
         - raw_response: str
     """
+    if _is_mock():
+        return _transmitir_mock(xml_signed, test_set_id)
+
+    import zeep
+    from zeep import Client, Settings
+    from zeep.transports import Transport
+    from requests import Session
+    from requests.adapters import HTTPAdapter
+
     try:
-        client = _create_client()
+        session = Session()
+        adapter = HTTPAdapter(max_retries=3)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+        transport = Transport(session=session, timeout=30)
+        client_settings = Settings(strict=False, xml_huge_tree=True)
+        client = Client(_get_service_url(), transport=transport, settings=client_settings)
 
         xml_str = xml_signed.decode("utf-8")
 
-        # DIAN expects base64-encoded XML
         import base64
         xml_b64 = base64.b64encode(xml_signed).decode("utf-8")
 
-        # SendBillSync operation
-        # Parameters depend on the WSDL version
         try:
             response = client.service.SendBillSync(
                 fileName=f"factura_{test_set_id}.xml",
@@ -89,6 +91,97 @@ def transmitir_factura(xml_signed: bytes, test_set_id: str = "123456") -> dict:
             "error_message": f"Error de conexión con DIAN: {e}",
             "raw_response": str(e),
         }
+
+
+def _transmitir_mock(xml_signed: bytes, test_set_id: str = "123456") -> dict:
+    """Send invoice to the local mock DIAN server via HTTP."""
+    import base64
+    import httpx
+
+    xml_b64 = base64.b64encode(xml_signed).decode("utf-8")
+    xml_str = xml_signed.decode("utf-8")
+
+    soap_request = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+               xmlns:wcf="http://wcf.dian.colombia">
+  <soap:Body>
+    <wcf:SendBillSync>
+      <wcf:fileName>factura_{test_set_id}.xml</wcf:fileName>
+      <wcf:contentFile>{xml_b64}</wcf:contentFile>
+      <wcf:testSetId>{test_set_id}</wcf:testSetId>
+    </wcf:SendBillSync>
+  </soap:Body>
+</soap:Envelope>"""
+
+    try:
+        resp = httpx.post(
+            f"{MOCK_BASE_URL}/WcfDianCustomerServices.svc",
+            content=soap_request,
+            headers={"Content-Type": "text/xml; charset=utf-8"},
+            timeout=10,
+        )
+
+        if resp.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Mock server error: HTTP {resp.status_code}",
+                "raw_response": resp.text,
+            }
+
+        # Parse SOAP response
+        return _parse_mock_response(resp.text, xml_str)
+
+    except httpx.RequestError as e:
+        return {
+            "status": "error",
+            "error_message": f"Mock server unreachable: {e}. "
+                             f"Run: python backend/run_mock_dian.py",
+            "raw_response": str(e),
+        }
+
+
+def _parse_mock_response(soap_xml: str, xml_str: str) -> dict:
+    """Parse the mock DIAN SOAP XML response."""
+    from xml.etree import ElementTree as ET
+
+    result = {
+        "status": "error",
+        "cufe": None,
+        "error_message": None,
+        "raw_response": soap_xml,
+    }
+
+    try:
+        root = ET.fromstring(soap_xml)
+        ns = {
+            "soap": "http://schemas.xmlsoap.org/soap/envelope/",
+            "wcf": "http://wcf.dian.colombia",
+        }
+
+        status_code_el = root.find(".//wcf:StatusCode", ns)
+        if status_code_el is None:
+            status_code_el = root.find(".//StatusCode")
+
+        if status_code_el is not None:
+            code = status_code_el.text.strip()
+            if code == "00":
+                result["status"] = "aceptada"
+                uuid_el = root.find(".//wcf:UUID", ns)
+                if uuid_el is None:
+                    uuid_el = root.find(".//UUID")
+                if uuid_el is not None:
+                    result["cufe"] = uuid_el.text.strip()
+            else:
+                result["status"] = "rechazada"
+                desc_el = root.find(".//wcf:StatusDescription", ns)
+                if desc_el is None:
+                    desc_el = root.find(".//StatusDescription")
+                if desc_el is not None:
+                    result["error_message"] = desc_el.text.strip()
+    except ET.ParseError as e:
+        result["error_message"] = f"Error parsing mock response: {e}"
+
+    return result
 
 
 def _parse_response(response: Any, xml_str: str) -> dict:

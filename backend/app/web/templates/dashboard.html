@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block heading %}Dashboard{% endblock %}
+{% set active = "dashboard" %}
+{% block content %}
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Total Facturas</div>
+    <div class="stat-value purple">{{ stats.total_facturas }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Aceptadas</div>
+    <div class="stat-value green">{{ stats.aceptadas }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Rechazadas</div>
+    <div class="stat-value red">{{ stats.rechazadas }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Resoluciones Activas</div>
+    <div class="stat-value orange">{{ stats.resoluciones_activas }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Certificado</div>
+    <div class="stat-value" style="font-size:18px; margin-top:8px;">
+      {% if stats.certificado_configurado %}
+        <span class="badge success">Configurado</span>
+      {% else %}
+        <span class="badge danger">No configurado</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if ultimas_facturas %}
+<div class="card">
+  <div class="card-header"><h3>Últimas Facturas</h3></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Número</th>
+          <th>Cliente</th>
+          <th>Total</th>
+          <th>Estado</th>
+          <th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in ultimas_facturas %}
+        <tr>
+          <td>{{ f.prefijo }}{{ f.consecutivo }}</td>
+          <td>{{ f.adquiriente_razon_social[:40] }}</td>
+          <td>${{ "%.0f"|format(f.total) }}</td>
+          <td>
+            {% set cls = {'pendiente': 'warning', 'enviada': 'info', 'aceptada': 'success', 'rechazada': 'danger', 'contingencia': 'warning'} %}
+            <span class="badge {{ cls.get(f.estado_dian, 'neutral') }}">{{ f.estado_dian }}</span>
+          </td>
+          <td class="text-sm text-muted">{{ f.fecha_emision[:19] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block heading %}Resoluciones DIAN{% endblock %}
+{% set active = "resoluciones" %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3>Resoluciones Registradas</h3>
+    <button class="btn btn-primary btn-sm" onclick="abrirModal()">+ Nueva</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Prefijo</th>
+          <th>Tipo</th>
+          <th>Rango</th>
+          <th>Consecutivo</th>
+          <th>Vence</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in resoluciones %}
+        <tr>
+          <td><strong>{{ r.prefijo }}</strong></td>
+          <td><span class="badge info">{{ r.tipo_documento }}</span></td>
+          <td>{{ r.rango }}</td>
+          <td>{{ r.consecutivo_actual }}</td>
+          <td>{{ r.fecha_vencimiento }}</td>
+          <td>
+            {% if r.vencida %}
+              <span class="status-dot vencida"></span> Vencida
+            {% elif r.agotado %}
+              <span class="status-dot inactive"></span> Agotada
+            {% elif r.activa %}
+              <span class="status-dot active"></span> Activa
+            {% else %}
+              <span class="status-dot inactive"></span> Inactiva
+            {% endif %}
+          </td>
+          <td>
+            {% if r.activa and not r.vencida and not r.agotado %}
+            <form method="POST" action="/admin/resoluciones/{{ r.id }}/desactivar" style="display:inline">
+              <button class="btn btn-ghost btn-sm">Desactivar</button>
+            </form>
+            {% endif %}
+            <button class="btn btn-ghost btn-sm" onclick="editarResolucion('{{ r.id }}')">Editar</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="7">No hay resoluciones registradas</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Nueva resolución -->
+<div class="modal-backdrop" id="modalNueva">
+  <div class="modal">
+    <h3>Nueva Resolución</h3>
+    <form method="POST" action="/admin/resoluciones/crear">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Prefijo</label>
+          <input name="prefijo" maxlength="4" required placeholder="FEV">
+        </div>
+        <div class="form-group">
+          <label>Tipo Documento</label>
+          <select name="tipo_documento" required>
+            <option value="FEV">FEV — Factura Electrónica</option>
+            <option value="NC">NC — Nota Crédito</option>
+            <option value="ND">ND — Nota Débito</option>
+            <option value="DEE_POS">DEE POS — Tiquete Electrónico</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Rango Inicio</label>
+          <input type="number" name="rango_inicio" min="1" required>
+        </div>
+        <div class="form-group">
+          <label>Rango Fin</label>
+          <input type="number" name="rango_fin" min="1" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Fecha Autorización</label>
+          <input type="date" name="fecha_autorizacion" required>
+        </div>
+        <div class="form-group">
+          <label>Fecha Vencimiento</label>
+          <input type="date" name="fecha_vencimiento" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Clave Técnica</label>
+        <input name="clave_tecnica" required placeholder="UUID de la clave técnica asignada por DIAN">
+        <div class="help">UUID de la clave técnica emitida por DIAN para esta resolución</div>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-ghost" onclick="cerrarModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear Resolución</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function abrirModal() { document.getElementById('modalNueva').classList.add('open'); }
+function cerrarModal() { document.getElementById('modalNueva').classList.remove('open'); }
+function editarResolucion(id) { alert('Editar resolución ' + id + ' — próximamente'); }
+</script>
+{% endblock %}

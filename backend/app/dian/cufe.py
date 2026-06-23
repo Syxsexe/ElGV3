@@ -109,7 +109,7 @@ def generar_cufe_dee_pos(
     For DEE POS, when no buyer NIT, DIAN standard uses "222222222222" as default.
     """
     return generar_cufe(
-        numero_documento=numero_documento,
+        numero_factura=numero_documento,
         fecha_emision=fecha_emision,
         nit_emisor=nit_emisor,
         nit_adquiriente=nit_adquiriente,

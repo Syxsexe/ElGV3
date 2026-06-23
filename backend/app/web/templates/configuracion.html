@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block heading %}Configuración del Emisor{% endblock %}
+{% set active = "configuracion" %}
+{% block content %}
+<div class="card">
+  <div class="card-header"><h3>Datos del Contribuyente</h3></div>
+  <form method="POST">
+    <div class="form-row">
+      <div class="form-group">
+        <label>NIT</label>
+        <input name="emisor_nit" value="{{ config.emisor_nit or '' }}" placeholder="1234567890">
+      </div>
+      <div class="form-group">
+        <label>Razón Social</label>
+        <input name="emisor_razon_social" value="{{ config.emisor_razon_social or '' }}" placeholder="El G Tienda TCG">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Nombre Comercial</label>
+      <input name="emisor_nombre_comercial" value="{{ config.emisor_nombre_comercial or '' }}" placeholder="El G">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Dirección</label>
+        <input name="emisor_direccion" value="{{ config.emisor_direccion or '' }}" placeholder="Cra 1 # 2-3">
+      </div>
+      <div class="form-group">
+        <label>Municipio (código Dane)</label>
+        <input name="emisor_municipio" value="{{ config.emisor_municipio or '' }}" placeholder="05001">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Departamento (código Dane)</label>
+        <input name="emisor_departamento" value="{{ config.emisor_departamento or '' }}" placeholder="05">
+      </div>
+      <div class="form-group">
+        <label>Teléfono</label>
+        <input name="emisor_telefono" value="{{ config.emisor_telefono or '' }}" placeholder="3001234567">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" name="emisor_email" value="{{ config.emisor_email or '' }}" placeholder="facturacion@elg.com">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Régimen Fiscal</label>
+        <input name="regmen_fiscal" value="{{ config.regmen_fiscal or '48-20' }}" placeholder="48-20">
+        <div class="help">Código DIAN del régimen fiscal (ej: 48-20)</div>
+      </div>
+      <div class="form-group">
+        <label>Ambiente DIAN</label>
+        <select name="dian_environment">
+          <option value="mock" {% if config.dian_environment == 'mock' %}selected{% endif %}>🔬 Mock Local (sin conexión DIAN)</option>
+          <option value="test" {% if config.dian_environment == 'test' %}selected{% endif %}>🧪 Habilitación (Pruebas DIAN)</option>
+          <option value="prod" {% if config.dian_environment == 'prod' %}selected{% endif %}>🚀 Producción</option>
+        </select>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-2">Guardar Configuración</button>
+  </form>
+</div>
+{% endblock %}

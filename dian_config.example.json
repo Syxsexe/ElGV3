@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy this file to dian_config.json and fill in your backend credentials",
+  "backend_url": "http://localhost:8000",
+  "client_id": "your-pos-client-id",
+  "client_secret": "your-pos-client-secret"
+}

@@ -6,6 +6,101 @@ from tkinter import ttk, messagebox
 import auth
 from ui.base import FrameBase, COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_NAV, FONT_KPI
 
+
+QR_DEFAULT_SIZE = "90x90"
+
+
+class DialogDianStatus(tk.Toplevel):
+    """Shows DIAN electronic invoice status after a sale."""
+
+    def __init__(self, parent, result: dict):
+        super().__init__(parent)
+        self.title("Facturación Electrónica DIAN")
+        self.configure(bg=COLORS["bg"])
+        self.resizable(False, False)
+
+        status = result.get("status", "error")
+        numero = result.get("numero", "")
+        cufe = result.get("cufe", "")
+        qr_b64 = result.get("qr", "")
+        mensaje = result.get("mensaje_dian") or result.get("mensaje") or ""
+
+        card = tk.Frame(self, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"],
+                        highlightthickness=1)
+        card.pack(padx=20, pady=20, ipadx=16, ipady=16)
+
+        if status == "aceptada":
+            color = COLORS["success"]
+            icon_text = "✓"
+            title_text = "Factura Electrónica Aceptada por DIAN"
+        elif status == "contingencia":
+            color = COLORS["warning"]
+            icon_text = "⚠"
+            title_text = "Factura en Contingencia"
+        else:
+            color = COLORS["danger"]
+            icon_text = "✗"
+            title_text = "Error en Factura Electrónica"
+
+        tk.Label(card, text=icon_text, font=("Segoe UI", 36),
+                 bg=COLORS["surface"], fg=color).pack(pady=(10, 4))
+        tk.Label(card, text=title_text, font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=color).pack()
+
+        if numero:
+            tk.Label(card, text=f"N° {numero}", font=FONT_SUB,
+                     bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(8, 0))
+
+        if cufe:
+            cufe_frame = tk.Frame(card, bg=COLORS["surface2"],
+                                  highlightbackground=COLORS["border"],
+                                  highlightthickness=1)
+            cufe_frame.pack(fill="x", padx=10, pady=8, ipadx=6, ipady=6)
+            tk.Label(cufe_frame, text="CUFE", font=FONT_SMALL,
+                     bg=COLORS["surface2"], fg=COLORS["text_muted"]).pack(anchor="w")
+            lbl_cufe = tk.Label(cufe_frame, text=cufe, font=("Courier", 8),
+                                bg=COLORS["surface2"], fg=COLORS["text"],
+                                wraplength=320, justify="left")
+            lbl_cufe.pack(fill="x")
+            from modules.validaciones import copiar_al_portapapeles
+            tk.Button(cufe_frame, text="Copiar CUFE", font=FONT_SMALL,
+                      bg=COLORS["surface2"], fg=COLORS["accent"],
+                      relief="flat", cursor="hand2",
+                      command=lambda: copiar_al_portapapeles(cufe)).pack(pady=(4, 0))
+
+        if qr_b64:
+            try:
+                import base64, io, tkinter as tk
+                from PIL import Image, ImageTk
+                img_data = base64.b64decode(qr_b64)
+                img = Image.open(io.BytesIO(img_data))
+                img = img.resize((90, 90), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                lbl_qr = tk.Label(card, image=photo, bg=COLORS["surface"])
+                lbl_qr.image = photo
+                lbl_qr.pack(pady=8)
+            except Exception:
+                pass
+
+        if mensaje:
+            tk.Label(card, text=mensaje, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"],
+                     wraplength=320).pack(pady=(0, 8))
+
+        tk.Button(card, text="Cerrar", font=FONT_BOLD,
+                  bg=COLORS["accent"], fg=COLORS["text"],
+                  relief="flat", cursor="hand2",
+                  command=self.destroy).pack(pady=(8, 4), ipadx=20, ipady=6)
+
+        self.update_idletasks()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        x = (self.winfo_screenwidth() - w) // 2
+        y = (self.winfo_screenheight() - h) // 2
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.grab_set()
+
+
 class FrameVentas(FrameBase):
     def __init__(self, parent):
         super().__init__(parent, "Nueva Venta", "Registra una venta de tienda o cocina")
@@ -93,7 +188,7 @@ class FrameVentas(FrameBase):
                                    bg=COLORS["surface"], fg=COLORS["accent"])
         self.lbl_total.pack(pady=(0, 8))
 
-        # Confirmar — el método de pago se elige en el diálogo
+        # Confirmar
         self._btn_primary(right, "✓ Confirmar Venta",
                           self._confirmar_venta).pack(fill="x", padx=16, ipady=10)
 
@@ -109,10 +204,10 @@ class FrameVentas(FrameBase):
         self.combo_cliente.pack(fill="x", pady=(4, 8), ipady=4)
         self.combo_cliente.bind("<<ComboboxSelected>>", lambda e: None)
 
-        self._emitir_factura = tk.BooleanVar(value=False)
+        self._emitir_factura = tk.BooleanVar(value=True)
         tk.Checkbutton(
             cliente_frame,
-            text="Emitir factura",
+            text="Emitir factura electrónica",
             variable=self._emitir_factura,
             font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["text"],
@@ -129,6 +224,26 @@ class FrameVentas(FrameBase):
                   bg=COLORS["surface"], fg=COLORS["text_muted"],
                   relief="flat", cursor="hand2",
                   command=self._limpiar_carrito).pack(pady=(8, 16))
+
+        # ── Estado DIAN ───────────────────────────────────────────────────────
+        dian_frame = tk.Frame(right, bg=COLORS["surface"])
+        dian_frame.pack(fill="x", padx=16, pady=(0, 16))
+        self.lbl_dian_status = tk.Label(
+            dian_frame, text="", font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text_muted"]
+        )
+        self.lbl_dian_status.pack()
+        self._update_dian_status()
+
+    def _update_dian_status(self):
+        from modules.dian_client import is_configured
+        if is_configured():
+            self.lbl_dian_status.config(
+                text="✓ DIAN configurado", fg=COLORS["success"])
+        else:
+            self.lbl_dian_status.config(
+                text="⚠ DIAN no configurado. Ir a Documentos Fiscales",
+                fg=COLORS["warning"])
 
     def _clear_placeholder(self):
         if self.entry_buscar.get() == "Buscar producto...":
@@ -214,14 +329,20 @@ class FrameVentas(FrameBase):
     def _procesar_pago(self, pagos: list):
         from modules.ventas import registrar_venta
         from modules.caja import formatear_pesos
+        from modules.fiscal_documents import preparar_venta_para_dian
+        from modules.sync import get_sync_manager
+        from modules.dian_client import is_configured
+
+        cliente_id = self._get_cliente_id()
+        emitir_factura = self._emitir_factura.get()
 
         try:
             venta_id = registrar_venta(
                 self.carrito,
                 pagos=pagos,
                 sesion_id=self.sesion_id,
-                cliente_id=self._get_cliente_id(),
-                emitir_factura=self._emitir_factura.get()
+                cliente_id=cliente_id,
+                emitir_factura=emitir_factura
             )
             total_str = formatear_pesos(sum(p["monto"] for p in pagos))
             metodos   = " + ".join(p["metodo"] for p in pagos)
@@ -229,13 +350,60 @@ class FrameVentas(FrameBase):
             self._buscar()
             self._ultimo_venta_id = venta_id
 
-            # Preguntar si desea imprimir ticket
-            if messagebox.askyesno(
-                "Venta registrada",
-                f"Venta #{venta_id} registrada\nTotal: {total_str}\nMetodo: {metodos}\n\n¿Imprimir ticket?"
-            ):
-                from ui.ticket_dialog import mostrar_ticket_venta
-                mostrar_ticket_venta(self, venta_id)
+            # ── DIAN Sync ─────────────────────────────────────────────────
+            dian_result = {"status": "no_configurado"}
+            if is_configured() and emitir_factura:
+                try:
+                    from database import get_connection
+                    conn = get_connection()
+                    venta_data = dict(conn.execute(
+                        "SELECT * FROM ventas WHERE id = ?", (venta_id,)
+                    ).fetchone())
+                    detalle = conn.execute(
+                        "SELECT * FROM detalle_venta WHERE venta_id = ?", (venta_id,)
+                    ).fetchall()
+                    conn.close()
+                    venta_data["detalle"] = [dict(d) for d in detalle]
+                    venta_data["pagos"] = pagos
+
+                    # Get customer info
+                    cliente = None
+                    if cliente_id:
+                        from modules.clientes import obtener_cliente
+                        cliente = obtener_cliente(cliente_id)
+
+                    dian_payload = preparar_venta_para_dian(venta_data, cliente)
+
+                    import asyncio
+                    sync_mgr = get_sync_manager()
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+
+                    if loop.is_running():
+                        dian_result = {"status": "pendiente", "mensaje": "Sincronización en cola"}
+                    else:
+                        dian_result = loop.run_until_complete(
+                            sync_mgr.process_venta(dian_payload)
+                        )
+                except Exception as e:
+                    dian_result = {"status": "error", "error": str(e)}
+
+            # ── Show DIAN status dialog if applicable ────────────────────
+            if emitir_factura and dian_result.get("status") != "no_configurado":
+                DialogDianStatus(self, dian_result)
+
+            # ── Ticket ────────────────────────────────────────────────────
+            if dian_result.get("status") in ("aceptada", "contingencia", "no_configurado"):
+                if messagebox.askyesno(
+                    "Venta registrada",
+                    f"Venta #{venta_id}\nTotal: {total_str}\nMétodo: {metodos}\n\n¿Imprimir ticket?"
+                ):
+                    from ui.ticket_dialog import mostrar_ticket_venta
+                    mostrar_ticket_venta(self, venta_id)
+
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

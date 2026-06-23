@@ -57,3 +57,13 @@ htmlcov/
 # Node (if used)
 node_modules/
 npm-debug.log
+.aider*
+
+# Sync runtime files
+sync_queue.json
+
+# DIAN client config (contains credentials)
+dian_config.json
+
+# Backend runtime
+backend/.env

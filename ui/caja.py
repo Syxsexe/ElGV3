@@ -270,7 +270,6 @@ class FrameCaja(FrameBase):
             except ValueError:
                 denominaciones[denom] = 0
 
-        # Incluir saldo digital contado
         denominaciones["digital"] = leer_entero(self.entry_contado_digital, default=0)
 
         notas = self.txt_notas.get("1.0", "end").strip()
@@ -291,10 +290,43 @@ class FrameCaja(FrameBase):
                 f"  Diferencia: {fmt_dif(dif_ef)}\n\n"
                 f"DIGITAL\n"
                 f"  Esperado:  {formatear_pesos(resumen['esperado_digital'])}\n"
-                f"  Contado:   {formatear_pesos(resumen['monto_contado_digital'])}\n"
+                f"  Contado:   {formatear_pesos(resumen['esperado_digital'])}\n"
                 f"  Diferencia: {fmt_dif(dif_dig)}"
             )
-            messagebox.showinfo("Cierre de caja", msg)
+
+            # ── Sincronizar DEE POS con backend ─────────────────────────────
+            from modules.dian_client import is_configured
+            from modules.sync import get_sync_manager
+            dian_msg = ""
+            if is_configured():
+                try:
+                    sesion_data = {
+                        "sesion_id": resumen["sesion_id"],
+                        "monto_base": resumen.get("monto_base", 0),
+                        "total_ventas": resumen.get("total_ventas", 0),
+                        "total_efectivo": resumen.get("total_efectivo", 0),
+                        "total_digital": resumen.get("total_digital", 0),
+                        "denominaciones": resumen.get("denominaciones", []),
+                        "notas": notas,
+                    }
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    if not loop.is_running():
+                        sync_result = loop.run_until_complete(
+                            get_sync_manager().process_cierre_caja(sesion_data)
+                        )
+                        if sync_result.get("status") == "sincronizado":
+                            dian_msg = "\n\n✓ DEE POS transmitido a DIAN"
+                        else:
+                            dian_msg = "\n\n⚠ DEE POS en cola para transmisión"
+                except Exception:
+                    dian_msg = "\n\n⚠ No se pudo sincronizar con DIAN"
+
+            messagebox.showinfo("Cierre de caja", msg + dian_msg)
             self.winfo_toplevel()._mostrar_caja()
         except Exception as e:
             messagebox.showerror("Error", str(e))

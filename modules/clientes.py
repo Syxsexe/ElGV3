@@ -51,7 +51,10 @@ def crear_cliente(
     documento: str,
     direccion: str = None,
     telefono: str = None,
-    email: str = None
+    email: str = None,
+    regimen: str = None,
+    responsabilidad_fiscal: str = None,
+    municipio: str = None,
 ) -> int:
     """Crea un cliente nuevo y retorna su ID."""
     nombre = nombre.strip()
@@ -70,10 +73,12 @@ def crear_cliente(
         cur = conn.execute(
             """
             INSERT INTO clientes
-                (nombre, tipo_documento, documento, direccion, telefono, email)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (nombre, tipo_documento, documento, direccion, telefono, email,
+                 regimen, responsabilidad_fiscal, municipio)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (nombre, tipo_documento, documento, direccion, telefono, email)
+            (nombre, tipo_documento, documento, direccion, telefono, email,
+             regimen, responsabilidad_fiscal, municipio)
         )
         conn.commit()
         return cur.lastrowid
@@ -85,7 +90,8 @@ def editar_cliente(cliente_id: int, **campos) -> bool:
     """Edita los datos de un cliente."""
     permitidos = {
         "nombre", "tipo_documento", "documento",
-        "direccion", "telefono", "email", "activo"
+        "direccion", "telefono", "email", "activo",
+        "regimen", "responsabilidad_fiscal", "municipio",
     }
     campos_validos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos_validos:

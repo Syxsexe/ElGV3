@@ -12,7 +12,7 @@ from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SM
 from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
-    FrameClientes, FrameProveedores,
+    FrameClientes, FrameProveedores, FrameFiscal,
 )
 
 
@@ -153,6 +153,7 @@ class MainWindow(tk.Tk):
             ("Inventario",  self._mostrar_inventario),
             ("Proveedores", self._mostrar_proveedores),
             ("Caja",        self._mostrar_caja),
+            ("Doc. Fiscales DIAN", self._mostrar_fiscal),
         ]
         if sesion["rol"] == "admin":
             nav_items += [
@@ -277,6 +278,10 @@ class MainWindow(tk.Tk):
     def _mostrar_caja(self):
         self._nav_click("Caja", lambda: None)
         self._cambiar_frame(FrameCaja)
+
+    def _mostrar_fiscal(self):
+        self._nav_click("Doc. Fiscales DIAN", lambda: None)
+        self._cambiar_frame(FrameFiscal)
 
     def _mostrar_reportes(self):
         self._nav_click("Reportes", lambda: None)

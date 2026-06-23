@@ -1,3 +1,4 @@
 openpyxl
 pyinstaller
 pywin32; sys_platform == "win32"
+httpx

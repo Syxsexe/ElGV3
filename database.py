@@ -272,6 +272,32 @@ def crear_tablas():
     if "cliente_id" not in columnas_ventas:
         conn.execute("ALTER TABLE ventas ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)")
 
+    # Columnas fiscales para clientes (backward compatibility)
+    columnas_clientes = [row[1] for row in conn.execute("PRAGMA table_info(clientes)").fetchall()]
+    fiscal_cols = {
+        "regimen": "TEXT",
+        "responsabilidad_fiscal": "TEXT",
+        "municipio": "TEXT",
+    }
+    for col, tipo in fiscal_cols.items():
+        if col not in columnas_clientes:
+            conn.execute(f"ALTER TABLE clientes ADD COLUMN {col} {tipo}")
+
+    # Columnas DIAN para facturas (backward compatibility)
+    columnas_facturas = [row[1] for row in conn.execute("PRAGMA table_info(facturas)").fetchall()]
+    factura_cols = {
+        "dian_status": "TEXT DEFAULT 'pendiente'",
+        "dian_cufe": "TEXT",
+        "dian_qr": "TEXT",
+        "dian_uuid": "TEXT",
+        "dian_mensaje": "TEXT",
+        "dian_fecha_transmision": "TEXT",
+    }
+    for col, tipo in factura_cols.items():
+        col_name = col.split()[0]  # extract column name before any DEFAULT
+        if col_name not in columnas_facturas:
+            conn.execute(f"ALTER TABLE facturas ADD COLUMN {col} {tipo}")
+
     conn.commit()
     conn.close()
 

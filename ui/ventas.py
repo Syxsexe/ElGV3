@@ -106,9 +106,11 @@ class FrameVentas(FrameBase):
         super().__init__(parent, "Nueva Venta", "Registra una venta de tienda o cocina")
         from modules.ventas import Carrito
         from modules.caja import get_sesion_activa
-        self.carrito   = Carrito()
-        self.sesion_id = get_sesion_activa()
-        self.sesion_id = self.sesion_id["id"] if self.sesion_id else None
+        self.carrito           = Carrito()
+        self.sesion_id         = get_sesion_activa()
+        self.sesion_id         = self.sesion_id["id"] if self.sesion_id else None
+        self._cliente_id       = None   # cliente vinculado (None = Consumidor Final)
+        self._clientes_drop_db = []     # resultados de búsqueda de cliente
         self._build()
 
     def _build(self):
@@ -157,82 +159,152 @@ class FrameVentas(FrameBase):
 
         self._buscar()
 
-        # ── Panel derecho: carrito ────────────────────────────────────────────
-        right = tk.Frame(main, bg=COLORS["surface"],
-                         highlightbackground=COLORS["border"],
-                         highlightthickness=1, width=300)
-        right.pack(side="right", fill="y")
-        right.pack_propagate(False)
+        # ── Panel derecho: carrito (scrollable) ──────────────────────────────
+        right_outer = tk.Frame(main, bg=COLORS["border"],
+                               highlightbackground=COLORS["border"],
+                               highlightthickness=1, width=334)
+        right_outer.pack(side="right", fill="y")
+        right_outer.pack_propagate(False)
 
+        right_cv = tk.Canvas(right_outer, bg=COLORS["surface"],
+                              highlightthickness=0, bd=0, width=332)
+        right_sb = tk.Scrollbar(right_outer, orient="vertical", command=right_cv.yview)
+        right_cv.configure(yscrollcommand=right_sb.set)
+        right_sb.pack(side="right", fill="y")
+        right_cv.pack(side="left", fill="both", expand=True)
+
+        right = tk.Frame(right_cv, bg=COLORS["surface"])
+        _win = right_cv.create_window((0, 0), window=right, anchor="nw")
+        right_cv.bind("<Configure>", lambda e: right_cv.itemconfig(_win, width=e.width))
+        right.bind("<Configure>", lambda e: right_cv.configure(
+            scrollregion=right_cv.bbox("all")))
+
+        def _scroll_right(e):
+            try:
+                rx = right_outer.winfo_rootx()
+                if not (rx <= e.x_root <= rx + right_outer.winfo_width()):
+                    return
+            except Exception:
+                return
+            if e.num == 4:   right_cv.yview_scroll(-1, "units")
+            elif e.num == 5: right_cv.yview_scroll(1,  "units")
+            else:            right_cv.yview_scroll(int(-1*(e.delta/120)), "units")
+        right_cv.bind_all("<MouseWheel>", _scroll_right)
+        right_cv.bind_all("<Button-4>",   _scroll_right)
+        right_cv.bind_all("<Button-5>",   _scroll_right)
+
+        # ── Título ────────────────────────────────────────────────────────────
         tk.Label(right, text="Carrito", font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(16, 8))
+                 bg=COLORS["surface"], fg=COLORS["text"]).pack(
+                     anchor="w", padx=16, pady=(16, 8))
 
-        # Lista carrito
+        # ── Lista carrito (altura fija — no expande) ──────────────────────────
         cart_wrap = tk.Frame(right, bg=COLORS["surface"])
-        cart_wrap.pack(fill="both", expand=True, padx=8)
-        self.tree_carrito = self._tabla(cart_wrap, ("Ítem", "Cant", "Subtotal"), alto=10)
-        self.tree_carrito.column("Ítem",     width=120, anchor="w")
-        self.tree_carrito.column("Cant",     width=40)
-        self.tree_carrito.column("Subtotal", width=90)
+        cart_wrap.pack(fill="x", padx=8)
+        self.tree_carrito = self._tabla(cart_wrap, ("Ítem", "Cant", "Subtotal"), alto=9)
+        self.tree_carrito.column("Ítem",     width=145, anchor="w")
+        self.tree_carrito.column("Cant",     width=45,  anchor="center")
+        self.tree_carrito.column("Subtotal", width=100, anchor="e")
+        self.tree_carrito.bind("<<TreeviewSelect>>", lambda e: self._actualizar_qty_label())
 
-        # Quitar ítem
+        # ── Controles de cantidad ─────────────────────────────────────────────
+        qty_row = tk.Frame(right, bg=COLORS["surface"])
+        qty_row.pack(fill="x", padx=16, pady=(8, 0))
+
+        tk.Button(
+            qty_row, text="−", font=("Segoe UI", 14, "bold"),
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            activebackground=COLORS["border"], activeforeground=COLORS["text"],
+            relief="flat", cursor="hand2", width=3,
+            command=self._decrementar_qty,
+        ).pack(side="left")
+
+        self.lbl_qty = tk.Label(
+            qty_row, text="—", font=FONT_BOLD,
+            bg=COLORS["surface"], fg=COLORS["text"], width=8,
+        )
+        self.lbl_qty.pack(side="left", expand=True)
+
+        tk.Button(
+            qty_row, text="+", font=("Segoe UI", 14, "bold"),
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            activebackground=COLORS["border"], activeforeground=COLORS["text"],
+            relief="flat", cursor="hand2", width=3,
+            command=self._incrementar_qty,
+        ).pack(side="right")
+
+        # ── Quitar ítem ───────────────────────────────────────────────────────
         self._btn_danger(right, "✕ Quitar seleccionado",
-                         self._quitar_item).pack(fill="x", padx=16, pady=(8, 0))
+                         self._quitar_item).pack(fill="x", padx=16, pady=(6, 0))
 
-        sep = tk.Frame(right, bg=COLORS["border"], height=1)
-        sep.pack(fill="x", padx=16, pady=12)
+        tk.Frame(right, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=12)
 
-        # Total
+        # ── Total ─────────────────────────────────────────────────────────────
         self.lbl_total = tk.Label(right, text="Total: $0",
-                                   font=("Segoe UI", 16, "bold"),
+                                   font=("Segoe UI", 18, "bold"),
                                    bg=COLORS["surface"], fg=COLORS["accent"])
         self.lbl_total.pack(pady=(0, 8))
 
-        # Confirmar
+        # ── Confirmar ─────────────────────────────────────────────────────────
         self._btn_primary(right, "✓ Confirmar Venta",
                           self._confirmar_venta).pack(fill="x", padx=16, ipady=10)
 
-        # Cliente y factura
-        cliente_frame = tk.Frame(right, bg=COLORS["surface"])
-        cliente_frame.pack(fill="x", padx=16, pady=(16, 0))
+        tk.Frame(right, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=12)
 
-        tk.Label(cliente_frame, text="Cliente", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
-        self.combo_cliente = ttk.Combobox(
-            cliente_frame, font=FONT_SMALL, state="readonly"
+        # ── Selector de cliente ───────────────────────────────────────────────
+        tk.Label(right, text="Cliente (opcional)", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+
+        self.entry_buscar_cliente = self._input(right)
+        self.entry_buscar_cliente.pack(fill="x", padx=16, pady=(4, 0), ipady=5)
+        self.entry_buscar_cliente.bind("<KeyRelease>", self._buscar_clientes_venta)
+        self.entry_buscar_cliente.bind(
+            "<FocusOut>", lambda e: self.after(150, self._ocultar_drop_cli))
+
+        drop_wrap = tk.Frame(right, bg=COLORS["surface"])
+        drop_wrap.pack(fill="x", padx=16)
+        self.lst_clientes_venta = tk.Listbox(
+            drop_wrap, font=FONT_SMALL, height=4,
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            selectbackground=COLORS["accent"],
+            relief="flat", activestyle="none",
+            highlightthickness=1, highlightbackground=COLORS["border"],
         )
-        self.combo_cliente.pack(fill="x", pady=(4, 8), ipady=4)
-        self.combo_cliente.bind("<<ComboboxSelected>>", lambda e: None)
+        self.lst_clientes_venta.bind("<<ListboxSelect>>", self._seleccionar_cliente_venta)
+        # Oculto hasta que el usuario escriba
+
+        self.lbl_cliente_venta = tk.Label(
+            right, text="Sin cliente — Consumidor Final",
+            font=("Segoe UI", 8), bg=COLORS["surface"],
+            fg=COLORS["text_dim"], anchor="w",
+        )
+        self.lbl_cliente_venta.pack(fill="x", padx=16, pady=(4, 0))
 
         self._emitir_factura = tk.BooleanVar(value=True)
         tk.Checkbutton(
-            cliente_frame,
-            text="Emitir factura electrónica",
+            right, text="Emitir factura DIAN",
             variable=self._emitir_factura,
             font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["text"],
-            selectcolor=COLORS["surface2"], activebackground=COLORS["surface"],
-            activeforeground=COLORS["text"], cursor="hand2"
-        ).pack(anchor="w")
+            selectcolor=COLORS["surface2"],
+            activebackground=COLORS["surface"],
+            activeforeground=COLORS["text"], cursor="hand2",
+        ).pack(anchor="w", padx=16, pady=(6, 0))
 
-        self._btn_primary(right, "Actualizar clientes", self._cargar_clientes).pack(
-            fill="x", padx=16, pady=(8, 0), ipady=8)
+        tk.Frame(right, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=12)
 
-        self._cargar_clientes()
-
+        # ── Limpiar ───────────────────────────────────────────────────────────
         tk.Button(right, text="Limpiar carrito", font=FONT_SMALL,
                   bg=COLORS["surface"], fg=COLORS["text_muted"],
                   relief="flat", cursor="hand2",
-                  command=self._limpiar_carrito).pack(pady=(8, 16))
+                  command=self._limpiar_carrito).pack(pady=(0, 6))
 
         # ── Estado DIAN ───────────────────────────────────────────────────────
-        dian_frame = tk.Frame(right, bg=COLORS["surface"])
-        dian_frame.pack(fill="x", padx=16, pady=(0, 16))
         self.lbl_dian_status = tk.Label(
-            dian_frame, text="", font=FONT_SMALL,
-            bg=COLORS["surface"], fg=COLORS["text_muted"]
+            right, text="", font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text_muted"],
         )
-        self.lbl_dian_status.pack()
+        self.lbl_dian_status.pack(pady=(0, 16))
         self._update_dian_status()
 
     def _update_dian_status(self):
@@ -303,6 +375,8 @@ class FrameVentas(FrameBase):
                 formatear_pesos(item["subtotal"])
             ))
         self.lbl_total.config(text=f"Total: {formatear_pesos(self.carrito.total())}")
+        if not self.carrito.get_items():
+            self.lbl_qty.config(text="—")
 
     def _quitar_item(self):
         sel = self.tree_carrito.selection()
@@ -407,19 +481,107 @@ class FrameVentas(FrameBase):
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    def _cargar_clientes(self):
-        from modules.clientes import listar_clientes
+    # ── Búsqueda de cliente ───────────────────────────────────────────────────
 
-        clientes = listar_clientes(solo_activos=False)
-        opciones = ["-- Consumidor Final --"]
-        self._cliente_ids = {"-- Consumidor Final --": None}
-        for c in clientes:
-            texto = f"{c['id']} - {c['nombre']} ({c['tipo_documento']})"
-            opciones.append(texto)
-            self._cliente_ids[texto] = c["id"]
-        self.combo_cliente["values"] = opciones
-        self.combo_cliente.set(opciones[0])
+    def _buscar_clientes_venta(self, event=None):
+        from modules.clientes import buscar_clientes
+        texto = self.entry_buscar_cliente.get().strip()
+        self._cliente_id = None
+        self.lbl_cliente_venta.config(
+            text="Sin cliente — Consumidor Final", fg=COLORS["text_dim"])
+
+        self.lst_clientes_venta.delete(0, "end")
+        self._clientes_drop_db = []
+
+        if not texto:
+            self._ocultar_drop_cli()
+            return
+
+        resultados = buscar_clientes(texto)[:6]
+        if not resultados:
+            self._ocultar_drop_cli()
+            return
+
+        self._clientes_drop_db = resultados
+        for c in resultados:
+            doc = f"{c['tipo_documento']} {c['documento']}" if c.get("documento") else ""
+            self.lst_clientes_venta.insert("end", f"  {c['nombre']}  —  {doc}")
+        self.lst_clientes_venta.pack(fill="x")
+
+    def _seleccionar_cliente_venta(self, event=None):
+        idx = self.lst_clientes_venta.curselection()
+        if not idx or idx[0] >= len(self._clientes_drop_db):
+            return
+        c = self._clientes_drop_db[idx[0]]
+        self._cliente_id = c["id"]
+        self.entry_buscar_cliente.delete(0, "end")
+        self.entry_buscar_cliente.insert(0, c["nombre"])
+        doc = f"{c['tipo_documento']} {c['documento']}" if c.get("documento") else ""
+        self.lbl_cliente_venta.config(
+            text=f"✓  Vinculado — {doc}" if doc else "✓  Cliente vinculado",
+            fg=COLORS["success"],
+        )
+        self._ocultar_drop_cli()
+
+    def _ocultar_drop_cli(self):
+        self.lst_clientes_venta.pack_forget()
 
     def _get_cliente_id(self):
-        seleccionado = self.combo_cliente.get()
-        return self._cliente_ids.get(seleccionado)
+        return self._cliente_id
+
+    # ── Controles +/- carrito ─────────────────────────────────────────────────
+
+    def _actualizar_qty_label(self):
+        sel = self.tree_carrito.selection()
+        if not sel:
+            self.lbl_qty.config(text="—")
+            return
+        idx   = self.tree_carrito.index(sel[0])
+        items = self.carrito.get_items()
+        if 0 <= idx < len(items):
+            cant = items[idx]["cantidad"]
+            # Mostrar entero si no tiene decimales
+            texto = str(int(cant)) if cant == int(cant) else str(cant)
+            self.lbl_qty.config(text=f"×{texto}")
+        else:
+            self.lbl_qty.config(text="—")
+
+    def _incrementar_qty(self):
+        sel = self.tree_carrito.selection()
+        if not sel:
+            return
+        idx   = self.tree_carrito.index(sel[0])
+        items = self.carrito.get_items()
+        if 0 <= idx < len(items):
+            nueva = items[idx]["cantidad"] + 1
+            try:
+                self.carrito.cambiar_cantidad(idx, nueva)
+            except ValueError as e:
+                messagebox.showwarning("Stock insuficiente", str(e))
+                return
+            self._actualizar_carrito()
+            # Re-seleccionar la misma fila
+            children = self.tree_carrito.get_children()
+            if idx < len(children):
+                self.tree_carrito.selection_set(children[idx])
+                self.tree_carrito.focus(children[idx])
+            self._actualizar_qty_label()
+
+    def _decrementar_qty(self):
+        sel = self.tree_carrito.selection()
+        if not sel:
+            return
+        idx   = self.tree_carrito.index(sel[0])
+        items = self.carrito.get_items()
+        if 0 <= idx < len(items):
+            nueva = items[idx]["cantidad"] - 1
+            self.carrito.cambiar_cantidad(idx, nueva)  # quita el item si nueva <= 0
+            self._actualizar_carrito()
+            # Re-seleccionar si aún existe la fila
+            children = self.tree_carrito.get_children()
+            if children and idx < len(children):
+                self.tree_carrito.selection_set(children[idx])
+                self.tree_carrito.focus(children[idx])
+                self._actualizar_qty_label()
+            else:
+                self.lbl_qty.config(text="—")

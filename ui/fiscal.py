@@ -142,11 +142,11 @@ class FrameFiscal(FrameBase):
             self.tree_facturas.insert("", "end", iid=str(f["id"]), values=(
                 f["id"],
                 f["venta_id"],
-                f.get("cliente_nombre", "") or (f.get("documento", "")[:10] + "..."),
-                f["documento"],
+                f["cliente_nombre"] or (f["documento"] or "")[:12],
+                f["documento"] or "",
                 formatear_pesos(f["total"]),
                 status_text,
-                (f["dian_cufe"] or "")[:40] + "..." if f.get("dian_cufe") else "",
+                (f["dian_cufe"] or "")[:40] + "..." if f["dian_cufe"] else "",
                 f["dian_uuid"] or "",
             ))
 

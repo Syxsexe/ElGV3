@@ -1,11 +1,10 @@
 """
 modules/ui_pago.py — El G POS
-Widget de pago reutilizable: soporta pago simple y pago mixto
-(efectivo + un método digital). Se usa en FrameVentas y FrameCuentas.
+Diálogo de cobro reutilizable: pago simple, digital y mixto.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 
 COLORS = {
     "bg":           "#0F1117",
@@ -19,43 +18,343 @@ COLORS = {
     "danger":       "#FF5757",
     "text":         "#E8E9F3",
     "text_muted":   "#7C8098",
+    "text_dim":     "#4A4E6A",
 }
 
 FONT_LABEL = ("Segoe UI", 10)
 FONT_BOLD  = ("Segoe UI", 10, "bold")
 FONT_SMALL = ("Segoe UI", 9)
-FONT_KPI   = ("Segoe UI", 22, "bold")
+FONT_KPI   = ("Segoe UI", 26, "bold")
 
-METODOS_DIGITALES = ["transferencia", "tarjeta", "nequi", "daviplata"]
+# Métodos en dos filas de 3
+_FILA1 = [("efectivo", "Efectivo"), ("tarjeta", "Tarjeta"), ("nequi", "Nequi")]
+_FILA2 = [("daviplata", "Daviplata"), ("transferencia", "Transferencia"), ("mixto", "Mixto ⇄")]
+METODOS_PAGO      = _FILA1 + _FILA2
+METODOS_DIGITALES = ["tarjeta", "nequi", "daviplata", "transferencia"]
 
 
 class DialogPago(tk.Toplevel):
     """
-    Ventana emergente de cobro con soporte para pago mixto.
-
-    Al confirmar llama a on_confirmar(pagos) donde pagos es:
-        [{"metodo": "efectivo", "monto": 10000},
-         {"metodo": "nequi",    "monto": 5000}]
-    Si es pago simple, la lista tiene un solo elemento.
+    Modal de cobro.  Llama a on_confirmar(pagos) donde pagos es:
+        [{"metodo": str, "monto": float}, ...]
     """
 
     def __init__(self, parent, total: float, on_confirmar, titulo: str = "Cobrar venta"):
         super().__init__(parent)
         self.title(titulo)
-        self.configure(bg=COLORS["surface"])
+        self.configure(bg=COLORS["bg"])
         self.resizable(False, False)
-        self.grab_set()          # modal
+        self.grab_set()
         self.focus_force()
 
-        self._total        = total
-        self._on_confirmar = on_confirmar
-        self._mixto        = tk.BooleanVar(value=False)
+        self._total             = total
+        self._on_confirmar      = on_confirmar
+        self._metodo_sel        = "efectivo"
+        self._metodo_digital_mx = tk.StringVar(value="nequi")
+        self._pill_btns         = {}
 
         self._build()
-        self._centrar(420, 400)
+        self.bind("<Return>", lambda e: self._confirmar())
+        self.bind("<Escape>", lambda e: self.destroy())
+        self._centrar()
 
-    def _centrar(self, w, h):
+    # ── Layout ────────────────────────────────────────────────────────────────
+
+    def _build(self):
+        from modules.caja import formatear_pesos
+
+        outer = tk.Frame(self, bg=COLORS["bg"])
+        outer.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # ── Total ─────────────────────────────────────────────────────────────
+        total_card = tk.Frame(outer, bg=COLORS["surface"],
+                              highlightbackground=COLORS["border"],
+                              highlightthickness=1)
+        total_card.pack(fill="x")
+        tk.Frame(total_card, bg=COLORS["accent"], height=3).pack(fill="x")
+        tk.Label(total_card, text="Total a cobrar", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(pady=(10, 0))
+        tk.Label(total_card, text=formatear_pesos(self._total),
+                 font=FONT_KPI, bg=COLORS["surface"],
+                 fg=COLORS["accent"]).pack(pady=(2, 12))
+
+        # ── Método ────────────────────────────────────────────────────────────
+        tk.Label(outer, text="Método de pago", font=FONT_BOLD,
+                 bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(anchor="w", pady=(14, 6))
+
+        for fila in (_FILA1, _FILA2):
+            row_f = tk.Frame(outer, bg=COLORS["bg"])
+            row_f.pack(fill="x", pady=(0, 5))
+            for key, label in fila:
+                btn = tk.Button(
+                    row_f, text=label, font=FONT_BOLD,
+                    bg=COLORS["surface2"], fg=COLORS["text_muted"],
+                    activebackground=COLORS["accent"],
+                    activeforeground=COLORS["text"],
+                    relief="flat", cursor="hand2",
+                    pady=9,
+                    command=lambda k=key: self._seleccionar_metodo(k),
+                )
+                btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+                self._pill_btns[key] = btn
+
+        # ── Panel dinámico ────────────────────────────────────────────────────
+        tk.Frame(outer, bg=COLORS["border"], height=1).pack(fill="x", pady=(6, 12))
+
+        self._panel = tk.Frame(outer, bg=COLORS["bg"])
+        self._panel.pack(fill="x")
+
+        # ── Botones (siempre visibles al fondo) ───────────────────────────────
+        tk.Frame(outer, bg=COLORS["border"], height=1).pack(fill="x", pady=(14, 12))
+
+        btn_row = tk.Frame(outer, bg=COLORS["bg"])
+        btn_row.pack(fill="x")
+
+        cancel = tk.Button(
+            btn_row, text="Cancelar", font=FONT_BOLD,
+            bg=COLORS["surface2"], fg=COLORS["text_muted"],
+            activebackground=COLORS["border"],
+            relief="flat", cursor="hand2",
+            command=self.destroy, width=10, pady=8,
+        )
+        cancel.pack(side="left")
+        cancel.bind("<Enter>", lambda e: cancel.config(bg=COLORS["border"]))
+        cancel.bind("<Leave>", lambda e: cancel.config(bg=COLORS["surface2"]))
+
+        confirm = tk.Button(
+            btn_row, text="✓  Confirmar pago", font=FONT_BOLD,
+            bg=COLORS["accent"], fg=COLORS["text"],
+            activebackground=COLORS["accent_hover"],
+            relief="flat", cursor="hand2",
+            command=self._confirmar,
+        )
+        confirm.pack(side="right", ipady=8, ipadx=20)
+        confirm.bind("<Enter>", lambda e: confirm.config(bg=COLORS["accent_hover"]))
+        confirm.bind("<Leave>", lambda e: confirm.config(bg=COLORS["accent"]))
+
+        self._seleccionar_metodo("efectivo")
+
+    # ── Método seleccionado ───────────────────────────────────────────────────
+
+    def _seleccionar_metodo(self, key: str):
+        self._metodo_sel = key
+        for k, btn in self._pill_btns.items():
+            btn.config(
+                bg=COLORS["accent"] if k == key else COLORS["surface2"],
+                fg=COLORS["text"]   if k == key else COLORS["text_muted"],
+            )
+        for w in self._panel.winfo_children():
+            w.destroy()
+        if key == "efectivo":
+            self._render_efectivo()
+        elif key == "mixto":
+            self._render_mixto()
+        else:
+            self._render_digital(key)
+        self._centrar()
+
+    # ── Paneles dinámicos ─────────────────────────────────────────────────────
+
+    def _render_efectivo(self):
+        from modules.caja import formatear_pesos
+
+        card = tk.Frame(self._panel, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"],
+                        highlightthickness=1)
+        card.pack(fill="x")
+
+        inner = tk.Frame(card, bg=COLORS["surface"])
+        inner.pack(fill="x", padx=16, pady=12)
+
+        tk.Label(inner, text="Monto recibido ($)", font=FONT_LABEL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+
+        self.entry_recibido = self._input(inner)
+        self.entry_recibido.pack(fill="x", pady=(4, 10), ipady=8)
+        self.entry_recibido.focus()
+        self.entry_recibido.bind("<KeyRelease>", self._calcular_vuelto)
+
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_recibido, "monto")
+
+        vuelto_row = tk.Frame(inner, bg=COLORS["surface"])
+        vuelto_row.pack(fill="x")
+        tk.Label(vuelto_row, text="Vuelto", font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+        self.lbl_vuelto = tk.Label(
+            vuelto_row, text="—",
+            font=("Segoe UI", 13, "bold"),
+            bg=COLORS["surface"], fg=COLORS["text_dim"],
+        )
+        self.lbl_vuelto.pack(side="right")
+
+    def _calcular_vuelto(self, event=None):
+        from modules.caja import formatear_pesos
+        try:
+            recibido = float(
+                self.entry_recibido.get().replace(".", "").replace(",", ".") or 0)
+        except ValueError:
+            recibido = 0
+        vuelto = recibido - self._total
+        if recibido == 0:
+            self.lbl_vuelto.config(text="—", fg=COLORS["text_dim"])
+        elif vuelto < 0:
+            self.lbl_vuelto.config(
+                text=f"Faltan {formatear_pesos(-vuelto)}", fg=COLORS["danger"])
+        else:
+            self.lbl_vuelto.config(
+                text=formatear_pesos(vuelto), fg=COLORS["success"])
+
+    def _render_digital(self, metodo: str):
+        from modules.caja import formatear_pesos
+
+        card = tk.Frame(self._panel, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"],
+                        highlightthickness=1)
+        card.pack(fill="x")
+
+        inner = tk.Frame(card, bg=COLORS["surface"])
+        inner.pack(fill="x", padx=16, pady=14)
+
+        tk.Label(inner, text=metodo.capitalize(), font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+        tk.Label(inner, text=formatear_pesos(self._total),
+                 font=("Segoe UI", 17, "bold"),
+                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w", pady=(4, 0))
+
+    def _render_mixto(self):
+        from modules.caja import formatear_pesos
+
+        card = tk.Frame(self._panel, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"],
+                        highlightthickness=1)
+        card.pack(fill="x")
+
+        inner = tk.Frame(card, bg=COLORS["surface"])
+        inner.pack(fill="x", padx=16, pady=12)
+
+        # Efectivo
+        tk.Label(inner, text="Monto en efectivo ($)", font=FONT_LABEL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+        self.entry_efectivo = self._input(inner)
+        self.entry_efectivo.pack(fill="x", pady=(4, 12), ipady=8)
+        self.entry_efectivo.focus()
+        self.entry_efectivo.bind("<KeyRelease>", self._recalcular_digital)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_efectivo, "monto")
+
+        # Método digital — pills
+        tk.Label(inner, text="Método digital", font=FONT_LABEL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+
+        pills_d = tk.Frame(inner, bg=COLORS["surface"])
+        pills_d.pack(fill="x", pady=(6, 10))
+
+        self._digital_btns = {}
+        for m in METODOS_DIGITALES:
+            btn = tk.Button(
+                pills_d, text=m.capitalize(), font=FONT_SMALL,
+                bg=COLORS["surface2"], fg=COLORS["text_muted"],
+                activebackground=COLORS["accent"], activeforeground=COLORS["text"],
+                relief="flat", cursor="hand2",
+                pady=6,
+                command=lambda k=m: self._sel_digital(k),
+            )
+            btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+            self._digital_btns[m] = btn
+
+        self._sel_digital(self._metodo_digital_mx.get())
+
+        # Monto digital auto
+        tk.Frame(inner, bg=COLORS["border"], height=1).pack(fill="x", pady=(2, 8))
+
+        resto_row = tk.Frame(inner, bg=COLORS["surface"])
+        resto_row.pack(fill="x")
+        tk.Label(resto_row, text="Monto digital", font=FONT_LABEL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+        self.lbl_digital = tk.Label(
+            resto_row, text=formatear_pesos(self._total),
+            font=("Segoe UI", 13, "bold"),
+            bg=COLORS["surface"], fg=COLORS["success"],
+        )
+        self.lbl_digital.pack(side="right")
+
+        self.lbl_aviso = tk.Label(
+            inner, text="", font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["warning"],
+        )
+        self.lbl_aviso.pack(anchor="w", pady=(6, 0))
+
+    def _sel_digital(self, key: str):
+        self._metodo_digital_mx.set(key)
+        for k, btn in self._digital_btns.items():
+            btn.config(
+                bg=COLORS["accent"] if k == key else COLORS["surface2"],
+                fg=COLORS["text"]   if k == key else COLORS["text_muted"],
+            )
+
+    def _recalcular_digital(self, event=None):
+        from modules.caja import formatear_pesos
+        try:
+            efectivo = float(
+                self.entry_efectivo.get().replace(".", "").replace(",", ".") or 0)
+        except ValueError:
+            efectivo = 0
+        digital = self._total - efectivo
+        if efectivo > self._total:
+            self.lbl_digital.config(text="$0", fg=COLORS["text_muted"])
+            self.lbl_aviso.config(text="El efectivo supera el total")
+        elif digital <= 0:
+            self.lbl_digital.config(text="$0", fg=COLORS["text_muted"])
+            self.lbl_aviso.config(text="")
+        else:
+            self.lbl_digital.config(text=formatear_pesos(digital), fg=COLORS["success"])
+            self.lbl_aviso.config(text="")
+
+    # ── Confirmar ─────────────────────────────────────────────────────────────
+
+    def _confirmar(self):
+        metodo = self._metodo_sel
+
+        if metodo == "mixto":
+            try:
+                raw      = self.entry_efectivo.get().replace(".", "").replace(",", ".")
+                efectivo = float(raw) if raw else 0.0
+            except ValueError:
+                messagebox.showwarning(
+                    "Monto inválido", "Ingresa un monto válido para efectivo.", parent=self)
+                return
+            if efectivo <= 0:
+                messagebox.showwarning(
+                    "Monto inválido",
+                    "El monto en efectivo debe ser mayor a cero.", parent=self)
+                return
+            if efectivo >= self._total:
+                messagebox.showwarning(
+                    "Monto inválido",
+                    "El efectivo cubre el total.\nSelecciona 'Efectivo' directamente.",
+                    parent=self)
+                return
+            digital        = round(self._total - efectivo, 2)
+            metodo_digital = self._metodo_digital_mx.get()
+            pagos = [
+                {"metodo": "efectivo",     "monto": round(efectivo, 2)},
+                {"metodo": metodo_digital, "monto": digital},
+            ]
+        elif metodo == "efectivo":
+            pagos = [{"metodo": "efectivo", "monto": self._total}]
+        else:
+            pagos = [{"metodo": metodo, "monto": self._total}]
+
+        self.destroy()
+        self._on_confirmar(pagos)
+
+    # ── Utilidades ────────────────────────────────────────────────────────────
+
+    def _centrar(self):
         self.update_idletasks()
+        w = max(self.winfo_reqwidth(), 480)
+        h = self.winfo_reqheight() + 20   # margen de seguridad
         x = (self.winfo_screenwidth()  - w) // 2
         y = (self.winfo_screenheight() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
@@ -69,195 +368,9 @@ class DialogPago(tk.Toplevel):
             highlightthickness=1,
             highlightbackground=COLORS["border"],
             highlightcolor=COLORS["accent"],
-            **kwargs
+            **kwargs,
         )
-
-    def _build(self):
-        from modules.caja import formatear_pesos
-
-        pad = {"padx": 24, "pady": 6}
-
-        # Total
-        tk.Label(self, text="Total a cobrar", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(pady=(20, 0))
-        tk.Label(self, text=formatear_pesos(self._total), font=FONT_KPI,
-                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(pady=(0, 12))
-
-        sep = tk.Frame(self, bg=COLORS["border"], height=1)
-        sep.pack(fill="x", padx=24, pady=(0, 12))
-
-        # Toggle pago mixto
-        chk = tk.Checkbutton(
-            self, text="Pago mixto (efectivo + digital)",
-            variable=self._mixto, font=FONT_LABEL,
-            bg=COLORS["surface"], fg=COLORS["text"],
-            selectcolor=COLORS["surface2"],
-            activebackground=COLORS["surface"],
-            activeforeground=COLORS["text"],
-            command=self._toggle_mixto,
-        )
-        chk.pack(anchor="w", padx=24, pady=(0, 8))
-
-        # ── Pago simple ───────────────────────────────────────────────────────
-        self.frame_simple = tk.Frame(self, bg=COLORS["surface"])
-        self.frame_simple.pack(fill="x", **pad)
-
-        tk.Label(self.frame_simple, text="Método de pago", font=FONT_LABEL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
-        self.combo_simple = ttk.Combobox(
-            self.frame_simple,
-            values=["efectivo"] + METODOS_DIGITALES,
-            font=FONT_LABEL, state="readonly", width=28
-        )
-        self.combo_simple.set("efectivo")
-        self.combo_simple.pack(anchor="w", pady=(2, 0), ipady=4)
-
-        # ── Pago mixto ────────────────────────────────────────────────────────
-        self.frame_mixto = tk.Frame(self, bg=COLORS["surface"])
-        # (no se hace pack todavía — aparece al activar el toggle)
-
-        # Efectivo
-        tk.Label(self.frame_mixto, text="Monto en efectivo ($)",
-                 font=FONT_LABEL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).grid(row=0, column=0, sticky="w", pady=4)
-        self.entry_efectivo = self._input(self.frame_mixto, width=16)
-        self.entry_efectivo.grid(row=0, column=1, padx=(8, 0), ipady=5)
-        self.entry_efectivo.bind("<KeyRelease>", self._recalcular_digital)
-        from modules.validaciones import aplicar_validacion
-        aplicar_validacion(self.entry_efectivo, "monto")
-
-        # Digital
-        tk.Label(self.frame_mixto, text="Método digital",
-                 font=FONT_LABEL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).grid(row=1, column=0, sticky="w", pady=4)
-        self.combo_digital = ttk.Combobox(
-            self.frame_mixto, values=METODOS_DIGITALES,
-            font=FONT_LABEL, state="readonly", width=14
-        )
-        self.combo_digital.set("nequi")
-        self.combo_digital.grid(row=1, column=1, padx=(8, 0), ipady=4)
-
-        tk.Label(self.frame_mixto, text="Monto digital ($)",
-                 font=FONT_LABEL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).grid(row=2, column=0, sticky="w", pady=4)
-        self.lbl_digital = tk.Label(
-            self.frame_mixto, text=formatear_pesos(self._total),
-            font=FONT_BOLD, bg=COLORS["surface"], fg=COLORS["success"]
-        )
-        self.lbl_digital.grid(row=2, column=1, padx=(8, 0), sticky="w")
-
-        # Aviso diferencia
-        self.lbl_aviso = tk.Label(
-            self.frame_mixto, text="", font=FONT_SMALL,
-            bg=COLORS["surface"], fg=COLORS["warning"]
-        )
-        self.lbl_aviso.grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
-
-        for child in self.frame_mixto.winfo_children():
-            child.configure(bg=COLORS["surface"]) if isinstance(child, tk.Label) else None
-
-        sep2 = tk.Frame(self, bg=COLORS["border"], height=1)
-        sep2.pack(fill="x", padx=24, pady=12)
-
-        # Botones
-        btn_row = tk.Frame(self, bg=COLORS["surface"])
-        btn_row.pack(fill="x", padx=24, pady=(0, 20))
-
-        tk.Button(
-            btn_row, text="Cancelar", font=FONT_BOLD,
-            bg=COLORS["surface2"], fg=COLORS["text_muted"],
-            activebackground=COLORS["border"],
-            relief="flat", cursor="hand2",
-            command=self.destroy, width=10
-        ).pack(side="left")
-
-        tk.Button(
-            btn_row, text="✓  Confirmar pago", font=FONT_BOLD,
-            bg=COLORS["accent"], fg=COLORS["text"],
-            activebackground=COLORS["accent_hover"],
-            relief="flat", cursor="hand2",
-            command=self._confirmar
-        ).pack(side="right", ipady=8, ipadx=16)
-
-    def _toggle_mixto(self):
-        if self._mixto.get():
-            self.frame_simple.pack_forget()
-            self.frame_mixto.pack(fill="x", padx=24, pady=4)
-            self.entry_efectivo.focus()
-        else:
-            self.frame_mixto.pack_forget()
-            self.frame_simple.pack(fill="x", padx=24, pady=6)
-
-    def _recalcular_digital(self, event=None):
-        from modules.caja import formatear_pesos
-        try:
-            efectivo = float(self.entry_efectivo.get().replace(".", "").replace(",", ".") or 0)
-        except ValueError:
-            efectivo = 0
-
-        digital = self._total - efectivo
-
-        if efectivo > self._total:
-            self.lbl_digital.config(text="$0", fg=COLORS["text_muted"])
-            self.lbl_aviso.config(
-                text=f"⚠ El efectivo supera el total ({formatear_pesos(self._total)})"
-            )
-        elif digital < 0:
-            self.lbl_digital.config(text="$0", fg=COLORS["text_muted"])
-            self.lbl_aviso.config(text="")
-        else:
-            self.lbl_digital.config(
-                text=formatear_pesos(digital),
-                fg=COLORS["success"]
-            )
-            self.lbl_aviso.config(text="")
-
-    def _confirmar(self):
-        from modules.caja import formatear_pesos
-
-        if self._mixto.get():
-            # Pago mixto
-            try:
-                raw = self.entry_efectivo.get().replace(".", "").replace(",", ".")
-                efectivo = float(raw) if raw else 0.0
-            except ValueError:
-                messagebox.showwarning("Monto inválido",
-                                        "Ingresa un monto válido para efectivo.",
-                                        parent=self)
-                return
-
-            if efectivo <= 0:
-                messagebox.showwarning("Monto inválido",
-                                        "El monto en efectivo debe ser mayor a cero.",
-                                        parent=self)
-                return
-
-            if efectivo >= self._total:
-                messagebox.showwarning("Monto inválido",
-                                        "El efectivo cubre el total completo.\n"
-                                        "Desactiva el pago mixto o ajusta el monto.",
-                                        parent=self)
-                return
-
-            digital = round(self._total - efectivo, 2)
-            metodo_digital = self.combo_digital.get()
-
-            pagos = [
-                {"metodo": "efectivo",      "monto": round(efectivo, 2)},
-                {"metodo": metodo_digital,  "monto": digital},
-            ]
-        else:
-            # Pago simple
-            pagos = [{"metodo": self.combo_simple.get(), "monto": self._total}]
-
-        self.destroy()
-        self._on_confirmar(pagos)
 
 
 def abrir_dialogo_pago(parent, total: float, on_confirmar, titulo: str = "Cobrar venta"):
-    """
-    Función de conveniencia para abrir el diálogo de pago.
-    Uso:
-        abrir_dialogo_pago(self, carrito.total(), self._procesar_pago)
-    """
     DialogPago(parent, total, on_confirmar, titulo)

@@ -4,8 +4,9 @@ Gestión de clientes para facturación y clientes frecuentes.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-from ui.base import FrameBase, COLORS, FONT_LABEL, FONT_BOLD, FONT_SMALL
+from ui.base import FrameBase, COLORS, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_TITLE
 
+from modules.clientes import TIPOS_DOCUMENTO
 
 REGIMENES = [
     "Régimen Común",
@@ -23,18 +24,36 @@ RESPONSABILIDADES = [
 ]
 
 
+# ── Helper: OptionMenu con estilo oscuro ──────────────────────────────────────
+
+def _make_optmenu(parent, variable, options):
+    """tk.OptionMenu con colores del tema oscuro."""
+    m = tk.OptionMenu(parent, variable, *options)
+    m.config(
+        bg=COLORS["surface2"], fg=COLORS["text"],
+        activebackground=COLORS["accent"], activeforeground=COLORS["text"],
+        highlightthickness=1, highlightbackground=COLORS["border"],
+        relief="flat", font=FONT_LABEL, anchor="w",
+    )
+    m["menu"].config(
+        bg=COLORS["surface2"], fg=COLORS["text"],
+        activebackground=COLORS["accent"], activeforeground=COLORS["text"],
+        font=FONT_LABEL,
+    )
+    return m
+
+
 class FrameClientes(FrameBase):
     def __init__(self, parent):
         super().__init__(parent, "Clientes", "Registro de clientes y datos fiscales")
+        self._cliente_sel_id = None
         self._build()
 
     def _build(self):
-        from modules.clientes import listar_clientes, crear_cliente
-
         main = tk.Frame(self, bg=COLORS["bg"])
         main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
 
-        # Tabla de clientes
+        # ── Tabla izquierda ───────────────────────────────────────────────────
         left = tk.Frame(main, bg=COLORS["bg"])
         left.pack(side="left", fill="both", expand=True, padx=(0, 12))
 
@@ -46,118 +65,235 @@ class FrameClientes(FrameBase):
 
         cols = ("ID", "Nombre", "Documento", "Tipo", "Régimen", "Activo")
         self.tree = self._tabla(tabla_wrap, cols, alto=18)
-        self.tree.column("ID", width=40)
-        self.tree.column("Nombre", width=200, anchor="w")
+        self.tree.column("ID",        width=40)
+        self.tree.column("Nombre",    width=200, anchor="w")
         self.tree.column("Documento", width=120)
-        self.tree.column("Tipo", width=90)
-        self.tree.column("Régimen", width=130)
-        self.tree.column("Activo", width=60)
+        self.tree.column("Tipo",      width=90)
+        self.tree.column("Régimen",   width=130)
+        self.tree.column("Activo",    width=60)
+        self.tree.bind("<<TreeviewSelect>>", self._al_seleccionar)
 
         self._cargar_clientes()
 
-        # Panel de formulario
+        # ── Panel derecho: formulario scrollable ──────────────────────────────
         panel = self._card(main, width=340)
         panel.pack(side="right", fill="y")
         panel.pack_propagate(False)
 
-        # Canvas + scrollbar for form
         canvas = tk.Canvas(panel, bg=COLORS["surface"], highlightthickness=0)
         scrollbar = ttk.Scrollbar(panel, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas, bg=COLORS["surface"])
+        sf = tk.Frame(canvas, bg=COLORS["surface"])   # scroll_frame
 
-        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        win_id = canvas.create_window((0, 0), window=sf, anchor="nw")
+
+        # Rellena el ancho del canvas y actualiza scroll region
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfig(win_id, width=e.width))
+        sf.bind("<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
 
-        tk.Label(scroll_frame, text="Nuevo cliente", font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(16, 12))
+        # Scroll con rueda del mouse
+        def _wheel(e):
+            if e.num == 4:   canvas.yview_scroll(-1, "units")
+            elif e.num == 5: canvas.yview_scroll(1,  "units")
+            else:            canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _wheel)
+        canvas.bind_all("<Button-4>",   _wheel)
+        canvas.bind_all("<Button-5>",   _wheel)
 
-        campos = [
-            ("Nombre", "entry_nombre", None),
-            ("Tipo de documento", "combo_tipo", None),
-            ("Número de documento", "entry_documento", None),
-            ("Dirección", "entry_direccion", None),
-            ("Teléfono", "entry_telefono", None),
-            ("Email", "entry_email", None),
-            ("Régimen fiscal", "combo_regimen", REGIMENES),
-            ("Responsabilidad fiscal", "combo_responsabilidad", RESPONSABILIDADES),
-            ("Municipio", "entry_municipio", None),
-        ]
+        # ── Encabezado del formulario ─────────────────────────────────────────
+        self._lbl_form_titulo = tk.Label(sf, text="Nuevo cliente", font=FONT_BOLD,
+                                          bg=COLORS["surface"], fg=COLORS["text"])
+        self._lbl_form_titulo.pack(anchor="w", padx=16, pady=(16, 12))
 
-        for lbl, attr, opciones in campos:
-            tk.Label(scroll_frame, text=lbl, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-            if opciones:
-                combo = ttk.Combobox(scroll_frame,
-                                     values=opciones,
-                                     font=FONT_LABEL, state="readonly")
-                combo.set(opciones[0])
-                combo.pack(fill="x", padx=16, pady=(2, 10), ipady=4)
-                setattr(self, attr, combo)
-            else:
-                e = self._input(scroll_frame)
-                e.pack(fill="x", padx=16, pady=(2, 10), ipady=5)
-                setattr(self, attr, e)
+        # ── Campos del formulario ─────────────────────────────────────────────
+        # Orden: Nombre → Tipo doc → N° doc → Dirección → Teléfono → Email
+        #        → Régimen → Responsabilidad → Municipio
 
-        self._btn_primary(scroll_frame, "Crear cliente", self._crear_cliente).pack(
-            fill="x", padx=16, ipady=10, pady=(0, 16))
+        def field_label(texto):
+            tk.Label(sf, text=texto, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16)
+
+        def entry_field(attr):
+            e = self._input(sf)
+            e.pack(fill="x", padx=16, pady=(3, 10), ipady=5)
+            setattr(self, attr, e)
+
+        def select_field(attr, var, options):
+            m = _make_optmenu(sf, var, options)
+            m.pack(fill="x", padx=16, pady=(3, 10), ipady=2)
+            setattr(self, attr, var)   # guarda el StringVar
+
+        field_label("Nombre *")
+        entry_field("entry_nombre")
+
+        self._var_tipo = tk.StringVar(value=TIPOS_DOCUMENTO[0])
+        field_label("Tipo de documento *")
+        select_field("combo_tipo", self._var_tipo, TIPOS_DOCUMENTO)
+
+        field_label("Número de documento *")
+        entry_field("entry_documento")
+
+        field_label("Dirección")
+        entry_field("entry_direccion")
+
+        field_label("Teléfono")
+        entry_field("entry_telefono")
+
+        field_label("Email")
+        entry_field("entry_email")
+
+        self._var_regimen = tk.StringVar(value=REGIMENES[0])
+        field_label("Régimen fiscal")
+        select_field("combo_regimen", self._var_regimen, REGIMENES)
+
+        self._var_resp = tk.StringVar(value=RESPONSABILIDADES[0])
+        field_label("Responsabilidad fiscal")
+        select_field("combo_responsabilidad", self._var_resp, RESPONSABILIDADES)
+
+        field_label("Municipio")
+        entry_field("entry_municipio")
+
+        # ── Botones ───────────────────────────────────────────────────────────
+        tk.Frame(sf, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=16, pady=(4, 12))
+
+        self._btn_crear = self._btn_primary(sf, "Crear cliente", self._crear_cliente)
+        self._btn_crear.pack(fill="x", padx=16, ipady=10)
+
+        self._btn_editar = self._btn_primary(sf, "Guardar cambios", self._editar_cliente)
+        self._btn_editar.pack(fill="x", padx=16, ipady=10, pady=(6, 0))
+        self._btn_editar.pack_forget()  # solo visible al seleccionar un cliente
+
+        tk.Button(sf, text="Nuevo (limpiar)", font=FONT_SMALL,
+                  bg=COLORS["surface"], fg=COLORS["text_muted"],
+                  relief="flat", cursor="hand2",
+                  command=self._limpiar_form).pack(pady=(8, 16))
+
+    # ── Tabla ─────────────────────────────────────────────────────────────────
 
     def _cargar_clientes(self):
         from modules.clientes import listar_clientes
-
         self.tree.delete(*self.tree.get_children())
         for c in listar_clientes():
-            regimen = c.get("regimen") or "—"
             self.tree.insert("", "end", iid=str(c["id"]), values=(
                 c["id"], c["nombre"], c["documento"], c["tipo_documento"],
-                regimen, "Sí" if c["activo"] else "No"
+                c.get("regimen") or "—",
+                "Sí" if c["activo"] else "No",
             ))
+
+    def _al_seleccionar(self, event=None):
+        from modules.clientes import obtener_cliente
+        sel = self.tree.focus()
+        if not sel:
+            return
+        c = obtener_cliente(int(sel))
+        if not c:
+            return
+        self._cliente_sel_id = c["id"]
+        self._lbl_form_titulo.config(text=f"Editar — {c['nombre']}")
+
+        self.entry_nombre.delete(0, "end")
+        self.entry_nombre.insert(0, c["nombre"])
+
+        self.combo_tipo.set(c.get("tipo_documento") or TIPOS_DOCUMENTO[0])
+
+        self.entry_documento.delete(0, "end")
+        self.entry_documento.insert(0, c.get("documento") or "")
+
+        self.entry_direccion.delete(0, "end")
+        self.entry_direccion.insert(0, c.get("direccion") or "")
+
+        self.entry_telefono.delete(0, "end")
+        self.entry_telefono.insert(0, c.get("telefono") or "")
+
+        self.entry_email.delete(0, "end")
+        self.entry_email.insert(0, c.get("email") or "")
+
+        self.combo_regimen.set(c.get("regimen") or REGIMENES[0])
+        self.combo_responsabilidad.set(
+            c.get("responsabilidad_fiscal") or RESPONSABILIDADES[0])
+
+        self.entry_municipio.delete(0, "end")
+        self.entry_municipio.insert(0, c.get("municipio") or "")
+
+        self._btn_crear.pack_forget()
+        self._btn_editar.pack(fill="x", padx=16, ipady=10)
+
+    def _limpiar_form(self):
+        self._cliente_sel_id = None
+        self._lbl_form_titulo.config(text="Nuevo cliente")
+        for attr in ("entry_nombre", "entry_documento", "entry_direccion",
+                     "entry_telefono", "entry_email", "entry_municipio"):
+            getattr(self, attr).delete(0, "end")
+        self.combo_tipo.set(TIPOS_DOCUMENTO[0])
+        self.combo_regimen.set(REGIMENES[0])
+        self.combo_responsabilidad.set(RESPONSABILIDADES[0])
+        self._btn_editar.pack_forget()
+        self._btn_crear.pack(fill="x", padx=16, ipady=10)
+
+    # ── Acciones ──────────────────────────────────────────────────────────────
 
     def _crear_cliente(self):
         from modules.clientes import crear_cliente
-
-        nombre = self.entry_nombre.get().strip()
-        tipo_documento = self.combo_tipo.get()
+        nombre    = self.entry_nombre.get().strip()
+        tipo_doc  = self.combo_tipo.get()
         documento = self.entry_documento.get().strip()
-        direccion = self.entry_direccion.get().strip()
-        telefono = self.entry_telefono.get().strip()
-        email = self.entry_email.get().strip()
-        regimen = self.combo_regimen.get() if hasattr(self, "combo_regimen") else None
-        resp_fiscal = self.combo_responsabilidad.get() if hasattr(self, "combo_responsabilidad") else None
-        municipio = self.entry_municipio.get().strip() if hasattr(self, "entry_municipio") else None
 
         if not nombre or not documento:
-            messagebox.showwarning("Campos vacíos", "Completa nombre y documento.")
+            messagebox.showwarning("Campos vacíos", "Completa nombre y número de documento.")
             return
 
         try:
             crear_cliente(
                 nombre=nombre,
-                tipo_documento=tipo_documento,
+                tipo_documento=tipo_doc,
                 documento=documento,
-                direccion=direccion,
-                telefono=telefono,
-                email=email,
-                regimen=regimen,
-                responsabilidad_fiscal=resp_fiscal,
-                municipio=municipio,
+                direccion=self.entry_direccion.get().strip() or None,
+                telefono=self.entry_telefono.get().strip() or None,
+                email=self.entry_email.get().strip() or None,
+                regimen=self.combo_regimen.get() or None,
+                responsabilidad_fiscal=self.combo_responsabilidad.get() or None,
+                municipio=self.entry_municipio.get().strip() or None,
             )
-            messagebox.showinfo("Cliente creado", f"Cliente '{nombre}' creado con éxito.")
-            self.entry_nombre.delete(0, "end")
-            self.entry_documento.delete(0, "end")
-            self.entry_direccion.delete(0, "end")
-            self.entry_telefono.delete(0, "end")
-            self.entry_email.delete(0, "end")
-            self.combo_tipo.set("CC")
-            if hasattr(self, "combo_regimen"):
-                self.combo_regimen.set(REGIMENES[0])
-            if hasattr(self, "combo_responsabilidad"):
-                self.combo_responsabilidad.set(RESPONSABILIDADES[0])
-            if hasattr(self, "entry_municipio"):
-                self.entry_municipio.delete(0, "end")
+            messagebox.showinfo("Éxito", f"Cliente '{nombre}' creado correctamente.")
+            self._limpiar_form()
+            self._cargar_clientes()
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def _editar_cliente(self):
+        from modules.clientes import editar_cliente
+        if not self._cliente_sel_id:
+            return
+        nombre    = self.entry_nombre.get().strip()
+        tipo_doc  = self.combo_tipo.get()
+        documento = self.entry_documento.get().strip()
+
+        if not nombre or not documento:
+            messagebox.showwarning("Campos vacíos", "Completa nombre y número de documento.")
+            return
+
+        try:
+            editar_cliente(
+                self._cliente_sel_id,
+                nombre=nombre,
+                tipo_documento=tipo_doc,
+                documento=documento,
+                direccion=self.entry_direccion.get().strip() or None,
+                telefono=self.entry_telefono.get().strip() or None,
+                email=self.entry_email.get().strip() or None,
+                regimen=self.combo_regimen.get() or None,
+                responsabilidad_fiscal=self.combo_responsabilidad.get() or None,
+                municipio=self.entry_municipio.get().strip() or None,
+            )
+            messagebox.showinfo("Éxito", "Cliente actualizado correctamente.")
+            self._limpiar_form()
             self._cargar_clientes()
         except Exception as e:
             messagebox.showerror("Error", str(e))

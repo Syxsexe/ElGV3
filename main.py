@@ -8,7 +8,7 @@ from tkinter import ttk, messagebox
 from database import inicializar
 import auth
 
-from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_NAV, FONT_KPI
+from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_NAV, FONT_KPI, _add_hover
 from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
@@ -26,7 +26,7 @@ class LoginWindow(tk.Tk):
         self.title("El G — POS")
         self.configure(bg=COLORS["bg"])
         self.resizable(False, False)
-        self._center(400, 500)
+        self._center(420, 540)
         from modules.validaciones import registrar_validaciones
         registrar_validaciones(self)
         self._build()
@@ -38,51 +38,92 @@ class LoginWindow(tk.Tk):
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build(self):
-        frame = tk.Frame(self, bg=COLORS["surface"],
+        outer = tk.Frame(self, bg=COLORS["bg"])
+        outer.place(relx=0.5, rely=0.5, anchor="center")
+
+        frame = tk.Frame(outer, bg=COLORS["surface"],
                          highlightbackground=COLORS["border"],
                          highlightthickness=1)
-        frame.place(relx=0.5, rely=0.5, anchor="center", width=320, height=400)
+        frame.pack(ipadx=0, ipady=0)
 
-        tk.Label(frame, text="El G", font=("Segoe UI", 36, "bold"),
-                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(pady=(40, 4))
-        tk.Label(frame, text="Sistema de Punto de Venta",
-                 font=FONT_SMALL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).pack()
+        # Barra de acento superior
+        tk.Frame(frame, bg=COLORS["accent"], height=3).pack(fill="x")
 
-        sep = tk.Frame(frame, bg=COLORS["accent"], height=2, width=60)
-        sep.pack(pady=20)
+        inner = tk.Frame(frame, bg=COLORS["surface"])
+        inner.pack(padx=44, pady=(32, 40))
 
-        tk.Label(frame, text="Usuario", font=FONT_LABEL,
+        # Branding
+        tk.Label(inner, text="El G", font=("Segoe UI", 42, "bold"),
+                 bg=COLORS["surface"], fg=COLORS["accent"]).pack()
+        tk.Label(inner, text="TCG · Juegos · Comidas",
+                 font=("Segoe UI", 10), bg=COLORS["surface"],
+                 fg=COLORS["text_dim"]).pack(pady=(0, 4))
+
+        # Separador decorativo
+        sep_frame = tk.Frame(inner, bg=COLORS["surface"])
+        sep_frame.pack(pady=(8, 28))
+        tk.Frame(sep_frame, bg=COLORS["accent"], height=2, width=40).pack(side="left")
+        tk.Frame(sep_frame, bg=COLORS["border"], height=2, width=60).pack(side="left")
+
+        # Usuario
+        tk.Label(inner, text="Usuario", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text_muted"],
-                 anchor="w").pack(padx=40, fill="x")
-        self.entry_user = self._input(frame)
-        self.entry_user.pack(padx=40, fill="x", pady=(4, 14))
+                 anchor="w").pack(fill="x")
+        self.entry_user = self._input(inner)
+        self.entry_user.pack(fill="x", pady=(6, 18), ipady=9)
 
-        tk.Label(frame, text="Contrasena", font=FONT_LABEL,
+        # Contraseña + toggle
+        tk.Label(inner, text="Contraseña", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text_muted"],
-                 anchor="w").pack(padx=40, fill="x")
-        self.entry_pass = self._input(frame, show="*")
-        self.entry_pass.pack(padx=40, fill="x", pady=(4, 24))
+                 anchor="w").pack(fill="x")
 
-        tk.Button(
-            frame, text="Ingresar", font=FONT_BOLD,
+        pass_wrap = tk.Frame(inner, bg=COLORS["surface2"],
+                             highlightthickness=1,
+                             highlightbackground=COLORS["border"])
+        pass_wrap.pack(fill="x", pady=(6, 24))
+
+        self.entry_pass = tk.Entry(
+            pass_wrap, font=FONT_LABEL, show="●",
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            insertbackground=COLORS["accent"],
+            relief="flat", bd=0, highlightthickness=0,
+        )
+        self.entry_pass.pack(side="left", fill="x", expand=True, padx=(10, 0), ipady=9)
+
+        self._pass_visible = False
+        self._btn_toggle = tk.Button(
+            pass_wrap, text="Mostrar",
+            font=("Segoe UI", 8), bg=COLORS["surface2"],
+            fg=COLORS["text_dim"], relief="flat", cursor="hand2",
+            bd=0, highlightthickness=0,
+            command=self._toggle_pass,
+            activebackground=COLORS["surface2"],
+            activeforeground=COLORS["text_muted"],
+        )
+        self._btn_toggle.pack(side="right", padx=8)
+
+        # Botón Ingresar
+        btn_login = tk.Button(
+            inner, text="Ingresar", font=("Segoe UI", 11, "bold"),
             bg=COLORS["accent"], fg=COLORS["text"],
             activebackground=COLORS["accent_hover"],
             activeforeground=COLORS["text"],
             relief="flat", cursor="hand2",
-            command=self._login
-        ).pack(padx=40, fill="x", ipady=10)
+            command=self._login,
+        )
+        btn_login.pack(fill="x", ipady=12)
+        _add_hover(btn_login, COLORS["accent"], COLORS["accent_hover"])
 
-        self.lbl_error = tk.Label(frame, text="", font=FONT_SMALL,
+        self.lbl_error = tk.Label(inner, text="", font=FONT_SMALL,
                                    bg=COLORS["surface"], fg=COLORS["danger"])
-        self.lbl_error.pack(pady=(10, 0))
+        self.lbl_error.pack(pady=(12, 0))
 
         self.bind("<Return>", lambda e: self._login())
         self.entry_user.focus()
 
-    def _input(self, parent, show=None):
+    def _input(self, parent, **kwargs):
         return tk.Entry(
-            parent, font=FONT_LABEL, show=show,
+            parent, font=FONT_LABEL, **kwargs,
             bg=COLORS["surface2"], fg=COLORS["text"],
             insertbackground=COLORS["accent"],
             relief="flat", bd=0,
@@ -90,6 +131,11 @@ class LoginWindow(tk.Tk):
             highlightbackground=COLORS["border"],
             highlightcolor=COLORS["accent"],
         )
+
+    def _toggle_pass(self):
+        self._pass_visible = not self._pass_visible
+        self.entry_pass.config(show="" if self._pass_visible else "●")
+        self._btn_toggle.config(text="Ocultar" if self._pass_visible else "Mostrar")
 
     def _login(self):
         usuario    = self.entry_user.get().strip()
@@ -99,7 +145,7 @@ class LoginWindow(tk.Tk):
             return
         sesion = auth.iniciar_sesion(usuario, contrasena)
         if not sesion:
-            self.lbl_error.config(text="Usuario o contrasena incorrectos.")
+            self.lbl_error.config(text="Usuario o contraseña incorrectos.")
             self.entry_pass.delete(0, "end")
             return
         self.destroy()
@@ -114,73 +160,87 @@ class LoginWindow(tk.Tk):
 class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
+        # Re-registrar validaciones en el nuevo intérprete Tcl
+        from modules.validaciones import registrar_validaciones
+        registrar_validaciones(self)
         sesion = auth.get_sesion()
         self.title(f"El G POS — {sesion['usuario']} ({sesion['rol']})")
         self.configure(bg=COLORS["bg"])
-        # Intentar maximizar la ventana; algunos WMs no soportan 'zoomed'
         try:
             self.state("zoomed")
         except tk.TclError:
             try:
-                # alternativa en algunos sistemas X11
                 self.attributes("-zoomed", True)
             except Exception:
-                # último recurso: dejar ventana en estado normal
                 pass
         self._frame_actual = None
+        self._nav_activo   = None
+        self._nav_btns     = {}
         self._build()
 
     def _build(self):
-        self.sidebar = tk.Frame(self, bg=COLORS["surface"], width=210)
+        # ── Sidebar ───────────────────────────────────────────────────────────
+        self.sidebar = tk.Frame(self, bg=COLORS["surface"], width=220)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
-        tk.Label(self.sidebar, text="El G", font=("Segoe UI", 20, "bold"),
-                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(pady=(28, 2))
-        tk.Label(self.sidebar, text="POS", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_dim"]).pack()
-        tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(fill="x", padx=20, pady=16)
+        # Branding
+        brand = tk.Frame(self.sidebar, bg=COLORS["surface"])
+        brand.pack(fill="x", pady=(28, 0))
+        tk.Label(brand, text="El G", font=("Segoe UI", 22, "bold"),
+                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w", padx=24)
+        tk.Label(brand, text="Punto de Venta",
+                 font=("Segoe UI", 8), bg=COLORS["surface"],
+                 fg=COLORS["text_dim"]).pack(anchor="w", padx=24, pady=(0, 4))
 
-        self._nav_activo = None
-        self._nav_btns   = {}
+        tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=20, pady=(14, 10))
 
+        # Navegación
         sesion    = auth.get_sesion()
         nav_items = [
-            ("Inicio",      self._mostrar_inicio),
-            ("Nueva Venta", self._mostrar_ventas),
-            ("Clientes",    self._mostrar_clientes),
-            ("Cuentas",     self._mostrar_cuentas),
-            ("Inventario",  self._mostrar_inventario),
-            ("Proveedores", self._mostrar_proveedores),
-            ("Caja",        self._mostrar_caja),
-            ("Doc. Fiscales DIAN", self._mostrar_fiscal),
+            ("Inicio",           self._mostrar_inicio),
+            ("Nueva Venta",      self._mostrar_ventas),
+            ("Clientes",         self._mostrar_clientes),
+            ("Cuentas",          self._mostrar_cuentas),
+            ("Inventario",       self._mostrar_inventario),
+            ("Proveedores",      self._mostrar_proveedores),
+            ("Caja",             self._mostrar_caja),
+            ("Doc. Fiscales",    self._mostrar_fiscal),
         ]
         if sesion["rol"] == "admin":
             nav_items += [
-                ("Reportes", self._mostrar_reportes),
-                ("Usuarios", self._mostrar_usuarios),
+                ("Reportes",  self._mostrar_reportes),
+                ("Usuarios",  self._mostrar_usuarios),
             ]
         for label, cmd in nav_items:
             self._nav_btn(label, cmd)
 
+        # Spacer + pie de sidebar
         tk.Frame(self.sidebar, bg=COLORS["surface"]).pack(expand=True, fill="y")
-        tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(fill="x", padx=20, pady=8)
+        tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=20, pady=(0, 12))
 
-        info = tk.Frame(self.sidebar, bg=COLORS["surface"])
-        info.pack(padx=16, pady=(0, 8), fill="x")
-        tk.Label(info, text=sesion["usuario"], font=FONT_BOLD,
+        pie = tk.Frame(self.sidebar, bg=COLORS["surface"])
+        pie.pack(padx=20, pady=(0, 6), fill="x")
+
+        tk.Label(pie, text=sesion["usuario"], font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w")
-        tk.Label(info, text=sesion["rol"].capitalize(), font=FONT_SMALL,
+        tk.Label(pie, text=sesion["rol"].capitalize(), font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w")
 
-        tk.Button(
-            self.sidebar, text="Cerrar sesion", font=FONT_SMALL,
-            bg=COLORS["surface"], fg=COLORS["text_muted"],
+        btn_salir = tk.Button(
+            self.sidebar, text="Cerrar sesión", font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text_dim"],
             relief="flat", cursor="hand2", command=self._cerrar_sesion,
             activebackground=COLORS["surface2"],
             activeforeground=COLORS["danger"],
-        ).pack(padx=16, pady=(0, 20), anchor="w")
+        )
+        btn_salir.pack(padx=20, pady=(4, 20), anchor="w")
+        btn_salir.bind("<Enter>", lambda e: btn_salir.config(fg=COLORS["danger"]))
+        btn_salir.bind("<Leave>", lambda e: btn_salir.config(fg=COLORS["text_dim"]))
 
+        # ── Área de contenido ─────────────────────────────────────────────────
         self._content_outer = tk.Frame(self, bg=COLORS["bg"])
         self._content_outer.pack(side="right", expand=True, fill="both")
 
@@ -193,7 +253,8 @@ class MainWindow(tk.Tk):
         self._canvas.pack(side="left", expand=True, fill="both")
 
         self.content = tk.Frame(self._canvas, bg=COLORS["bg"])
-        self._canvas_window = self._canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self._canvas_window = self._canvas.create_window(
+            (0, 0), window=self.content, anchor="nw")
 
         self._canvas.bind("<Configure>", self._on_canvas_resize)
         self.content.bind("<Configure>",  self._on_content_resize)
@@ -202,6 +263,8 @@ class MainWindow(tk.Tk):
         self._canvas.bind_all("<Button-5>",   self._on_mousewheel)
 
         self._mostrar_inicio()
+
+    # ── Scroll ────────────────────────────────────────────────────────────────
 
     def _on_canvas_resize(self, event):
         self._canvas.itemconfig(self._canvas_window, width=event.width)
@@ -226,23 +289,59 @@ class MainWindow(tk.Tk):
     def _resetear_scroll(self):
         self._canvas.yview_moveto(0)
 
-    def _nav_btn(self, label, cmd):
-        btn = tk.Button(
-            self.sidebar, text=f"  {label}",
-            font=FONT_NAV, bg=COLORS["surface"], fg=COLORS["text_muted"],
-            relief="flat", anchor="w", cursor="hand2",
-            activebackground=COLORS["surface2"],
-            activeforeground=COLORS["text"],
-            command=lambda c=cmd, l=label: self._nav_click(l, c),
-        )
-        btn.pack(fill="x", padx=8, pady=2, ipady=8)
-        self._nav_btns[label] = btn
+    # ── Navegación ────────────────────────────────────────────────────────────
 
-    def _nav_click(self, label, cmd):
-        for btn in self._nav_btns.values():
-            btn.config(bg=COLORS["surface"], fg=COLORS["text_muted"])
-        self._nav_btns[label].config(bg=COLORS["surface2"], fg=COLORS["accent"])
-        cmd()
+    def _nav_btn(self, label, cmd):
+        wrap = tk.Frame(self.sidebar, bg=COLORS["surface"], cursor="hand2")
+        wrap.pack(fill="x", pady=1)
+
+        # Indicador izquierdo (3px, visible solo en activo)
+        bar = tk.Frame(wrap, width=3, bg=COLORS["surface"])
+        bar.pack(side="left", fill="y")
+        bar.pack_propagate(False)
+
+        lbl = tk.Label(
+            wrap, text=f"   {label}",
+            font=FONT_NAV, bg=COLORS["surface"], fg=COLORS["text_muted"],
+            anchor="w", cursor="hand2",
+        )
+        lbl.pack(side="left", fill="x", expand=True, ipady=9)
+
+        def _activate():
+            wrap.config(bg=COLORS["surface2"])
+            lbl.config(bg=COLORS["surface2"], fg=COLORS["accent"])
+            bar.config(bg=COLORS["accent"])
+
+        def _deactivate():
+            wrap.config(bg=COLORS["surface"])
+            lbl.config(bg=COLORS["surface"], fg=COLORS["text_muted"])
+            bar.config(bg=COLORS["surface"])
+
+        def _on_enter(e):
+            if self._nav_activo != label:
+                wrap.config(bg=COLORS["surface2"])
+                lbl.config(bg=COLORS["surface2"], fg=COLORS["text"])
+                bar.config(bg=COLORS["surface2"])
+
+        def _on_leave(e):
+            if self._nav_activo != label:
+                _deactivate()
+
+        for w in (wrap, lbl, bar):
+            w.bind("<Button-1>", lambda e, c=cmd: c())
+            w.bind("<Enter>", _on_enter)
+            w.bind("<Leave>", _on_leave)
+
+        self._nav_btns[label] = {
+            "activate":   _activate,
+            "deactivate": _deactivate,
+        }
+
+    def _nav_click(self, label):
+        if self._nav_activo and self._nav_activo in self._nav_btns:
+            self._nav_btns[self._nav_activo]["deactivate"]()
+        self._nav_activo = label
+        self._nav_btns[label]["activate"]()
 
     def _cambiar_frame(self, nuevo_frame_cls, **kwargs):
         if self._frame_actual:
@@ -251,48 +350,50 @@ class MainWindow(tk.Tk):
         self._frame_actual.pack(expand=True, fill="both")
         self._resetear_scroll()
 
+    # ── Pantallas ─────────────────────────────────────────────────────────────
+
     def _mostrar_inicio(self):
-        self._nav_click("Inicio", lambda: None)
+        self._nav_click("Inicio")
         self._cambiar_frame(FrameInicio)
 
     def _mostrar_ventas(self):
-        self._nav_click("Nueva Venta", lambda: None)
+        self._nav_click("Nueva Venta")
         self._cambiar_frame(FrameVentas)
 
     def _mostrar_cuentas(self):
-        self._nav_click("Cuentas", lambda: None)
+        self._nav_click("Cuentas")
         self._cambiar_frame(FrameCuentas)
 
     def _mostrar_clientes(self):
-        self._nav_click("Clientes", lambda: None)
+        self._nav_click("Clientes")
         self._cambiar_frame(FrameClientes)
 
     def _mostrar_inventario(self):
-        self._nav_click("Inventario", lambda: None)
+        self._nav_click("Inventario")
         self._cambiar_frame(FrameInventario)
 
     def _mostrar_proveedores(self):
-        self._nav_click("Proveedores", lambda: None)
+        self._nav_click("Proveedores")
         self._cambiar_frame(FrameProveedores)
 
     def _mostrar_caja(self):
-        self._nav_click("Caja", lambda: None)
+        self._nav_click("Caja")
         self._cambiar_frame(FrameCaja)
 
     def _mostrar_fiscal(self):
-        self._nav_click("Doc. Fiscales DIAN", lambda: None)
+        self._nav_click("Doc. Fiscales")
         self._cambiar_frame(FrameFiscal)
 
     def _mostrar_reportes(self):
-        self._nav_click("Reportes", lambda: None)
+        self._nav_click("Reportes")
         self._cambiar_frame(FrameReportes)
 
     def _mostrar_usuarios(self):
-        self._nav_click("Usuarios", lambda: None)
+        self._nav_click("Usuarios")
         self._cambiar_frame(FrameUsuarios)
 
     def _cerrar_sesion(self):
-        if messagebox.askyesno("Cerrar sesion", "Deseas cerrar la sesion actual?"):
+        if messagebox.askyesno("Cerrar sesión", "¿Deseas cerrar la sesión actual?"):
             auth.cerrar_sesion()
             self.destroy()
             login = LoginWindow()

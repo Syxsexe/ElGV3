@@ -76,14 +76,14 @@ def aplicar_validacion(entry: tk.Entry, tipo: str):
         'cantidad' — solo dígitos (carrito, cuentas)
         'codigo'   — alfanumérico + guión/guión_bajo (SKU de producto)
     """
-    if not _cmds:
-        registrar_validaciones(entry.winfo_toplevel())
+    # Siempre registrar contra el intérprete del widget — evita usar comandos
+    # de un tk.Tk anterior que ya fue destruido (caso LoginWindow → MainWindow).
+    registrar_validaciones(entry.winfo_toplevel())
 
     if tipo not in _cmds:
         raise ValueError(f"Tipo desconocido: '{tipo}'. Opciones: {list(_cmds.keys())}")
 
     vcmd = _cmds[tipo]
-    # invalidcommand vacío evita que Tkinter emita un beep al rechazar
     invcmd = (entry.register(lambda: None),)
     entry.config(
         validate="key",

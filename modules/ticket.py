@@ -144,9 +144,7 @@ def generar_ticket_venta(venta_id: int) -> str:
 
     lineas.append(_linea_dos_col("  TOTAL:", formatear_pesos(venta["total"])))
 
-    pagos_fmt = [dict(p) for p in pagos] if pagos else [
-        {"metodo": venta["metodo_pago"], "monto": venta["total"]}
-    ]
+    pagos_fmt = [dict(p) for p in pagos] if pagos else None
     lineas += _pie(pagos_fmt, venta["notas"])
 
     return "\n".join(lineas)

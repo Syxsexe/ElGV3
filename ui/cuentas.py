@@ -11,7 +11,9 @@ class FrameCuentas(FrameBase):
         super().__init__(parent, "Cuentas", "Mesas abiertas y consumo por cliente")
         from modules.cuentas import migrar
         migrar()
-        self._cuenta_sel = None   # ID de cuenta seleccionada
+        self._cuenta_sel  = None   # ID de cuenta seleccionada
+        self._cliente_id  = None   # ID del cliente registrado (puede ser None)
+        self._clientes_db = []     # caché de resultados de búsqueda
         self._build()
 
     def _build(self):
@@ -121,6 +123,33 @@ class FrameCuentas(FrameBase):
         self.tree_items.column("cantidad", width=50)
         self.tree_items.column("precio",   width=90)
         self.tree_items.column("subtotal", width=90)
+        self.tree_items.bind("<<TreeviewSelect>>", self._al_seleccionar_item)
+
+        # ── Controles de cantidad ─────────────────────────────────────────────
+        qty_row = tk.Frame(left, bg=COLORS["bg"])
+        qty_row.pack(anchor="w", pady=(6, 0))
+
+        tk.Button(
+            qty_row, text="−", font=("Segoe UI", 13, "bold"),
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            activebackground=COLORS["border"], activeforeground=COLORS["text"],
+            relief="flat", cursor="hand2", width=3,
+            command=self._decrementar_item,
+        ).pack(side="left")
+
+        self.lbl_qty_cuenta = tk.Label(
+            qty_row, text="—", font=FONT_BOLD,
+            bg=COLORS["bg"], fg=COLORS["text"], width=7,
+        )
+        self.lbl_qty_cuenta.pack(side="left")
+
+        tk.Button(
+            qty_row, text="+", font=("Segoe UI", 13, "bold"),
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            activebackground=COLORS["border"], activeforeground=COLORS["text"],
+            relief="flat", cursor="hand2", width=3,
+            command=self._incrementar_item,
+        ).pack(side="left")
 
         # Quitar ítem
         self._btn_danger(left, "✕ Quitar ítem seleccionado",
@@ -129,15 +158,47 @@ class FrameCuentas(FrameBase):
         # — Abrir cuenta nueva —
         tk.Label(right, text="Abrir cuenta", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(
-                     anchor="w", padx=16, pady=(16, 8))
+                     anchor="w", padx=16, pady=(16, 4))
 
-        for lbl, attr in [("Cliente", "entry_cliente"), ("Mesa / Puesto", "entry_mesa")]:
-            tk.Label(right, text=lbl, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
-                         anchor="w", padx=16)
-            e = self._input(right)
-            e.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
-            setattr(self, attr, e)
+        # ── Selector de cliente ────────────────────────────────────────────────
+        tk.Label(right, text="Cliente", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16)
+
+        self.entry_cliente = self._input(right)
+        self.entry_cliente.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
+        self.entry_cliente.bind("<KeyRelease>", self._buscar_clientes)
+        self.entry_cliente.bind("<FocusOut>",
+                                lambda e: self.after(150, self._ocultar_dropdown))
+
+        # Dropdown de resultados
+        drop_wrap = tk.Frame(right, bg=COLORS["surface"])
+        drop_wrap.pack(fill="x", padx=16)
+        self.lst_clientes = tk.Listbox(
+            drop_wrap, font=FONT_SMALL, height=4,
+            bg=COLORS["surface2"], fg=COLORS["text"],
+            selectbackground=COLORS["accent"],
+            relief="flat", activestyle="none",
+            highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
+        self.lst_clientes.bind("<<ListboxSelect>>", self._seleccionar_cliente)
+        # No empaquetado aún — se muestra solo cuando hay resultados
+
+        # Indicador de cliente vinculado
+        self.lbl_cliente_sel = tk.Label(
+            right, text="", font=("Segoe UI", 8),
+            bg=COLORS["surface"], fg=COLORS["success"],
+            anchor="w", wraplength=220, justify="left",
+        )
+        self.lbl_cliente_sel.pack(fill="x", padx=16, pady=(2, 4))
+
+        # Mesa
+        tk.Label(right, text="Mesa / Puesto", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16)
+        self.entry_mesa = self._input(right)
+        self.entry_mesa.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
 
         self._btn_primary(right, "Abrir cuenta",
                           self._abrir_cuenta).pack(fill="x", padx=16, ipady=8)
@@ -195,14 +256,79 @@ class FrameCuentas(FrameBase):
         )
         self.lbl_total_cuenta.pack(pady=6)
 
+        self._emitir_factura = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            right, text="Emitir factura DIAN",
+            variable=self._emitir_factura,
+            font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text"],
+            selectcolor=COLORS["surface2"],
+            activebackground=COLORS["surface"],
+            activeforeground=COLORS["text"], cursor="hand2",
+        ).pack(anchor="w", padx=16, pady=(0, 6))
+
         self._btn_primary(right, "✓ Cobrar y cerrar",
                           self._cobrar).pack(fill="x", padx=16, ipady=10)
         self._btn_danger(right, "✕ Cancelar cuenta",
-                         self._cancelar).pack(fill="x", padx=16, pady=(6, 16), ipady=6)
+                         self._cancelar).pack(fill="x", padx=16, pady=(6, 8), ipady=6)
+
+        self.lbl_dian_status = tk.Label(
+            right, text="", font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text_muted"],
+        )
+        self.lbl_dian_status.pack(pady=(0, 16))
+        self._update_dian_status()
 
         # Cargar datos iniciales
         self._cargar_mesas()
         self._buscar_productos()
+
+    # ── Búsqueda y selección de cliente ──────────────────────────────────────
+
+    def _buscar_clientes(self, event=None):
+        from modules.clientes import buscar_clientes, listar_clientes
+
+        texto = self.entry_cliente.get().strip()
+
+        # Si el usuario modifica el campo después de haber seleccionado, limpiar vínculo
+        self._cliente_id = None
+        self.lbl_cliente_sel.config(text="")
+
+        self.lst_clientes.delete(0, "end")
+        self._clientes_db = []
+
+        if not texto:
+            self._ocultar_dropdown()
+            return
+
+        resultados = buscar_clientes(texto)[:8]
+        if not resultados:
+            self._ocultar_dropdown()
+            return
+
+        self._clientes_db = resultados
+        for c in resultados:
+            doc = f"{c['tipo_documento']} {c['documento']}" if c.get("documento") else ""
+            self.lst_clientes.insert("end", f"  {c['nombre']}  —  {doc}")
+
+        self.lst_clientes.pack(fill="x")
+
+    def _seleccionar_cliente(self, event=None):
+        idx = self.lst_clientes.curselection()
+        if not idx or idx[0] >= len(self._clientes_db):
+            return
+        c = self._clientes_db[idx[0]]
+        self._cliente_id = c["id"]
+        self.entry_cliente.delete(0, "end")
+        self.entry_cliente.insert(0, c["nombre"])
+        doc = f"{c['tipo_documento']} {c['documento']}" if c.get("documento") else ""
+        self.lbl_cliente_sel.config(
+            text=f"✓  Vinculado — {doc}" if doc else "✓  Cliente vinculado"
+        )
+        self._ocultar_dropdown()
+
+    def _ocultar_dropdown(self):
+        self.lst_clientes.pack_forget()
 
     # ── Lógica ────────────────────────────────────────────────────────────────
 
@@ -289,9 +415,12 @@ class FrameCuentas(FrameBase):
             messagebox.showwarning("Campos vacíos", "Completa cliente y mesa.")
             return
         try:
-            abrir_cuenta(cliente, mesa)
+            abrir_cuenta(cliente, mesa, cliente_id=self._cliente_id)
             self.entry_cliente.delete(0, "end")
             self.entry_mesa.delete(0, "end")
+            self._cliente_id = None
+            self.lbl_cliente_sel.config(text="")
+            self._ocultar_dropdown()
             self._cargar_mesas()
         except ValueError as e:
             messagebox.showerror("Error", str(e))
@@ -365,12 +494,25 @@ class FrameCuentas(FrameBase):
             titulo=f"Cobrar — {cuenta['cliente']} / {cuenta['mesa']}"
         )
 
+    def _update_dian_status(self):
+        from modules.dian_client import is_configured
+        if is_configured():
+            self.lbl_dian_status.config(text="✓ DIAN configurado", fg=COLORS["success"])
+        else:
+            self.lbl_dian_status.config(
+                text="⚠ DIAN no configurado", fg=COLORS["warning"])
+
     def _procesar_cobro(self, pagos: list):
         from modules.cuentas import cobrar_cuenta, obtener_cuenta
         from modules.caja import get_sesion_activa, formatear_pesos
+        from modules.fiscal_documents import preparar_venta_para_dian
+        from modules.sync import get_sync_manager
+        from modules.dian_client import is_configured
 
-        cuenta  = obtener_cuenta(self._cuenta_sel)
-        sesion  = get_sesion_activa()
+        cuenta        = obtener_cuenta(self._cuenta_sel)
+        sesion        = get_sesion_activa()
+        emitir_factura = self._emitir_factura.get()
+
         try:
             venta_id = cobrar_cuenta(
                 self._cuenta_sel,
@@ -384,13 +526,60 @@ class FrameCuentas(FrameBase):
             self.tree_items.delete(*self.tree_items.get_children())
             self.lbl_total_cuenta.config(text="Total: $0")
             self._cargar_mesas()
+
+            # ── DIAN Sync ─────────────────────────────────────────────────
+            dian_result = {"status": "no_configurado"}
+            if is_configured() and emitir_factura:
+                try:
+                    from database import get_connection
+                    conn = get_connection()
+                    venta_data = dict(conn.execute(
+                        "SELECT * FROM ventas WHERE id = ?", (venta_id,)
+                    ).fetchone())
+                    detalle = conn.execute(
+                        "SELECT * FROM detalle_venta WHERE venta_id = ?", (venta_id,)
+                    ).fetchall()
+                    conn.close()
+                    venta_data["detalle"] = [dict(d) for d in detalle]
+                    venta_data["pagos"]   = pagos
+
+                    cliente = None
+                    if cuenta.get("cliente_id"):
+                        from modules.clientes import obtener_cliente
+                        cliente = obtener_cliente(cuenta["cliente_id"])
+
+                    dian_payload = preparar_venta_para_dian(venta_data, cliente)
+
+                    import asyncio
+                    sync_mgr = get_sync_manager()
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+
+                    if loop.is_running():
+                        dian_result = {"status": "pendiente", "mensaje": "Sincronización en cola"}
+                    else:
+                        dian_result = loop.run_until_complete(
+                            sync_mgr.process_venta(dian_payload)
+                        )
+                except Exception as e:
+                    dian_result = {"status": "error", "error": str(e)}
+
+            # ── Diálogo estado DIAN ───────────────────────────────────────
+            if emitir_factura and dian_result.get("status") != "no_configurado":
+                from ui.ventas import DialogDianStatus
+                DialogDianStatus(self, dian_result)
+
             if messagebox.askyesno(
                 "Cobro exitoso",
                 f"Cuenta cobrada — Venta #{venta_id}\n"
-                f"Total: {total_str}\nMetodo: {metodos}\n\n¿Imprimir ticket?"
+                f"Total: {total_str}\nMétodo: {metodos}\n\n¿Imprimir ticket?"
             ):
                 from ui.ticket_dialog import mostrar_ticket_cuenta
                 mostrar_ticket_cuenta(self, cuenta_id_cobrada, venta_id)
+
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -415,5 +604,70 @@ class FrameCuentas(FrameBase):
             self.tree_items.delete(*self.tree_items.get_children())
             self.lbl_total_cuenta.config(text="Total: $0")
             self._cargar_mesas()
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+
+    # ── Controles +/- ítems de cuenta ────────────────────────────────────────
+
+    def _al_seleccionar_item(self, event=None):
+        sel = self.tree_items.selection()
+        if not sel:
+            self.lbl_qty_cuenta.config(text="—")
+            return
+        vals = self.tree_items.item(sel[0], "values")
+        # vals: (item_id, nombre, cantidad, precio, subtotal)
+        if vals:
+            cant = vals[2]
+            try:
+                c = float(cant)
+                texto = str(int(c)) if c == int(c) else str(c)
+            except (ValueError, TypeError):
+                texto = str(cant)
+            self.lbl_qty_cuenta.config(text=f"×{texto}")
+
+    def _incrementar_item(self):
+        sel = self.tree_items.selection()
+        if not sel:
+            return
+        item_id = int(self.tree_items.item(sel[0], "values")[0])
+        vals    = self.tree_items.item(sel[0], "values")
+        try:
+            nueva = float(vals[2]) + 1
+        except (ValueError, TypeError):
+            return
+        from modules.cuentas import cambiar_cantidad_item
+        try:
+            cambiar_cantidad_item(item_id, nueva)
+            self._al_seleccionar()
+            # Re-seleccionar el mismo ítem si sigue existiendo
+            iid = str(item_id)
+            if self.tree_items.exists(iid):
+                self.tree_items.selection_set(iid)
+                self.tree_items.focus(iid)
+                self._al_seleccionar_item()
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+
+    def _decrementar_item(self):
+        sel = self.tree_items.selection()
+        if not sel:
+            return
+        item_id = int(self.tree_items.item(sel[0], "values")[0])
+        vals    = self.tree_items.item(sel[0], "values")
+        try:
+            nueva = float(vals[2]) - 1
+        except (ValueError, TypeError):
+            return
+        from modules.cuentas import cambiar_cantidad_item
+        try:
+            cambiar_cantidad_item(item_id, nueva)  # quita si nueva <= 0
+            self._al_seleccionar()
+            iid = str(item_id)
+            if self.tree_items.exists(iid):
+                self.tree_items.selection_set(iid)
+                self.tree_items.focus(iid)
+                self._al_seleccionar_item()
+            else:
+                self.lbl_qty_cuenta.config(text="—")
         except ValueError as e:
             messagebox.showerror("Error", str(e))

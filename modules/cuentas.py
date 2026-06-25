@@ -22,6 +22,7 @@ def migrar():
         CREATE TABLE IF NOT EXISTS cuentas (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             cliente     TEXT    NOT NULL,
+            cliente_id  INTEGER REFERENCES clientes(id),
             mesa        TEXT    NOT NULL,
             abierta_en  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
             cerrada_en  TEXT,
@@ -32,6 +33,12 @@ def migrar():
             notas       TEXT
         )
     """)
+    # Columna agregada después del create inicial — para DBs existentes
+    columnas = {r[1] for r in conn.execute("PRAGMA table_info(cuentas)")}
+    if "cliente_id" not in columnas:
+        conn.execute(
+            "ALTER TABLE cuentas ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)"
+        )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS cuenta_items (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,9 +60,15 @@ def migrar():
 # CUENTAS
 # ════════════════════════════════════════════════════════════
 
-def abrir_cuenta(cliente: str, mesa: str, notas: str = None) -> int:
+def abrir_cuenta(
+    cliente: str,
+    mesa: str,
+    notas: str = None,
+    cliente_id: int = None,
+) -> int:
     """
     Abre una nueva cuenta para un cliente en una mesa.
+    cliente_id: ID del cliente registrado en la tabla clientes (opcional).
     Retorna el ID de la cuenta creada.
     Lanza ValueError si ya hay una cuenta abierta en esa mesa.
     """
@@ -67,7 +80,6 @@ def abrir_cuenta(cliente: str, mesa: str, notas: str = None) -> int:
 
     conn = get_connection()
     try:
-        # Verificar mesa libre
         ocupada = conn.execute("""
             SELECT id FROM cuentas
             WHERE mesa = ? AND estado = 'abierta'
@@ -77,9 +89,9 @@ def abrir_cuenta(cliente: str, mesa: str, notas: str = None) -> int:
             raise ValueError(f"La mesa '{mesa}' ya tiene una cuenta abierta (ID {ocupada[0]}).")
 
         cur = conn.execute("""
-            INSERT INTO cuentas (cliente, mesa, usuario_id, notas)
-            VALUES (?, ?, ?, ?)
-        """, (cliente, mesa, get_usuario_id(), notas))
+            INSERT INTO cuentas (cliente, cliente_id, mesa, usuario_id, notas)
+            VALUES (?, ?, ?, ?, ?)
+        """, (cliente, cliente_id, mesa, get_usuario_id(), notas))
         conn.commit()
         return cur.lastrowid
     finally:
@@ -225,7 +237,6 @@ def quitar_item(item_id: int) -> bool:
     """Elimina un ítem de la cuenta (antes de cobrar)."""
     conn = get_connection()
     try:
-        # Solo si la cuenta sigue abierta
         item = conn.execute("""
             SELECT ci.id, c.estado
             FROM cuenta_items ci
@@ -239,6 +250,35 @@ def quitar_item(item_id: int) -> bool:
             raise ValueError("No se puede modificar una cuenta ya cerrada.")
 
         conn.execute("DELETE FROM cuenta_items WHERE id = ?", (item_id,))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def cambiar_cantidad_item(item_id: int, nueva_cantidad: float) -> bool:
+    """Actualiza la cantidad de un ítem en una cuenta abierta."""
+    if nueva_cantidad <= 0:
+        return quitar_item(item_id)
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT ci.precio_unit, c.estado
+            FROM cuenta_items ci
+            JOIN cuentas c ON ci.cuenta_id = c.id
+            WHERE ci.id = ?
+        """, (item_id,)).fetchone()
+
+        if not row:
+            return False
+        if row["estado"] != "abierta":
+            raise ValueError("No se puede modificar una cuenta ya cerrada.")
+
+        subtotal = round(row["precio_unit"] * nueva_cantidad, 2)
+        conn.execute(
+            "UPDATE cuenta_items SET cantidad = ?, subtotal = ? WHERE id = ?",
+            (nueva_cantidad, subtotal, item_id)
+        )
         conn.commit()
         return True
     finally:
@@ -320,11 +360,13 @@ def cobrar_cuenta(
         fecha_ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = conn_main.execute("""
             INSERT INTO ventas
-                (fecha, total, descuento, metodo_pago, tipo, usuario_id, sesion_id, notas)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (fecha, total, descuento, metodo_pago, tipo,
+                 usuario_id, sesion_id, cliente_id, notas)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             fecha_ahora, total_final, descuento, metodo_final, tipo_venta,
             get_usuario_id(), sesion_id,
+            cuenta.get("cliente_id"),
             f"Cuenta #{cuenta_id} — Mesa {cuenta['mesa']} — {cuenta['cliente']}"
         ))
         venta_id = cur.lastrowid

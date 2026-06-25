@@ -125,7 +125,10 @@ def cerrar_caja(
     esperado_ef          = sesion["monto_base"] + total_efectivo
     diferencia_ef        = round(monto_contado - esperado_ef, 2)
     esperado_digital     = monto_base_digital + total_digital
-    diferencia_dig       = 0.0   # el admin verifica externamente (Nequi, etc.)
+
+    # El campo "digital" viene del entry_contado_digital de la UI
+    monto_contado_digital = float(denominaciones.get("digital", esperado_digital))
+    diferencia_dig        = round(monto_contado_digital - esperado_digital, 2)
 
     conn = get_connection()
     try:
@@ -151,19 +154,21 @@ def cerrar_caja(
         conn.close()
 
     return {
-        "sesion_id":           sesion["id"],
-        "cajero":              sesion["cajero"],
-        "apertura":            sesion["apertura"],
-        "monto_base":          sesion["monto_base"],
-        "monto_base_digital":  monto_base_digital,
-        "total_ventas":        sesion["total_ventas"],
-        "total_efectivo":      total_efectivo,
-        "total_digital":       total_digital,
-        "esperado_efectivo":   esperado_ef,
-        "esperado_digital":    esperado_digital,
-        "monto_contado":       monto_contado,
-        "diferencia":          diferencia_ef,
-        "denominaciones":      detalle_denom,
+        "sesion_id":              sesion["id"],
+        "cajero":                 sesion["cajero"],
+        "apertura":               sesion["apertura"],
+        "monto_base":             sesion["monto_base"],
+        "monto_base_digital":     monto_base_digital,
+        "total_ventas":           sesion["total_ventas"],
+        "total_efectivo":         total_efectivo,
+        "total_digital":          total_digital,
+        "esperado_efectivo":      esperado_ef,
+        "esperado_digital":       esperado_digital,
+        "monto_contado":          monto_contado,
+        "monto_contado_digital":  monto_contado_digital,
+        "diferencia":             diferencia_ef,
+        "diferencia_digital":     diferencia_dig,
+        "denominaciones":         detalle_denom,
     }
 
 

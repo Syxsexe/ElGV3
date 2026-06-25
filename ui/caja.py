@@ -247,7 +247,7 @@ class FrameCaja(FrameBase):
             pass
 
     def _actualizar_contado(self):
-        from modules.caja import formatear_pesos, calcular_desde_denominaciones, DENOMINACIONES_COP
+        from modules.caja import formatear_pesos, calcular_desde_denominaciones
         denominaciones = {}
         for denom, (entry, lbl_sub) in self._denom_entries.items():
             try:
@@ -259,6 +259,14 @@ class FrameCaja(FrameBase):
 
         total = calcular_desde_denominaciones(denominaciones)
         self.lbl_contado.config(text=formatear_pesos(total))
+
+        dif = total - self._esperado_ef
+        color = COLORS["success"] if dif >= 0 else COLORS["danger"]
+        signo = "+" if dif >= 0 else ""
+        self.lbl_diferencia.config(
+            text=f"Diferencia efectivo: {signo}{formatear_pesos(dif)}",
+            fg=color,
+        )
 
     def _cerrar(self):
         from modules.caja import cerrar_caja, get_sesion_activa, formatear_pesos
@@ -285,12 +293,12 @@ class FrameCaja(FrameBase):
             msg = (
                 f"Caja cerrada correctamente.\n\n"
                 f"EFECTIVO\n"
-                f"  Esperado:  {formatear_pesos(resumen['esperado_efectivo'])}\n"
-                f"  Contado:   {formatear_pesos(resumen['monto_contado'])}\n"
+                f"  Esperado:   {formatear_pesos(resumen['esperado_efectivo'])}\n"
+                f"  Contado:    {formatear_pesos(resumen['monto_contado'])}\n"
                 f"  Diferencia: {fmt_dif(dif_ef)}\n\n"
                 f"DIGITAL\n"
-                f"  Esperado:  {formatear_pesos(resumen['esperado_digital'])}\n"
-                f"  Contado:   {formatear_pesos(resumen['esperado_digital'])}\n"
+                f"  Esperado:   {formatear_pesos(resumen['esperado_digital'])}\n"
+                f"  Contado:    {formatear_pesos(resumen['monto_contado_digital'])}\n"
                 f"  Diferencia: {fmt_dif(dif_dig)}"
             )
 

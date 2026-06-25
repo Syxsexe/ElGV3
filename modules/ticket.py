@@ -112,6 +112,11 @@ def generar_ticket_venta(venta_id: int) -> str:
         " FROM facturas WHERE venta_id = ?",
         (venta_id,)
     ).fetchone()
+
+    pagos = conn.execute(
+        "SELECT metodo, monto FROM pagos_venta WHERE venta_id = ?",
+        (venta_id,)
+    ).fetchall()
     conn.close()
 
     lineas = _cabecera()
@@ -228,12 +233,8 @@ def generar_ticket_pedido(pedido_id: int) -> str:
         WHERE dp.pedido_id = ?
     """, (pedido_id,)).fetchall()
 
-    pagos = conn.execute("""
-        SELECT metodo, monto FROM pagos_egreso WHERE egreso_id IN (
-            SELECT id FROM egresos WHERE pedido_id = ?
-        )
-    """, (pedido_id,)).fetchall()
     conn.close()
+    pagos = []
 
     lineas = _cabecera()
     lineas.append(_centrar("RECIBO DE PEDIDO"))

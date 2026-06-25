@@ -121,8 +121,10 @@ class FrameFiscal(FrameBase):
         self.tree_facturas.delete(*self.tree_facturas.get_children())
         conn = get_connection()
         filas = conn.execute(
-            "SELECT f.*, v.total as venta_total FROM facturas f"
+            "SELECT f.*, v.total as venta_total, c.nombre as cliente_nombre"
+            " FROM facturas f"
             " JOIN ventas v ON v.id = f.venta_id"
+            " LEFT JOIN clientes c ON c.id = f.cliente_id"
             " ORDER BY f.id DESC LIMIT 100"
         ).fetchall()
         conn.close()

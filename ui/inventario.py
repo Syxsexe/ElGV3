@@ -513,88 +513,6 @@ class FrameInventario(FrameBase):
                   fg=COLORS["text_muted"], relief="flat", cursor="hand2",
                   command=self._nuevo_producto).pack(pady=(8, 16))
 
-    def _construir_receta_ui(self):
-        """
-        Construye la sección de receta con flujo buscar → agregar → tabla.
-        Los insumos agregados se muestran en una tabla clara con botón quitar.
-        El costo total se recalcula en tiempo real.
-        """
-        for w in self._frame_receta.winfo_children():
-            w.destroy()
-
-        from modules.inventario import listar_insumos
-        from modules.validaciones import aplicar_validacion
-        from modules.caja import formatear_pesos
-
-        insumos = listar_insumos()
-        if not insumos:
-            return
-
-        self._insumos_lista = insumos  # lista completa para buscar
-        self._insumos_map   = {i["nombre"]: i for i in insumos}
-
-        # Título
-        tk.Label(self._frame_receta, text="Receta de insumos",
-                 font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["text"]).pack(anchor="w", pady=(4, 8))
-
-        # ── Buscador de insumo ────────────────────────────────────────────────
-        buscar_frame = tk.Frame(self._frame_receta, bg=COLORS["surface"])
-        buscar_frame.pack(fill="x", pady=(0, 4))
-
-        self._entry_insumo = self._input(buscar_frame)
-        self._entry_insumo.pack(side="left", fill="x", expand=True, ipady=4)
-        self._entry_insumo.bind("<KeyRelease>", self._filtrar_insumos)
-
-        # Listbox de sugerencias
-        self._lst_insumos = tk.Listbox(
-            self._frame_receta, font=FONT_SMALL, height=3,
-            bg=COLORS["surface2"], fg=COLORS["text"],
-            selectbackground=COLORS["accent"],
-            relief="flat", activestyle="none",
-            highlightthickness=1,
-            highlightbackground=COLORS["border"],
-        )
-        self._lst_insumos.pack(fill="x", pady=(0, 6))
-        self._filtrar_insumos()  # cargar todos al inicio
-
-        # Cantidad a agregar
-        cant_frame = tk.Frame(self._frame_receta, bg=COLORS["surface"])
-        cant_frame.pack(fill="x", pady=(0, 6))
-        tk.Label(cant_frame, text="Cantidad:", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
-        self._entry_cant_insumo = self._input(cant_frame, width=5)
-        self._entry_cant_insumo.insert(0, "1")
-        self._entry_cant_insumo.pack(side="left", padx=(6, 0), ipady=4)
-        aplicar_validacion(self._entry_cant_insumo, "entero")
-
-        # Botón agregar
-        tk.Button(
-            self._frame_receta, text="+ Agregar",
-            font=FONT_SMALL, bg=COLORS["accent"], fg=COLORS["text"],
-            activebackground=COLORS["accent_hover"],
-            relief="flat", cursor="hand2",
-            command=self._agregar_insumo_receta,
-        ).pack(fill="x", pady=(0, 8))
-
-        # ── Tabla de insumos ya en la receta ──────────────────────────────────
-        tk.Label(self._frame_receta, text="Insumos en receta:",
-                 font=FONT_SMALL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).pack(anchor="w", pady=(0, 4))
-
-        self._frame_tabla_receta = tk.Frame(self._frame_receta, bg=COLORS["surface"])
-        self._frame_tabla_receta.pack(fill="x")
-
-        # Costo total de la receta
-        self._lbl_costo_receta = tk.Label(
-            self._frame_receta, text="Costo receta: $0",
-            font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["success"]
-        )
-        self._lbl_costo_receta.pack(anchor="w", pady=(6, 0))
-
-        self._receta_lineas = []  # [(insumo_id, nombre, cantidad, costo_unit)]
-        self._refrescar_tabla_receta()
-
     def _filtrar_insumos(self, event=None):
         """Filtra la lista de insumos según el texto buscado."""
         texto = self._entry_insumo.get().strip().lower()
@@ -705,8 +623,8 @@ class FrameInventario(FrameBase):
             (self._p_codigo, p["codigo"] or ""),
             (self._p_pventa, str(int(p["precio_venta"]))),
             (self._p_pcosto, str(int(p["precio_costo"]))),
-            (self._p_stock,  str(int(p["stock"]))),
-            (self._p_minimo, str(int(p["stock_minimo"]))),
+            (self._p_stock,  str(int(p["stock"]) if p["stock"] == int(p["stock"]) else round(p["stock"], 2))),
+            (self._p_minimo, str(int(p["stock_minimo"]) if p["stock_minimo"] == int(p["stock_minimo"]) else round(p["stock_minimo"], 2))),
         ]:
             entry.delete(0, "end")
             entry.insert(0, valor)
@@ -715,7 +633,6 @@ class FrameInventario(FrameBase):
         cat_nombre = p["categoria_nombre"]
         if cat_nombre in self._cats_map:
             self._combo_cat.set(cat_nombre)
-        self._actualizar_visibilidad_receta()
 
         # Receta — cargar insumos en la nueva tabla
         receta = obtener_receta(producto_id)

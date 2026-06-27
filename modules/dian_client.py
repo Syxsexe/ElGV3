@@ -11,8 +11,8 @@ from typing import Any
 
 import httpx
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_FILE = BASE_DIR / "dian_config.json"
+from paths import ruta_datos
+CONFIG_FILE = ruta_datos("dian_config.json")
 
 _DEFAULT_CONFIG = {
     "backend_url": "http://localhost:8000",

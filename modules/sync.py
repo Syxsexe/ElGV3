@@ -14,8 +14,8 @@ from modules.dian_client import (
     sync_venta, sync_cierre_caja, health_check, is_configured,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-SYNC_QUEUE_FILE = BASE_DIR / "sync_queue.json"
+from paths import ruta_datos
+SYNC_QUEUE_FILE = ruta_datos("sync_queue.json")
 
 
 class SyncManager:

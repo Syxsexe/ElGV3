@@ -1,12 +1,17 @@
 """
 ui/base.py — El G POS
-Paleta de colores, fuentes y clase base FrameBase.
+Paleta de colores, fuentes, temas (claro/oscuro) y clase base FrameBase.
 """
+import json
 import tkinter as tk
 from tkinter import ttk
 import auth
+from paths import ruta_datos
 
-COLORS = {
+# ── Temas ─────────────────────────────────────────────────────────────────────
+_CONFIG_PATH = ruta_datos("config.json")
+
+_DARK = {
     "bg":           "#0F1117",
     "surface":      "#1A1D27",
     "surface2":     "#22263A",
@@ -20,7 +25,64 @@ COLORS = {
     "text":         "#E8E9F3",
     "text_muted":   "#7C8098",
     "text_dim":     "#4A4E6A",
+    "on_accent":    "#FFFFFF",   # texto sobre fondos de color (botones accent/danger)
 }
+
+_LIGHT = {
+    "bg":           "#F4F5FA",
+    "surface":      "#FFFFFF",
+    "surface2":     "#ECEEF6",
+    "border":       "#D7DBE8",
+    "accent":       "#6C63FF",
+    "accent_hover": "#8B84FF",
+    "accent2":      "#FF6584",
+    "success":      "#1FA97D",
+    "warning":      "#C77A12",
+    "danger":       "#E23B3B",
+    "text":         "#1B1E2B",
+    "text_muted":   "#5C6178",
+    "text_dim":     "#9499AE",
+    "on_accent":    "#FFFFFF",
+}
+
+_TEMAS = {"oscuro": _DARK, "claro": _LIGHT}
+
+
+def _leer_config() -> dict:
+    try:
+        return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _guardar_config(cfg: dict) -> None:
+    try:
+        _CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def tema_actual() -> str:
+    """Nombre del tema activo: 'oscuro' | 'claro'."""
+    return _leer_config().get("tema", "oscuro")
+
+
+# Diccionario MUTABLE compartido por toda la app: nunca se reasigna, solo se muta
+# en sitio para que `from ui.base import COLORS` siga apuntando al mismo objeto en
+# todos los módulos (así un cambio de tema se propaga sin reimportar).
+COLORS = {}
+COLORS.update(_TEMAS.get(tema_actual(), _DARK))
+
+
+def aplicar_tema(nombre: str) -> None:
+    """Cambia la paleta activa (en sitio) y persiste la preferencia."""
+    if nombre not in _TEMAS:
+        nombre = "oscuro"
+    COLORS.clear()
+    COLORS.update(_TEMAS[nombre])
+    cfg = _leer_config()
+    cfg["tema"] = nombre
+    _guardar_config(cfg)
 
 FONT_TITLE  = ("Segoe UI", 24, "bold")
 FONT_SUB    = ("Segoe UI", 11)
@@ -76,9 +138,9 @@ class FrameBase(tk.Frame):
 
     def _btn_primary(self, parent, text, cmd, **kwargs):
         btn = tk.Button(parent, text=text, font=FONT_BOLD,
-                        bg=COLORS["accent"], fg=COLORS["text"],
+                        bg=COLORS["accent"], fg=COLORS["on_accent"],
                         activebackground=COLORS["accent_hover"],
-                        activeforeground=COLORS["text"],
+                        activeforeground=COLORS["on_accent"],
                         relief="flat", cursor="hand2",
                         command=cmd, **kwargs)
         _add_hover(btn, COLORS["accent"], COLORS["accent_hover"])
@@ -86,9 +148,9 @@ class FrameBase(tk.Frame):
 
     def _btn_danger(self, parent, text, cmd, **kwargs):
         btn = tk.Button(parent, text=text, font=FONT_BOLD,
-                        bg=COLORS["danger"], fg=COLORS["text"],
+                        bg=COLORS["danger"], fg=COLORS["on_accent"],
                         activebackground="#cc4444",
-                        activeforeground=COLORS["text"],
+                        activeforeground=COLORS["on_accent"],
                         relief="flat", cursor="hand2",
                         command=cmd, **kwargs)
         _add_hover(btn, COLORS["danger"], "#cc4444")

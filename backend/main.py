@@ -45,18 +45,48 @@ if static_dir.exists():
 
 # ── Jinja2 globals ───────────────────────────────────────────────────────
 
-async def flash_message(request: Request):
-    """Make flashed messages available in templates."""
-    messages = getattr(request.state, "_flash", [])
-    return messages
+import jinja2
 
 
-templates.env.globals["get_flashed_messages"] = flash_message
+@jinja2.pass_context
+def get_flashed_messages(context, with_categories: bool = False):
+    """Equivalente estilo Flask: lee los mensajes flash de request.state._flash.
+    Los mensajes se guardan como (categoria, mensaje)."""
+    request = context.get("request")
+    mensajes = getattr(request.state, "_flash", []) if request is not None else []
+    if with_categories:
+        return mensajes
+    return [m for _cat, m in mensajes]
+
+
+templates.env.globals["get_flashed_messages"] = get_flashed_messages
+
+
+def _fmt_dt(value):
+    """Formatea fechas para las plantillas. Tolera datetime, str o None."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value[:19]
+    try:
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(value)
+
+
+templates.env.filters["dt"] = _fmt_dt
 
 
 @app.on_event("startup")
 async def startup():
     await init_db()
+    # Registrar los POS autorizados (POS_CLIENTS del .env) para el login.
+    clientes = settings.pos_clients_map
+    auth_route.configure_clients(clientes)
+    if clientes:
+        print(f"✓ {len(clientes)} cliente(s) POS configurado(s): {', '.join(clientes)}")
+    else:
+        print("⚠ Sin POS_CLIENTS configurados — el login del POS devolverá 401")
     print("✓ Backend ready — Database initialized")
 
 

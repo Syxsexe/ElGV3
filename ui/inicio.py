@@ -391,6 +391,21 @@ class FrameInicio(FrameBase):
 
     # ── Sección 2: Gráficos ───────────────────────────────────────────────────
 
+    def _bind_redibujo(self, cv, datos, fn, h):
+        """Dibuja un gráfico en `cv` al mostrarlo y al redimensionar, de forma
+        segura: tolera ser llamado sin evento (p. ej. durante la reconstrucción
+        por cambio de tema) y si el canvas ya fue destruido."""
+        def _redibujar(e=None):
+            try:
+                if not cv.winfo_exists():
+                    return
+                w = e.width if e is not None else max(cv.winfo_width(), 200)
+                fn(cv, datos, w, h)
+            except tk.TclError:
+                pass
+        cv.bind("<Configure>", _redibujar)
+        cv.after(50, _redibujar)
+
     def _render_charts(self, d):
         row = tk.Frame(self._content, bg=COLORS["bg"])
         row.pack(fill="x", padx=32, pady=(0, 14))
@@ -413,11 +428,7 @@ class FrameInicio(FrameBase):
             cv.pack(fill="x", padx=8, pady=(0, 10))
 
             # Dibuja al mostrar y al redimensionar
-            cv.bind("<Configure>",
-                    lambda e, c=cv, dat=datos, f=fn: f(c, dat, e.width, 170))
-            # Primer dibujo diferido (widget aún no tiene ancho real)
-            cv.after(50, lambda c=cv, dat=datos, f=fn:
-                     f(c, dat, max(c.winfo_width(), 200), 170))
+            self._bind_redibujo(cv, datos, fn, 170)
 
         # Quitar el padx extra del último card
         row.winfo_children()[-1].pack_configure(padx=0)
@@ -456,22 +467,23 @@ class FrameInicio(FrameBase):
                              highlightbackground=accent, highlightthickness=2)
                 c.pack(side="left", fill="both", expand=True,
                        padx=(0, 5), ipady=4)
+                # Tarjetas de fondo oscuro fijo: texto claro en ambos temas.
                 tk.Label(c, text=titulo, font=FONT_BOLD,
-                         bg=bg, fg=COLORS["text"]).pack(pady=(8, 6))
+                         bg=bg, fg=COLORS["on_accent"]).pack(pady=(8, 6))
                 for lbl, val, ico in filas:
                     f = tk.Frame(c, bg=bg)
                     f.pack(fill="x", padx=12, pady=1)
                     tk.Label(f, text=f"{ico} {lbl}", font=FONT_SMALL,
-                             bg=bg, fg=COLORS["text_muted"]).pack(side="left")
+                             bg=bg, fg="#AEB4C7").pack(side="left")
                     tk.Label(f, text=fp(val), font=FONT_SMALL,
-                             bg=bg, fg=COLORS["text"]).pack(side="right")
+                             bg=bg, fg=COLORS["on_accent"]).pack(side="right")
                 sf = tk.Frame(c, bg=accent)
                 sf.pack(fill="x", pady=(6, 0))
                 tk.Label(sf, text=lbl_s, font=FONT_SMALL,
-                         bg=accent, fg=COLORS["text"]).pack(pady=(4, 0))
+                         bg=accent, fg=COLORS["on_accent"]).pack(pady=(4, 0))
                 tk.Label(sf, text=fp(saldo),
                          font=("Segoe UI", 15, "bold"),
-                         bg=accent, fg=COLORS["text"]).pack(pady=(0, 6))
+                         bg=accent, fg=COLORS["on_accent"]).pack(pady=(0, 6))
 
             _mini(cards, "EFECTIVO", "#1A3A2A", "#2E8B57",
                   [("Inicial:", base_ef, "💵"),
@@ -544,11 +556,7 @@ class FrameInicio(FrameBase):
         cv_d = tk.Canvas(pago_card, bg=COLORS["surface"],
                          highlightthickness=0, height=155)
         cv_d.pack(fill="x", padx=6, pady=(0, 10))
-        cv_d.bind("<Configure>",
-                  lambda e, c=cv_d, dat=d["metodos"]:
-                  _donut(c, dat, e.width, 155))
-        cv_d.after(50, lambda c=cv_d, dat=d["metodos"]:
-                   _donut(c, dat, max(c.winfo_width(), 200), 155))
+        self._bind_redibujo(cv_d, d["metodos"], _donut, 155)
 
     # ── Sección 4: Alertas de stock ───────────────────────────────────────────
 

@@ -558,7 +558,7 @@ class DialogCliente(tk.Toplevel):
 
         tk.Button(
             conf_row, text="Guardar configuración", font=FONT_SMALL,
-            bg=COLORS["accent"], fg=COLORS["text"],
+            bg=COLORS["accent"], fg=COLORS["on_accent"],
             activebackground=COLORS["accent"], relief="flat", cursor="hand2",
             command=self._guardar_limite, pady=5, padx=10,
         ).pack(side="left")
@@ -661,7 +661,7 @@ class DialogCliente(tk.Toplevel):
 
         tk.Button(
             rf, text="✓ Registrar pago", font=FONT_BOLD,
-            bg=COLORS["accent"], fg=COLORS["text"],
+            bg=COLORS["accent"], fg=COLORS["on_accent"],
             activebackground=COLORS["accent"], relief="flat", cursor="hand2",
             command=self._registrar_abono, pady=10,
         ).pack(fill="x")

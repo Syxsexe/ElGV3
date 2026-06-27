@@ -8,7 +8,10 @@ from tkinter import ttk, messagebox
 from database import inicializar
 import auth
 
-from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_NAV, FONT_KPI, _add_hover
+from ui.base import (
+    COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL,
+    FONT_NAV, FONT_KPI, _add_hover, aplicar_tema, tema_actual,
+)
 from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
@@ -106,7 +109,7 @@ class LoginWindow(tk.Tk):
         # Botón Ingresar
         btn_login = tk.Button(
             inner, text="Ingresar", font=("Segoe UI", 11, "bold"),
-            bg=COLORS["accent"], fg=COLORS["text"],
+            bg=COLORS["accent"], fg=COLORS["on_accent"],
             activebackground=COLORS["accent_hover"],
             activeforeground=COLORS["text"],
             relief="flat", cursor="hand2",
@@ -233,6 +236,19 @@ class MainWindow(tk.Tk):
         tk.Label(pie, text=sesion["rol"].capitalize(), font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w")
 
+        # Toggle de tema (claro / oscuro)
+        es_oscuro = tema_actual() == "oscuro"
+        btn_tema = tk.Button(
+            self.sidebar,
+            text="☀  Tema claro" if es_oscuro else "🌙  Tema oscuro",
+            font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text_muted"],
+            relief="flat", cursor="hand2", command=self._cambiar_tema,
+            activebackground=COLORS["surface2"], activeforeground=COLORS["accent"],
+        )
+        btn_tema.pack(padx=20, pady=(8, 0), anchor="w")
+        btn_tema.bind("<Enter>", lambda e: btn_tema.config(fg=COLORS["accent"]))
+        btn_tema.bind("<Leave>", lambda e: btn_tema.config(fg=COLORS["text_muted"]))
+
         btn_salir = tk.Button(
             self.sidebar, text="Cerrar sesión", font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["text_dim"],
@@ -339,6 +355,7 @@ class MainWindow(tk.Tk):
         self._nav_btns[label] = {
             "activate":   _activate,
             "deactivate": _deactivate,
+            "cmd":        cmd,
         }
 
     def _nav_click(self, label):
@@ -407,6 +424,22 @@ class MainWindow(tk.Tk):
     def _mostrar_usuarios(self):
         self._nav_click("Usuarios")
         self._cambiar_frame(FrameUsuarios)
+
+    def _cambiar_tema(self):
+        """Alterna entre tema oscuro/claro y reconstruye la ventana en caliente."""
+        aplicar_tema("claro" if tema_actual() == "oscuro" else "oscuro")
+        vista = self._nav_activo
+        for w in self.winfo_children():
+            w.destroy()
+        self.configure(bg=COLORS["bg"])
+        self._frame_actual = None
+        self._nav_activo   = None
+        self._nav_btns     = {}
+        self._build()
+        # _build() ya muestra "Inicio"; solo restauramos si estaba en otra vista
+        # (evita reconstruir el dashboard dos veces).
+        if vista and vista != "Inicio" and vista in self._nav_btns:
+            self._nav_btns[vista]["cmd"]()
 
     def _cerrar_sesion(self):
         if messagebox.askyesno("Cerrar sesión", "¿Deseas cerrar la sesión actual?"):

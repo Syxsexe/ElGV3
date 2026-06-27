@@ -6,20 +6,7 @@ Diálogo de cobro reutilizable: pago simple, digital y mixto.
 import tkinter as tk
 from tkinter import messagebox
 
-COLORS = {
-    "bg":           "#0F1117",
-    "surface":      "#1A1D27",
-    "surface2":     "#22263A",
-    "border":       "#2E3350",
-    "accent":       "#6C63FF",
-    "accent_hover": "#8B84FF",
-    "success":      "#43D9A2",
-    "warning":      "#FFB547",
-    "danger":       "#FF5757",
-    "text":         "#E8E9F3",
-    "text_muted":   "#7C8098",
-    "text_dim":     "#4A4E6A",
-}
+from ui.base import COLORS  # paleta compartida (soporta tema claro/oscuro)
 
 FONT_LABEL = ("Segoe UI", 10)
 FONT_BOLD  = ("Segoe UI", 10, "bold")
@@ -155,7 +142,7 @@ class DialogPago(tk.Toplevel):
 
         confirm = tk.Button(
             btn_row, text="✓  Confirmar pago", font=FONT_BOLD,
-            bg=COLORS["accent"], fg=COLORS["text"],
+            bg=COLORS["accent"], fg=COLORS["on_accent"],
             activebackground=COLORS["accent_hover"],
             relief="flat", cursor="hand2",
             command=self._confirmar,

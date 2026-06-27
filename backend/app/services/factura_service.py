@@ -56,7 +56,8 @@ async def crear_y_transmitir_factura(
         select(Resolucion).where(
             Resolucion.activa == True,
             Resolucion.tipo_documento == "FEV",
-            Resolucion.agotado == False,
+            # `agotado` es una @property, no una columna: usar la expresión real.
+            Resolucion.consecutivo_actual < Resolucion.rango_fin,
         ).order_by(Resolucion.fecha_autorizacion.desc()).limit(1)
     )
     resolucion = result.scalar_one_or_none()

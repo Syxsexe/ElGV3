@@ -28,13 +28,14 @@ def _get_service_url() -> str:
     return settings.dian_prod_url
 
 
-def transmitir_factura(xml_signed: bytes, test_set_id: str = "123456") -> dict:
+def transmitir_factura(xml_signed: bytes, test_set_id: str | None = None) -> dict:
     """
     Sends a signed electronic invoice XML to DIAN for validation.
 
     Args:
         xml_signed: The complete signed XML (bytes)
-        test_set_id: Identificador del Juego de Pruebas (habilitación)
+        test_set_id: Identificador del Juego de Pruebas (habilitación). Si es None
+            se toma de DIAN_TEST_SET_ID (.env); como último recurso, "123456".
 
     Returns:
         Dict with DIAN response:
@@ -43,6 +44,9 @@ def transmitir_factura(xml_signed: bytes, test_set_id: str = "123456") -> dict:
         - error_message: str (if rejected)
         - raw_response: str
     """
+    if test_set_id is None:
+        test_set_id = settings.dian_test_set_id or "123456"
+
     if _is_mock():
         return _transmitir_mock(xml_signed, test_set_id)
 

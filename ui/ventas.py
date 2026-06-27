@@ -89,7 +89,7 @@ class DialogDianStatus(tk.Toplevel):
                      wraplength=320).pack(pady=(0, 8))
 
         tk.Button(card, text="Cerrar", font=FONT_BOLD,
-                  bg=COLORS["accent"], fg=COLORS["text"],
+                  bg=COLORS["accent"], fg=COLORS["on_accent"],
                   relief="flat", cursor="hand2",
                   command=self.destroy).pack(pady=(8, 4), ipadx=20, ipady=6)
 

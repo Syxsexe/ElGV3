@@ -65,5 +65,12 @@ sync_queue.json
 # DIAN client config (contains credentials)
 dian_config.json
 
+# Preferencias locales de la app (tema, etc.)
+config.json
+
+# Artefactos de empaquetado (PyInstaller / Inno Setup)
+.venv-build/
+Output/
+
 # Backend runtime
 backend/.env

@@ -426,7 +426,7 @@ async def sync_logs_web(
     logs = result.scalars().all()
 
     return templates.TemplateResponse(
-        "sync-logs.html",
+        "sync_logs.html",
         {
             "request": request,
             "usuario": user,

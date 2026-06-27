@@ -351,7 +351,7 @@ class DialogVerCufe(tk.Toplevel):
                 pass
 
         tk.Button(card, text="Cerrar", font=FONT_BOLD,
-                  bg=COLORS["accent"], fg=COLORS["text"],
+                  bg=COLORS["accent"], fg=COLORS["on_accent"],
                   relief="flat", cursor="hand2",
                   command=self.destroy).pack(pady=(8, 0), ipadx=20, ipady=6)
 
@@ -421,7 +421,7 @@ class DialogNotaCredito(tk.Toplevel):
                   command=self.destroy).pack(side="left", ipadx=16, ipady=6, padx=(0, 8))
 
         tk.Button(btn_frame, text="Crear Nota Crédito", font=FONT_BOLD,
-                  bg=COLORS["accent"], fg=COLORS["text"],
+                  bg=COLORS["accent"], fg=COLORS["on_accent"],
                   relief="flat", cursor="hand2",
                   command=self._confirmar).pack(side="right", ipadx=16, ipady=6)
 
@@ -525,7 +525,7 @@ class DialogDianConfig(tk.Toplevel):
                   command=self.destroy).pack(side="left", ipadx=16, ipady=6, padx=(0, 8))
 
         self._btn_save = tk.Button(btn_frame, text="Guardar", font=FONT_BOLD,
-                                   bg=COLORS["accent"], fg=COLORS["text"],
+                                   bg=COLORS["accent"], fg=COLORS["on_accent"],
                                    relief="flat", cursor="hand2",
                                    command=self._guardar)
         self._btn_save.pack(side="right", ipadx=16, ipady=6)

@@ -38,7 +38,7 @@
             {% set cls = {'pendiente': 'warning', 'enviada': 'info', 'aceptada': 'success', 'rechazada': 'danger', 'contingencia': 'warning'} %}
             <span class="badge {{ cls.get(f.estado_dian, 'neutral') }}">{{ f.estado_dian }}</span>
           </td>
-          <td class="text-sm text-muted">{{ f.fecha_emision[:19] }}</td>
+          <td class="text-sm text-muted">{{ f.fecha_emision | dt }}</td>
         </tr>
         {% else %}
         <tr class="empty"><td colspan="7">No hay facturas registradas</td></tr>

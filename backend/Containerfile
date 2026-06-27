@@ -1,0 +1,16 @@
+# Imagen del backend El G POS para pruebas locales.
+# Python 3.12 (tiene wheels para todas las deps fijadas).
+# El código se monta como volumen en runtime; aquí solo se instalan dependencias.
+FROM docker.io/library/python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app:/app/backend
+
+WORKDIR /app/backend
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+EXPOSE 8000
+CMD ["bash", "/app/backend/entrypoint.sh"]

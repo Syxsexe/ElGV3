@@ -10,8 +10,8 @@ import os
 from pathlib import Path
 
 # ── Ruta de la base de datos ──────────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent
-DB_PATH  = BASE_DIR / "elg_pos.db"
+from paths import ruta_datos
+DB_PATH = ruta_datos("elg_pos.db")
 
 
 # ── Conexión ──────────────────────────────────────────────────────────────────

@@ -10,4 +10,7 @@ from ui.cuentas      import FrameCuentas
 from ui.clientes    import FrameClientes
 from ui.proveedores  import FrameProveedores
 from ui.fiscal       import FrameFiscal
- 
+from ui.gastos       import FrameGastos
+from ui.auditoria    import FrameAuditoria
+from ui.creditos     import FrameCreditos
+

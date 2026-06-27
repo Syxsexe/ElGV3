@@ -23,13 +23,15 @@ def _actualizar_cajas_sesion(conn, sesion_id: int, pagos: list, signo: float = 1
     """
     Actualiza total_ventas, total_efectivo y total_digital en la sesion.
     signo=1 para ingresos (ventas), signo=-1 para egresos (pedidos).
+    Pagos con metodo='credito' solo suman a total_ventas, no a efectivo/digital.
     """
     if not sesion_id:
         return
     from modules.caja import METODOS_DIGITALES
     efectivo = sum(p["monto"] for p in pagos if p["metodo"] == "efectivo")
     digital  = sum(p["monto"] for p in pagos if p["metodo"] in METODOS_DIGITALES)
-    total    = efectivo + digital
+    credito  = sum(p["monto"] for p in pagos if p["metodo"] == "credito")
+    total    = efectivo + digital + credito
     conn.execute("""
         UPDATE sesiones_caja
         SET total_ventas   = total_ventas   + ?,
@@ -244,7 +246,7 @@ def registrar_venta(
     if carrito.esta_vacio():
         raise ValueError("El carrito está vacío.")
 
-    METODOS = {"efectivo", "transferencia", "tarjeta", "nequi", "daviplata"}
+    METODOS = {"efectivo", "transferencia", "tarjeta", "nequi", "daviplata", "credito"}
 
     # — Resolver método y pagos —
     total = max(0, carrito.total() - descuento)
@@ -382,6 +384,27 @@ def registrar_venta(
 
         conn.commit()
         carrito.limpiar()
+
+        # Registrar cargo de crédito si aplica
+        if metodo_final == "credito" and cliente_id:
+            try:
+                from modules.creditos import registrar_cargo
+                registrar_cargo(cliente_id, total, venta_id=venta_id)
+            except Exception as e:
+                raise ValueError(f"No se pudo registrar el crédito: {e}") from e
+
+        try:
+            from modules.auditoria import registrar
+            metodos_str = " + ".join(p["metodo"] for p in pagos)
+            registrar(
+                "venta",
+                f"Venta #{venta_id} — total: ${total:,.0f} — método: {metodos_str}"
+                + (f" — descuento: ${descuento:,.0f}" if descuento else ""),
+                referencia_id=venta_id,
+            )
+        except Exception:
+            pass
+
         return venta_id
 
     except Exception:
@@ -505,6 +528,7 @@ def listar_ventas(
     fecha_fin: str    = None,
     tipo: str         = None,
     usuario_id: int   = None,
+    cliente_id: int   = None,
     limite: int       = 100
 ) -> list:
     """
@@ -532,6 +556,9 @@ def listar_ventas(
     if usuario_id:
         query += " AND v.usuario_id = ?"
         params.append(usuario_id)
+    if cliente_id:
+        query += " AND v.cliente_id = ?"
+        params.append(cliente_id)
 
     query += " ORDER BY v.fecha DESC LIMIT ?"
     params.append(limite)

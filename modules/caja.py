@@ -85,9 +85,21 @@ def abrir_caja(monto_base: float, monto_base_digital: float = 0,
             VALUES (?, ?, ?, 0, 0, 0, ?)
         """, (usuario_id, monto_base, monto_base_digital, notas))
         conn.commit()
-        return cur.lastrowid
+        sesion_id = cur.lastrowid
     finally:
         conn.close()
+
+    try:
+        from modules.auditoria import registrar
+        registrar(
+            "caja",
+            f"Apertura de caja — efectivo base: {formatear_pesos(monto_base)}, "
+            f"digital base: {formatear_pesos(monto_base_digital)}",
+            referencia_id=sesion_id,
+        )
+    except Exception:
+        pass
+    return sesion_id
 
 
 def cerrar_caja(
@@ -153,7 +165,7 @@ def cerrar_caja(
     finally:
         conn.close()
 
-    return {
+    resumen = {
         "sesion_id":              sesion["id"],
         "cajero":                 sesion["cajero"],
         "apertura":               sesion["apertura"],
@@ -170,6 +182,20 @@ def cerrar_caja(
         "diferencia_digital":     diferencia_dig,
         "denominaciones":         detalle_denom,
     }
+    try:
+        from modules.auditoria import registrar
+        signo_ef  = "+" if diferencia_ef  >= 0 else ""
+        signo_dig = "+" if diferencia_dig >= 0 else ""
+        registrar(
+            "caja",
+            f"Cierre de caja — ventas: {formatear_pesos(sesion['total_ventas'])}, "
+            f"dif. efectivo: {signo_ef}{formatear_pesos(diferencia_ef)}, "
+            f"dif. digital: {signo_dig}{formatear_pesos(diferencia_dig)}",
+            referencia_id=sesion["id"],
+        )
+    except Exception:
+        pass
+    return resumen
 
 
 # ════════════════════════════════════════════════════════════
@@ -205,17 +231,30 @@ def obtener_sesion(sesion_id: int) -> dict | None:
 
 
 @requiere_admin
-def listar_sesiones(limite: int = 30) -> list:
-    """Retorna las últimas sesiones de caja cerradas. Solo admin."""
-    conn = get_connection()
-    filas = conn.execute("""
+def listar_sesiones(limite: int = 60,
+                    fecha_inicio: str = None,
+                    fecha_fin: str = None) -> list:
+    """
+    Retorna sesiones de caja cerradas. Solo admin.
+    fecha_inicio / fecha_fin: 'YYYY-MM-DD' filtran por fecha de apertura.
+    """
+    conn   = get_connection()
+    query  = """
         SELECT s.*, u.usuario AS cajero
         FROM sesiones_caja s
         JOIN usuarios u ON s.usuario_id = u.id
         WHERE s.cierre IS NOT NULL
-        ORDER BY s.apertura DESC
-        LIMIT ?
-    """, (limite,)).fetchall()
+    """
+    params = []
+    if fecha_inicio:
+        query += " AND date(s.apertura) >= ?"
+        params.append(fecha_inicio)
+    if fecha_fin:
+        query += " AND date(s.apertura) <= ?"
+        params.append(fecha_fin)
+    query += " ORDER BY s.apertura DESC LIMIT ?"
+    params.append(limite)
+    filas = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(f) for f in filas]
 

@@ -104,6 +104,19 @@ class FrameInventario(FrameBase):
                 command=self._cambiar_tab, padx=14, pady=6,
             ).pack(side="left", padx=(0, 4))
 
+        # Barra de búsqueda
+        buscar_row = tk.Frame(left, bg=COLORS["bg"])
+        buscar_row.pack(fill="x", pady=(0, 6))
+        tk.Label(buscar_row, text="Buscar:", font=FONT_SMALL,
+                 bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side="left", padx=(0, 6))
+        self._entry_buscar = self._input(buscar_row)
+        self._entry_buscar.pack(side="left", fill="x", expand=True, ipady=5)
+        self._entry_buscar.bind("<KeyRelease>", lambda e: self._filtrar())
+        tk.Button(buscar_row, text="✕", font=FONT_SMALL,
+                  bg=COLORS["surface"], fg=COLORS["text_muted"],
+                  relief="flat", cursor="hand2",
+                  command=self._limpiar_busqueda).pack(side="left", padx=(4, 0))
+
         tabla_wrap = tk.Frame(left, bg=COLORS["bg"])
         tabla_wrap.pack(fill="both", expand=True)
         self.tree = self._tabla(tabla_wrap, list(self._cols_prods.keys()), alto=16)
@@ -130,7 +143,25 @@ class FrameInventario(FrameBase):
 
     # ── Cambio de pestaña ─────────────────────────────────────────────────────
 
+    def _filtrar(self):
+        texto = self._entry_buscar.get().strip().lower()
+        tab = self._tab.get()
+        if tab == "tienda":
+            self._cargar_tienda(filtro=texto)
+        elif tab == "insumos":
+            self._cargar_insumos(filtro=texto)
+        elif tab == "recetas":
+            self._cargar_cocina(filtro=texto)
+        else:
+            self._cargar_combos(filtro=texto)
+
+    def _limpiar_busqueda(self):
+        if hasattr(self, "_entry_buscar"):
+            self._entry_buscar.delete(0, "end")
+        self._filtrar()
+
     def _cambiar_tab(self):
+        self._limpiar_busqueda()
         self._limpiar_panel()
         tab = self._tab.get()
         if tab == "tienda":
@@ -232,11 +263,13 @@ class FrameInventario(FrameBase):
 
     # ── Carga de datos ────────────────────────────────────────────────────────
 
-    def _cargar_tienda(self):
+    def _cargar_tienda(self, filtro=""):
         from modules.inventario import listar_productos, calcular_margen
         from modules.caja import formatear_pesos
         self.tree.delete(*self.tree.get_children())
         for p in listar_productos(tipo="tienda", solo_activos=False):
+            if filtro and filtro not in f"{p['nombre']} {p['categoria_nombre']} {p.get('codigo','')}".lower():
+                continue
             margen = calcular_margen(p["precio_venta"], p["precio_costo"])
             self.tree.insert("", "end", iid=str(p["id"]), values=(
                 p["id"], p["nombre"], p["categoria_nombre"],
@@ -247,11 +280,13 @@ class FrameInventario(FrameBase):
                 "Activo" if p["activo"] else "Inactivo",
             ))
 
-    def _cargar_cocina(self):
+    def _cargar_cocina(self, filtro=""):
         from modules.inventario import listar_productos, calcular_margen
         from modules.caja import formatear_pesos
         self.tree.delete(*self.tree.get_children())
         for p in listar_productos(tipo="cocina", solo_activos=False):
+            if filtro and filtro not in f"{p['nombre']} {p['categoria_nombre']} {p.get('codigo','')}".lower():
+                continue
             margen = calcular_margen(p["precio_venta"], p["precio_costo"])
             self.tree.insert("", "end", iid=str(p["id"]), values=(
                 p["id"], p["nombre"], p["categoria_nombre"],
@@ -262,10 +297,12 @@ class FrameInventario(FrameBase):
                 "Activo" if p["activo"] else "Inactivo",
             ))
 
-    def _cargar_insumos(self):
+    def _cargar_insumos(self, filtro=""):
         from modules.inventario import listar_insumos
         self.tree.delete(*self.tree.get_children())
         for i in listar_insumos(solo_activos=False):
+            if filtro and filtro not in f"{i['nombre']} {i['unidad']}".lower():
+                continue
             stock  = int(i["stock"])  if i["stock"]  == int(i["stock"])  else round(i["stock"], 2)
             minimo = int(i["stock_minimo"]) if i["stock_minimo"] == int(i["stock_minimo"]) else round(i["stock_minimo"], 2)
             self.tree.insert("", "end", iid=f"i{i['id']}", values=(
@@ -275,11 +312,13 @@ class FrameInventario(FrameBase):
                 f"{minimo} {i['unidad']}",
             ))
 
-    def _cargar_combos(self):
+    def _cargar_combos(self, filtro=""):
         from modules.ventas import listar_combos
         from modules.caja import formatear_pesos
         self.tree.delete(*self.tree.get_children())
         for c in listar_combos(solo_activos=False):
+            if filtro and filtro not in c["nombre"].lower():
+                continue
             self.tree.insert("", "end", iid=f"c{c['id']}", values=(
                 c["id"], c["nombre"],
                 formatear_pesos(c["precio"]),

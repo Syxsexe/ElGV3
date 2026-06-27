@@ -10,7 +10,7 @@ from auth import requiere_admin, get_usuario_id
 
 
 def migrar_egresos():
-    """Crea la tabla de egresos si no existe."""
+    """Crea la tabla de egresos si no existe y aplica migraciones incrementales."""
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS egresos (
@@ -35,6 +35,10 @@ def migrar_egresos():
             monto     REAL    NOT NULL CHECK(monto > 0)
         )
     """)
+    # Migración: columna categoria (gastos generales)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(egresos)").fetchall()]
+    if "categoria" not in cols:
+        conn.execute("ALTER TABLE egresos ADD COLUMN categoria TEXT DEFAULT 'Otros'")
     conn.commit()
     conn.close()
 

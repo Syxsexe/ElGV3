@@ -93,9 +93,16 @@ def abrir_cuenta(
             VALUES (?, ?, ?, ?, ?)
         """, (cliente, cliente_id, mesa, get_usuario_id(), notas))
         conn.commit()
-        return cur.lastrowid
+        cuenta_id = cur.lastrowid
     finally:
         conn.close()
+
+    try:
+        from modules.auditoria import registrar
+        registrar("cuenta", f"Cuenta abierta — {cliente} / Mesa: {mesa}", referencia_id=cuenta_id)
+    except Exception:
+        pass
+    return cuenta_id
 
 
 def obtener_cuenta(cuenta_id: int) -> dict | None:
@@ -308,7 +315,7 @@ def cobrar_cuenta(
     """
     from modules.inventario import actualizar_stock, descontar_insumos_por_venta
 
-    METODOS = {"efectivo", "transferencia", "tarjeta", "nequi", "daviplata"}
+    METODOS = {"efectivo", "transferencia", "tarjeta", "nequi", "daviplata", "credito"}
 
     cuenta = obtener_cuenta(cuenta_id)
     if not cuenta:
@@ -437,6 +444,28 @@ def cobrar_cuenta(
         """, (venta_id, cuenta_id))
 
         conn_main.commit()
+
+        # Registrar cargo de crédito si aplica
+        if metodo_final == "credito" and cuenta.get("cliente_id"):
+            try:
+                from modules.creditos import registrar_cargo
+                registrar_cargo(cuenta["cliente_id"], total_final, venta_id=venta_id)
+            except Exception as e:
+                raise ValueError(f"No se pudo registrar el crédito: {e}") from e
+
+        try:
+            from modules.auditoria import registrar
+            metodos_str = " + ".join(p["metodo"] for p in pagos)
+            registrar(
+                "cuenta",
+                f"Cuenta #{cuenta_id} cobrada — {cuenta['cliente']} / Mesa: {cuenta['mesa']} "
+                f"— total: ${total_final:,.0f} — método: {metodos_str}"
+                + (f" — descuento: ${descuento:,.0f}" if descuento else ""),
+                referencia_id=venta_id,
+            )
+        except Exception:
+            pass
+
         return venta_id
 
     except Exception:
@@ -466,9 +495,15 @@ def cancelar_cuenta(cuenta_id: int) -> bool:
             WHERE id = ?
         """, (cuenta_id,))
         conn.commit()
-        return True
     finally:
         conn.close()
+
+    try:
+        from modules.auditoria import registrar
+        registrar("cuenta", f"Cuenta #{cuenta_id} cancelada", referencia_id=cuenta_id)
+    except Exception:
+        pass
+    return True
 
 
 # ════════════════════════════════════════════════════════════

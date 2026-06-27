@@ -44,12 +44,22 @@ def iniciar_sesion(usuario: str, contrasena: str) -> dict | None:
         "usuario": fila["usuario"],
         "rol":     fila["rol"],      # 'admin' | 'vendedor'
     }
+    try:
+        from modules.auditoria import registrar
+        registrar("login", f"Inicio de sesión ({fila['rol']})", referencia_id=fila["id"])
+    except Exception:
+        pass
     return _sesion_activa
 
 
 def cerrar_sesion():
     """Limpia la sesión activa en memoria."""
     global _sesion_activa
+    try:
+        from modules.auditoria import registrar
+        registrar("login", "Cierre de sesión")
+    except Exception:
+        pass
     _sesion_activa = None
 
 

@@ -240,10 +240,27 @@ class FrameVentas(FrameBase):
         tk.Frame(right, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=12)
 
         # ── Total ─────────────────────────────────────────────────────────────
+        self.lbl_subtotal = tk.Label(right, text="",
+                                      font=FONT_SMALL,
+                                      bg=COLORS["surface"], fg=COLORS["text_muted"])
+        self.lbl_subtotal.pack(pady=(0, 2))
+
         self.lbl_total = tk.Label(right, text="Total: $0",
                                    font=("Segoe UI", 18, "bold"),
                                    bg=COLORS["surface"], fg=COLORS["accent"])
-        self.lbl_total.pack(pady=(0, 8))
+        self.lbl_total.pack(pady=(0, 6))
+
+        # ── Descuento ─────────────────────────────────────────────────────────
+        fila_desc = tk.Frame(right, bg=COLORS["surface"])
+        fila_desc.pack(fill="x", padx=16, pady=(0, 8))
+        tk.Label(fila_desc, text="Descuento ($):", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+        self.entry_descuento = self._input(fila_desc, width=12)
+        self.entry_descuento.insert(0, "0")
+        self.entry_descuento.pack(side="right", ipady=4)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self.entry_descuento, "monto")
+        self.entry_descuento.bind("<KeyRelease>", lambda e: self._actualizar_carrito())
 
         # ── Confirmar ─────────────────────────────────────────────────────────
         self._btn_primary(right, "✓ Confirmar Venta",
@@ -280,7 +297,7 @@ class FrameVentas(FrameBase):
         )
         self.lbl_cliente_venta.pack(fill="x", padx=16, pady=(4, 0))
 
-        self._emitir_factura = tk.BooleanVar(value=True)
+        self._emitir_factura = tk.BooleanVar(value=False)
         tk.Checkbutton(
             right, text="Emitir factura DIAN",
             variable=self._emitir_factura,
@@ -365,6 +382,14 @@ class FrameVentas(FrameBase):
         except ValueError as e:
             messagebox.showwarning("Stock insuficiente", str(e))
 
+    def _get_descuento(self) -> float:
+        from modules.validaciones import leer_entero
+        try:
+            d = leer_entero(self.entry_descuento, default=0)
+            return max(0, min(d, self.carrito.total()))
+        except Exception:
+            return 0
+
     def _actualizar_carrito(self):
         from modules.caja import formatear_pesos
         self.tree_carrito.delete(*self.tree_carrito.get_children())
@@ -374,7 +399,18 @@ class FrameVentas(FrameBase):
                 item["cantidad"],
                 formatear_pesos(item["subtotal"])
             ))
-        self.lbl_total.config(text=f"Total: {formatear_pesos(self.carrito.total())}")
+        subtotal   = self.carrito.total()
+        descuento  = self._get_descuento()
+        total_final = subtotal - descuento
+
+        if descuento > 0:
+            self.lbl_subtotal.config(
+                text=f"Subtotal: {formatear_pesos(subtotal)}  |  Desc: -{formatear_pesos(descuento)}"
+            )
+        else:
+            self.lbl_subtotal.config(text="")
+
+        self.lbl_total.config(text=f"Total: {formatear_pesos(total_final)}")
         if not self.carrito.get_items():
             self.lbl_qty.config(text="—")
 
@@ -398,7 +434,12 @@ class FrameVentas(FrameBase):
             messagebox.showwarning("Carrito vacío", "Agrega productos antes de confirmar.")
             return
 
-        abrir_dialogo_pago(self, self.carrito.total(), self._procesar_pago)
+        descuento   = self._get_descuento()
+        total_final = self.carrito.total() - descuento
+        abrir_dialogo_pago(
+            self, total_final, self._procesar_pago,
+            cliente_id=self._get_cliente_id(),
+        )
 
     def _procesar_pago(self, pagos: list):
         from modules.ventas import registrar_venta
@@ -414,6 +455,7 @@ class FrameVentas(FrameBase):
             venta_id = registrar_venta(
                 self.carrito,
                 pagos=pagos,
+                descuento=self._get_descuento(),
                 sesion_id=self.sesion_id,
                 cliente_id=cliente_id,
                 emitir_factura=emitir_factura

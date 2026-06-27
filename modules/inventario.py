@@ -159,9 +159,16 @@ def crear_producto(
             categoria_id
         ))
         conn.commit()
-        return cur.lastrowid
+        prod_id = cur.lastrowid
     finally:
         conn.close()
+
+    try:
+        from modules.auditoria import registrar
+        registrar("inventario", f"Producto creado — {nombre.strip()} (ID {prod_id})", referencia_id=prod_id)
+    except Exception:
+        pass
+    return prod_id
 
 
 @requiere_admin
@@ -189,15 +196,29 @@ def editar_producto(producto_id: int, **campos) -> bool:
             f"UPDATE productos SET {set_clause} WHERE id = ?", valores
         )
         conn.commit()
-        return True
     finally:
         conn.close()
+
+    try:
+        from modules.auditoria import registrar
+        campos_str = ", ".join(campos_validos.keys())
+        registrar("inventario", f"Producto #{producto_id} editado — campos: {campos_str}", referencia_id=producto_id)
+    except Exception:
+        pass
+    return True
 
 
 @requiere_admin
 def desactivar_producto(producto_id: int) -> bool:
     """Desactiva un producto (no lo elimina)."""
-    return editar_producto(producto_id, activo=0)
+    resultado = editar_producto(producto_id, activo=0)
+    if resultado:
+        try:
+            from modules.auditoria import registrar
+            registrar("inventario", f"Producto #{producto_id} desactivado", referencia_id=producto_id)
+        except Exception:
+            pass
+    return resultado
 
 
 def actualizar_stock(producto_id: int, cantidad: float, conn=None) -> bool:

@@ -37,9 +37,12 @@ class DialogPago(tk.Toplevel):
     """
     Modal de cobro.  Llama a on_confirmar(pagos) donde pagos es:
         [{"metodo": str, "monto": float}, ...]
+    cliente_id: si se provee y el cliente tiene crédito disponible,
+                se muestra el botón "Crédito".
     """
 
-    def __init__(self, parent, total: float, on_confirmar, titulo: str = "Cobrar venta"):
+    def __init__(self, parent, total: float, on_confirmar,
+                 titulo: str = "Cobrar venta", cliente_id: int = None):
         super().__init__(parent)
         self.title(titulo)
         self.configure(bg=COLORS["bg"])
@@ -52,6 +55,15 @@ class DialogPago(tk.Toplevel):
         self._metodo_sel        = "efectivo"
         self._metodo_digital_mx = tk.StringVar(value="nequi")
         self._pill_btns         = {}
+        self._cliente_id        = cliente_id
+        self._credito_info      = None
+
+        if cliente_id:
+            try:
+                from modules.creditos import get_info_credito
+                self._credito_info = get_info_credito(cliente_id)
+            except Exception:
+                pass
 
         self._build()
         self.bind("<Return>", lambda e: self._confirmar())
@@ -97,6 +109,26 @@ class DialogPago(tk.Toplevel):
                 )
                 btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
                 self._pill_btns[key] = btn
+
+        # Fila de crédito — solo si el cliente tiene crédito disponible
+        if self._credito_info and self._credito_info["disponible"] >= self._total:
+            from modules.caja import formatear_pesos
+            row_cred = tk.Frame(outer, bg=COLORS["bg"])
+            row_cred.pack(fill="x", pady=(0, 5))
+            disp = formatear_pesos(self._credito_info["disponible"])
+            btn_cred = tk.Button(
+                row_cred,
+                text=f"Crédito  (disponible: {disp})",
+                font=FONT_BOLD,
+                bg=COLORS["surface2"], fg=COLORS["warning"],
+                activebackground=COLORS["warning"],
+                activeforeground=COLORS["bg"],
+                relief="flat", cursor="hand2",
+                pady=9,
+                command=lambda: self._seleccionar_metodo("credito"),
+            )
+            btn_cred.pack(fill="x")
+            self._pill_btns["credito"] = btn_cred
 
         # ── Panel dinámico ────────────────────────────────────────────────────
         tk.Frame(outer, bg=COLORS["border"], height=1).pack(fill="x", pady=(6, 12))
@@ -149,6 +181,8 @@ class DialogPago(tk.Toplevel):
             self._render_efectivo()
         elif key == "mixto":
             self._render_mixto()
+        elif key == "credito":
+            self._render_credito()
         else:
             self._render_digital(key)
         self._centrar()
@@ -204,6 +238,27 @@ class DialogPago(tk.Toplevel):
         else:
             self.lbl_vuelto.config(
                 text=formatear_pesos(vuelto), fg=COLORS["success"])
+
+    def _render_credito(self):
+        from modules.caja import formatear_pesos
+        info = self._credito_info or {}
+        card = tk.Frame(self._panel, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"],
+                        highlightthickness=1)
+        card.pack(fill="x")
+        inner = tk.Frame(card, bg=COLORS["surface"])
+        inner.pack(fill="x", padx=16, pady=14)
+        tk.Label(inner, text="Venta a crédito", font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["warning"]).pack(anchor="w")
+        tk.Label(inner,
+                 text=f"Monto a cargar: {formatear_pesos(self._total)}",
+                 font=("Segoe UI", 13, "bold"),
+                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w", pady=(4, 2))
+        tk.Label(inner,
+                 text=f"Disponible actual: {formatear_pesos(info.get('disponible', 0))}  •  "
+                      f"Plazo: {info.get('dias_credito', 30)} días",
+                 font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text_muted"]
+                 ).pack(anchor="w")
 
     def _render_digital(self, metodo: str):
         from modules.caja import formatear_pesos
@@ -341,6 +396,8 @@ class DialogPago(tk.Toplevel):
                 {"metodo": "efectivo",     "monto": round(efectivo, 2)},
                 {"metodo": metodo_digital, "monto": digital},
             ]
+        elif metodo == "credito":
+            pagos = [{"metodo": "credito", "monto": self._total}]
         elif metodo == "efectivo":
             pagos = [{"metodo": "efectivo", "monto": self._total}]
         else:
@@ -372,5 +429,6 @@ class DialogPago(tk.Toplevel):
         )
 
 
-def abrir_dialogo_pago(parent, total: float, on_confirmar, titulo: str = "Cobrar venta"):
-    DialogPago(parent, total, on_confirmar, titulo)
+def abrir_dialogo_pago(parent, total: float, on_confirmar,
+                       titulo: str = "Cobrar venta", cliente_id: int = None):
+    DialogPago(parent, total, on_confirmar, titulo, cliente_id=cliente_id)

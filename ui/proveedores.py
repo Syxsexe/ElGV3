@@ -65,6 +65,19 @@ class FrameProveedores(FrameBase):
         left = tk.Frame(self._main, bg=COLORS["bg"])
         left.pack(side="left", fill="both", expand=True, padx=(0, 12))
 
+        buscar_row = tk.Frame(left, bg=COLORS["bg"])
+        buscar_row.pack(fill="x", pady=(0, 6))
+        tk.Label(buscar_row, text="Buscar:", font=FONT_SMALL,
+                 bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side="left", padx=(0, 6))
+        self._entry_buscar = self._input(buscar_row)
+        self._entry_buscar.pack(side="left", fill="x", expand=True, ipady=5)
+        self._entry_buscar.bind("<KeyRelease>", lambda e: self._filtrar())
+        tk.Button(buscar_row, text="✕", font=FONT_SMALL,
+                  bg=COLORS["surface"], fg=COLORS["text_muted"],
+                  relief="flat", cursor="hand2",
+                  command=lambda: (self._entry_buscar.delete(0, "end"),
+                                   self._filtrar())).pack(side="left", padx=(4, 0))
+
         tabla_wrap = tk.Frame(left, bg=COLORS["bg"])
         tabla_wrap.pack(fill="both", expand=True)
 
@@ -86,7 +99,15 @@ class FrameProveedores(FrameBase):
         self._construir_panel_proveedor()
 
     # ── Navegación entre tabs ─────────────────────────────────────────────────
+    def _filtrar(self):
+        filtro = self._entry_buscar.get().strip().lower()
+        if self._tab.get() == "proveedores":
+            self._cargar_proveedores(filtro=filtro)
+        else:
+            self._cargar_pedidos(filtro=filtro)
+
     def _cambiar_tab(self):
+        self._entry_buscar.delete(0, "end")
         self._limpiar_panel()
         self._proveedor_sel = None
         self._pedido_sel    = None
@@ -134,10 +155,12 @@ class FrameProveedores(FrameBase):
         self.tree.column("telefono", width=120)
         self.tree.column("estado",   width=80)
 
-    def _cargar_proveedores(self):
+    def _cargar_proveedores(self, filtro=""):
         from modules.proveedores import listar_proveedores
         self.tree.delete(*self.tree.get_children())
         for p in listar_proveedores(solo_activos=False):
+            if filtro and filtro not in f"{p['nombre']} {p.get('contacto','')} {p.get('telefono','')} {p.get('email','')}".lower():
+                continue
             estado = "Activo" if p["activo"] else "Inactivo"
             self.tree.insert("", "end", iid=str(p["id"]), values=(
                 p["id"], p["nombre"],
@@ -264,11 +287,13 @@ class FrameProveedores(FrameBase):
             anchor = "w" if col == "proveedor" else "center"
             self.tree.column(col, width=anchos[col], anchor=anchor)
 
-    def _cargar_pedidos(self):
+    def _cargar_pedidos(self, filtro=""):
         from modules.proveedores import listar_pedidos
         from modules.caja import formatear_pesos
         self.tree.delete(*self.tree.get_children())
         for p in listar_pedidos():
+            if filtro and filtro not in f"{p['proveedor_nombre']} {p['estado']}".lower():
+                continue
             self.tree.insert("", "end", iid=str(p["id"]), values=(
                 p["id"],
                 p["fecha"][:16],

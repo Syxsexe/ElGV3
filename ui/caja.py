@@ -1,6 +1,7 @@
 """
 ui/caja.py — El G POS
 """
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
 import auth
@@ -9,19 +10,46 @@ from ui.base import FrameBase, COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BO
 class FrameCaja(FrameBase):
     def __init__(self, parent):
         super().__init__(parent, "Caja", "Apertura y cierre de turno")
+        self._tab = tk.StringVar(value="turno")
         self._build()
 
     def _build(self):
-        from modules.caja import get_sesion_activa, formatear_pesos, DENOMINACIONES_COP
+        # Tabs — solo admin ve Historial
+        tab_frame = tk.Frame(self, bg=COLORS["bg"])
+        tab_frame.pack(fill="x", padx=32, pady=(0, 12))
 
-        sesion = get_sesion_activa()
-        main   = tk.Frame(self, bg=COLORS["bg"])
-        main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
+        tabs = [("Turno actual", "turno")]
+        if auth.get_sesion() and auth.get_sesion()["rol"] == "admin":
+            tabs.append(("Historial", "historial"))
 
-        if not sesion:
-            self._panel_apertura(main)
+        for label, val in tabs:
+            tk.Radiobutton(
+                tab_frame, text=label, variable=self._tab, value=val,
+                font=FONT_BOLD, bg=COLORS["bg"], fg=COLORS["text_muted"],
+                selectcolor=COLORS["surface2"], activebackground=COLORS["bg"],
+                indicatoron=False, relief="flat", cursor="hand2",
+                command=self._cambiar_tab, padx=14, pady=6,
+            ).pack(side="left", padx=(0, 4))
+
+        self._main = tk.Frame(self, bg=COLORS["bg"])
+        self._main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
+        self._cambiar_tab()
+
+    def _cambiar_tab(self):
+        for w in self._main.winfo_children():
+            w.destroy()
+        if self._tab.get() == "turno":
+            self._panel_turno()
         else:
-            self._panel_cierre(main, sesion)
+            self._panel_historial()
+
+    def _panel_turno(self):
+        from modules.caja import get_sesion_activa
+        sesion = get_sesion_activa()
+        if not sesion:
+            self._panel_apertura(self._main)
+        else:
+            self._panel_cierre(self._main, sesion)
 
     def _panel_apertura(self, parent):
         card = self._card(parent, width=400)
@@ -65,15 +93,22 @@ class FrameCaja(FrameBase):
                                 f"Caja abierta correctamente.\n"
                                 f"Efectivo: ${monto:,}\n"
                                 f"Digital:  ${monto_digital:,}")
-            self.winfo_toplevel()._mostrar_caja()
-        except ValueError as e:
-            messagebox.showerror("Error", str(e))
+            self._refrescar()
+        except Exception as e:
+            messagebox.showerror("Error al abrir caja", str(e))
 
     def _panel_cierre(self, parent, sesion):
         from modules.caja import DENOMINACIONES_COP, formatear_pesos, calcular_desde_denominaciones
 
-        tk.Label(parent, text=f"Caja abierta por: {sesion['cajero']}  ·  Desde: {sesion['apertura'][:16]}",
-                 font=FONT_SMALL, bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(anchor="w", pady=(0, 16))
+        encabezado = tk.Frame(parent, bg=COLORS["bg"])
+        encabezado.pack(fill="x", pady=(0, 16))
+        tk.Label(encabezado,
+                 text=f"Caja abierta por: {sesion['cajero']}  ·  Desde: {sesion['apertura'][:16]}",
+                 font=FONT_SMALL, bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side="left")
+        self._btn_secondary(encabezado, "Refrescar",
+                            self._refrescar).pack(
+                                side="right", ipady=2, ipadx=6
+                            )
 
         cols = tk.Frame(parent, bg=COLORS["bg"])
         cols.pack(fill="both", expand=True)
@@ -334,7 +369,377 @@ class FrameCaja(FrameBase):
                 except Exception:
                     dian_msg = "\n\n⚠ No se pudo sincronizar con DIAN"
 
-            messagebox.showinfo("Cierre de caja", msg + dian_msg)
-            self.winfo_toplevel()._mostrar_caja()
+            # ── Generar PDF de cierre ────────────────────────────────────
+            from modules.reporte_caja import generar_pdf_cierre
+            pdf_msg = ""
+            pdf_ruta = None
+            try:
+                pdf_ruta = generar_pdf_cierre(resumen)
+                pdf_msg  = f"\n\nReporte PDF guardado en:\n{pdf_ruta}"
+            except Exception as pdf_err:
+                pdf_msg = f"\n\n⚠ No se pudo generar el PDF: {pdf_err}"
+
+            messagebox.showinfo("Cierre de caja", msg + dian_msg + pdf_msg)
+
+            if pdf_ruta:
+                import subprocess, platform
+                try:
+                    if platform.system() == "Windows":
+                        os.startfile(pdf_ruta)
+                    elif platform.system() == "Darwin":
+                        subprocess.Popen(["open", pdf_ruta])
+                    else:
+                        subprocess.Popen(["xdg-open", pdf_ruta])
+                except Exception:
+                    pass
+
+            self._refrescar()
+        except Exception as e:
+            messagebox.showerror("Error al cerrar caja", str(e))
+            from modules.caja import get_sesion_activa
+            if not get_sesion_activa():
+                self._refrescar()
+
+    # ── Utilidades ────────────────────────────────────────────────────────────
+
+    def _refrescar(self):
+        """Recarga el tab activo."""
+        self._tab.set("turno")
+        self._cambiar_tab()
+
+    # ── Historial de cajas ────────────────────────────────────────────────────
+
+    def _panel_historial(self):
+        from modules.caja import formatear_pesos
+
+        # Barra de filtros
+        filtros = self._card(self._main)
+        filtros.pack(fill="x", pady=(0, 12), ipadx=10, ipady=6)
+
+        fila_f = tk.Frame(filtros, bg=COLORS["surface"])
+        fila_f.pack(fill="x", padx=16, pady=8)
+
+        tk.Label(fila_f, text="Desde:", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+        self._h_desde = self._input(fila_f, width=12)
+        self._h_desde.pack(side="left", padx=(4, 16), ipady=3)
+        from modules.validaciones import aplicar_validacion
+        aplicar_validacion(self._h_desde, "fecha")
+
+        tk.Label(fila_f, text="Hasta:", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+        self._h_hasta = self._input(fila_f, width=12)
+        self._h_hasta.pack(side="left", padx=(4, 16), ipady=3)
+        aplicar_validacion(self._h_hasta, "fecha")
+
+        self._btn_primary(fila_f, "Buscar", self._cargar_historial).pack(
+            side="left", padx=(0, 8), ipady=3)
+        self._btn_secondary(fila_f, "Limpiar", self._limpiar_hist).pack(
+            side="left", ipady=3)
+
+        # KPIs
+        self._hist_kpis = tk.Frame(self._main, bg=COLORS["bg"])
+        self._hist_kpis.pack(fill="x", pady=(0, 12))
+
+        # Layout: tabla izquierda + detalle derecha
+        layout = tk.Frame(self._main, bg=COLORS["bg"])
+        layout.pack(fill="both", expand=True)
+
+        # Tabla
+        cols = ("#", "Cajero", "Apertura", "Cierre", "Ventas", "Ef. Dif.", "Dig. Dif.")
+        self._hist_tree = self._tabla(layout, cols, alto=14)
+        self._hist_tree.pack(side="left", fill="both", expand=True)
+
+        self._hist_tree.column("#",        width=40,  anchor="center")
+        self._hist_tree.column("Cajero",   width=90,  anchor="w")
+        self._hist_tree.column("Apertura", width=130, anchor="w")
+        self._hist_tree.column("Cierre",   width=130, anchor="w")
+        self._hist_tree.column("Ventas",   width=100, anchor="e")
+        self._hist_tree.column("Ef. Dif.", width=90,  anchor="e")
+        self._hist_tree.column("Dig. Dif.",width=90,  anchor="e")
+
+        self._hist_tree.bind("<<TreeviewSelect>>", self._on_sesion_sel)
+
+        # Panel de detalle
+        det_outer = tk.Frame(layout, bg=COLORS["border"],
+                             highlightbackground=COLORS["border"],
+                             highlightthickness=1, width=290)
+        det_outer.pack(side="right", fill="y", padx=(12, 0))
+        det_outer.pack_propagate(False)
+
+        det_canvas = tk.Canvas(det_outer, bg=COLORS["surface"],
+                               highlightthickness=0, bd=0, width=288)
+        det_scroll = tk.Scrollbar(det_outer, orient="vertical",
+                                  command=det_canvas.yview)
+        det_canvas.configure(yscrollcommand=det_scroll.set)
+        det_scroll.pack(side="right", fill="y")
+        det_canvas.pack(side="left", fill="both", expand=True)
+
+        self._det_panel = tk.Frame(det_canvas, bg=COLORS["surface"])
+        self._det_win   = det_canvas.create_window(
+            (0, 0), window=self._det_panel, anchor="nw")
+        det_canvas.bind("<Configure>",
+            lambda e: det_canvas.itemconfig(self._det_win, width=e.width))
+        self._det_panel.bind("<Configure>",
+            lambda e: det_canvas.configure(
+                scrollregion=det_canvas.bbox("all")))
+
+        self._det_canvas = det_canvas
+
+        tk.Label(self._det_panel, text="Selecciona una sesión",
+                 font=FONT_SMALL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(padx=16, pady=24)
+
+        self._cargar_historial()
+
+    def _cargar_historial(self):
+        from modules.caja import listar_sesiones, formatear_pesos
+
+        desde = self._h_desde.get().strip() or None
+        hasta = self._h_hasta.get().strip() or None
+
+        try:
+            sesiones = listar_sesiones(fecha_inicio=desde, fecha_fin=hasta)
         except Exception as e:
             messagebox.showerror("Error", str(e))
+            return
+
+        # KPIs
+        for w in self._hist_kpis.winfo_children():
+            w.destroy()
+        total_v   = sum(s.get("total_ventas", 0) or 0 for s in sesiones)
+        total_dif = sum(s.get("diferencia", 0) or 0 for s in sesiones)
+        self._kpi_hist(self._hist_kpis, "Sesiones",     str(len(sesiones)))
+        self._kpi_hist(self._hist_kpis, "Total ventas", formatear_pesos(total_v))
+        self._kpi_hist(self._hist_kpis, "Dif. neta ef.",formatear_pesos(total_dif))
+
+        # Tabla
+        for row in self._hist_tree.get_children():
+            self._hist_tree.delete(row)
+
+        for s in sesiones:
+            dif_ef  = s.get("diferencia", 0) or 0
+            dif_dig = s.get("diferencia_digital", 0) or 0
+
+            def fmt_dif(d):
+                if d is None: return "—"
+                return ("+" if d >= 0 else "") + formatear_pesos(d)
+
+            tag = "sobrante" if dif_ef >= 0 else "faltante"
+            self._hist_tree.insert("", "end", iid=str(s["id"]), tags=(tag,),
+                                   values=(
+                                       s["id"],
+                                       s["cajero"],
+                                       s["apertura"][:16],
+                                       s["cierre"][:16] if s["cierre"] else "—",
+                                       formatear_pesos(s.get("total_ventas", 0) or 0),
+                                       fmt_dif(dif_ef),
+                                       fmt_dif(dif_dig),
+                                   ))
+
+        self._hist_tree.tag_configure("sobrante", foreground=COLORS["success"])
+        self._hist_tree.tag_configure("faltante", foreground=COLORS["danger"])
+
+    def _limpiar_hist(self):
+        self._h_desde.delete(0, "end")
+        self._h_hasta.delete(0, "end")
+        self._cargar_historial()
+
+    def _on_sesion_sel(self, event):
+        sel = self._hist_tree.selection()
+        if not sel:
+            return
+        sesion_id = int(sel[0])
+        self._mostrar_detalle(sesion_id)
+
+    def _mostrar_detalle(self, sesion_id: int):
+        from modules.caja import obtener_sesion, formatear_pesos
+        from modules.gastos import resumen_gastos_sesion
+
+        for w in self._det_panel.winfo_children():
+            w.destroy()
+
+        sesion = obtener_sesion(sesion_id)
+        if not sesion:
+            return
+
+        def sep():
+            tk.Frame(self._det_panel, bg=COLORS["border"], height=1).pack(
+                fill="x", padx=12, pady=6)
+
+        def fila(label, valor, color=None):
+            f = tk.Frame(self._det_panel, bg=COLORS["surface"])
+            f.pack(fill="x", padx=12, pady=2)
+            tk.Label(f, text=label, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
+            tk.Label(f, text=valor, font=FONT_BOLD,
+                     bg=COLORS["surface"],
+                     fg=color or COLORS["text"]).pack(side="right")
+
+        def titulo(txt, color=None):
+            tk.Label(self._det_panel, text=txt, font=FONT_BOLD,
+                     bg=COLORS["surface"],
+                     fg=color or COLORS["accent"]).pack(
+                         anchor="w", padx=12, pady=(8, 2))
+
+        # Encabezado
+        tk.Label(self._det_panel,
+                 text=f"Sesión #{sesion_id}",
+                 font=FONT_BOLD, bg=COLORS["surface"],
+                 fg=COLORS["text"]).pack(anchor="w", padx=12, pady=(14, 0))
+        tk.Label(self._det_panel,
+                 text=sesion["cajero"],
+                 font=FONT_SMALL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(anchor="w", padx=12)
+
+        sep()
+        fila("Apertura:", sesion["apertura"][:16])
+        cierre_txt = sesion["cierre"][:16] if sesion["cierre"] else "Abierta"
+        fila("Cierre:", cierre_txt)
+
+        # ── Efectivo ──────────────────────────────────────────────────
+        sep()
+        titulo("EFECTIVO", COLORS["accent"])
+        base_ef   = sesion.get("monto_base", 0) or 0
+        total_ef  = sesion.get("total_efectivo", 0) or 0
+        esp_ef    = base_ef + total_ef
+        contado_ef = sesion.get("monto_cierre", 0) or 0
+        dif_ef    = sesion.get("diferencia", 0)
+
+        fila("Base inicial:", formatear_pesos(base_ef))
+        fila("Ventas:", formatear_pesos(total_ef), COLORS["success"])
+        fila("Esperado:", formatear_pesos(esp_ef))
+        fila("Contado:", formatear_pesos(contado_ef))
+        if dif_ef is not None:
+            signo = "+" if dif_ef >= 0 else ""
+            color = COLORS["success"] if dif_ef >= 0 else COLORS["danger"]
+            fila("Diferencia:", f"{signo}{formatear_pesos(dif_ef)}", color)
+
+        # Denominaciones
+        denoms = [d for d in sesion.get("denominaciones", []) if d["cantidad"] > 0]
+        if denoms:
+            tk.Label(self._det_panel, text="Denominaciones:",
+                     font=FONT_SMALL, bg=COLORS["surface"],
+                     fg=COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(6, 2))
+            for d in denoms:
+                f2 = tk.Frame(self._det_panel, bg=COLORS["surface"])
+                f2.pack(fill="x", padx=20, pady=1)
+                tk.Label(f2, text=formatear_pesos(d["denominacion"]),
+                         font=FONT_SMALL, bg=COLORS["surface"],
+                         fg=COLORS["text_muted"]).pack(side="left")
+                tk.Label(f2, text=f"×{d['cantidad']}  {formatear_pesos(d['subtotal'])}",
+                         font=FONT_SMALL, bg=COLORS["surface"],
+                         fg=COLORS["text"]).pack(side="right")
+
+        # ── Digital ───────────────────────────────────────────────────
+        sep()
+        titulo("DIGITAL", COLORS["success"])
+        base_dig   = sesion.get("monto_base_digital", 0) or 0
+        total_dig  = sesion.get("total_digital", 0) or 0
+        esp_dig    = base_dig + total_dig
+        dif_dig    = sesion.get("diferencia_digital", 0)
+
+        fila("Base inicial:", formatear_pesos(base_dig))
+        fila("Ventas:", formatear_pesos(total_dig), COLORS["success"])
+        fila("Esperado:", formatear_pesos(esp_dig))
+        if dif_dig is not None:
+            signo = "+" if dif_dig >= 0 else ""
+            color = COLORS["success"] if dif_dig >= 0 else COLORS["danger"]
+            fila("Diferencia:", f"{signo}{formatear_pesos(dif_dig)}", color)
+
+        # ── Gastos generales del turno ─────────────────────────────────
+        gastos = resumen_gastos_sesion(sesion_id)
+        if gastos:
+            sep()
+            titulo("GASTOS GENERALES", COLORS["warning"])
+            total_g = 0
+            for g in gastos:
+                f3 = tk.Frame(self._det_panel, bg=COLORS["surface"])
+                f3.pack(fill="x", padx=12, pady=1)
+                tk.Label(f3, text=g["concepto"],
+                         font=FONT_SMALL, bg=COLORS["surface"],
+                         fg=COLORS["text_muted"]).pack(side="left")
+                tk.Label(f3, text=formatear_pesos(g["total"]),
+                         font=FONT_SMALL, bg=COLORS["surface"],
+                         fg=COLORS["text"]).pack(side="right")
+                total_g += g["total"]
+            sep()
+            fila("Total gastos:", formatear_pesos(total_g), COLORS["warning"])
+
+        # ── Notas ─────────────────────────────────────────────────────
+        if sesion.get("notas"):
+            sep()
+            tk.Label(self._det_panel, text="Notas:",
+                     font=FONT_SMALL, bg=COLORS["surface"],
+                     fg=COLORS["text_muted"]).pack(anchor="w", padx=12)
+            tk.Label(self._det_panel, text=sesion["notas"],
+                     font=FONT_SMALL, bg=COLORS["surface"],
+                     fg=COLORS["text"], wraplength=240,
+                     justify="left").pack(anchor="w", padx=12, pady=(2, 0))
+
+        # ── Botón PDF ──────────────────────────────────────────────────
+        sep()
+        self._btn_secondary(
+            self._det_panel, "Generar PDF",
+            lambda sid=sesion_id: self._generar_pdf_sesion(sid)
+        ).pack(fill="x", padx=12, pady=(0, 16), ipady=6)
+
+        self._det_canvas.yview_moveto(0)
+
+    def _generar_pdf_sesion(self, sesion_id: int):
+        from modules.caja import obtener_sesion, formatear_pesos
+        from modules.gastos import resumen_gastos_sesion
+        from modules.reporte_caja import generar_pdf_cierre
+
+        sesion = obtener_sesion(sesion_id)
+        if not sesion:
+            messagebox.showerror("Error", "Sesión no encontrada.")
+            return
+
+        resumen = {
+            "sesion_id":             sesion["id"],
+            "cajero":                sesion["cajero"],
+            "apertura":              sesion["apertura"],
+            "monto_base":            sesion.get("monto_base", 0) or 0,
+            "monto_base_digital":    sesion.get("monto_base_digital", 0) or 0,
+            "total_ventas":          sesion.get("total_ventas", 0) or 0,
+            "total_efectivo":        sesion.get("total_efectivo", 0) or 0,
+            "total_digital":         sesion.get("total_digital", 0) or 0,
+            "esperado_efectivo":     (sesion.get("monto_base", 0) or 0) +
+                                     (sesion.get("total_efectivo", 0) or 0),
+            "esperado_digital":      (sesion.get("monto_base_digital", 0) or 0) +
+                                     (sesion.get("total_digital", 0) or 0),
+            "monto_contado":         sesion.get("monto_cierre", 0) or 0,
+            "monto_contado_digital": 0,
+            "diferencia":            sesion.get("diferencia", 0) or 0,
+            "diferencia_digital":    sesion.get("diferencia_digital", 0) or 0,
+            "denominaciones":        sesion.get("denominaciones", []),
+            "notas":                 sesion.get("notas", ""),
+        }
+
+        try:
+            pdf_ruta = generar_pdf_cierre(resumen)
+            messagebox.showinfo("PDF generado",
+                                f"Reporte guardado en:\n{pdf_ruta}")
+            import subprocess, platform
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(pdf_ruta)
+                elif platform.system() == "Darwin":
+                    subprocess.Popen(["open", pdf_ruta])
+                else:
+                    subprocess.Popen(["xdg-open", pdf_ruta])
+            except Exception:
+                pass
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def _kpi_hist(self, parent, label, valor):
+        card = self._card(parent)
+        card.pack(side="left", ipadx=14, ipady=6, padx=(0, 10))
+        tk.Label(card, text=label, font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=10, pady=(8, 0))
+        tk.Label(card, text=valor, font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["text"]).pack(
+                     anchor="w", padx=10, pady=(0, 8))

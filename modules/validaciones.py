@@ -33,6 +33,7 @@ def registrar_validaciones(root: tk.Misc):
     _cmds["cantidad"] = (root.register(_validar_entero),  "%d", "%S")
     _cmds["decimal"]  = (root.register(_validar_decimal), "%d", "%S")
     _cmds["codigo"]   = (root.register(_validar_codigo),  "%d", "%S")
+    _cmds["fecha"]    = (root.register(_validar_fecha),   "%d", "%S")
 
 
 # ── Funciones de validación ───────────────────────────────────────────────────
@@ -61,6 +62,13 @@ def _validar_codigo(accion: str, char: str) -> bool:
         return True
     permitidos = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
     return char in permitidos
+
+
+def _validar_fecha(accion: str, char: str) -> bool:
+    """Dígitos y guión — para fechas en formato YYYY-MM-DD."""
+    if accion != "1":
+        return True
+    return char.isdigit() or char == "-"
 
 
 # ── Aplicar validación a un Entry existente ───────────────────────────────────

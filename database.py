@@ -203,7 +203,7 @@ def crear_tablas():
     """)
 
     # ── Ventas ────────────────────────────────────────────────────────────────
-    # metodo_pago: 'mixto' cuando se usan dos métodos a la vez
+    # metodo_pago: 'mixto' cuando se usan dos métodos, 'credito' para venta a crédito
     cur.execute("""
         CREATE TABLE IF NOT EXISTS ventas (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,7 +211,7 @@ def crear_tablas():
             total        REAL    NOT NULL CHECK(total >= 0),
             descuento    REAL             DEFAULT 0,
             metodo_pago  TEXT    NOT NULL DEFAULT 'efectivo'
-                             CHECK(metodo_pago IN ('efectivo','transferencia','tarjeta','nequi','daviplata','mixto')),
+                             CHECK(metodo_pago IN ('efectivo','transferencia','tarjeta','nequi','daviplata','mixto','credito')),
             tipo         TEXT    NOT NULL DEFAULT 'tienda'
                              CHECK(tipo IN ('tienda','cocina')),
             usuario_id   INTEGER NOT NULL REFERENCES usuarios(id),
@@ -248,7 +248,7 @@ def crear_tablas():
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             venta_id    INTEGER NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
             metodo      TEXT    NOT NULL
-                            CHECK(metodo IN ('efectivo','transferencia','tarjeta','nequi','daviplata')),
+                            CHECK(metodo IN ('efectivo','transferencia','tarjeta','nequi','daviplata','credito')),
             monto       REAL    NOT NULL CHECK(monto > 0)
         )
     """)
@@ -300,6 +300,74 @@ def crear_tablas():
 
     conn.commit()
     conn.close()
+
+    # Migración en conexión separada (evita conflictos de transacción implícita)
+    _migrar_metodo_credito()
+
+
+def _migrar_metodo_credito():
+    """
+    Recrea ventas y pagos_venta para incluir 'credito' en sus CHECK constraints.
+    Usa conexión propia con isolation_level=None (autocommit) para control
+    total del ciclo de vida de la transacción DDL.
+    """
+    import sqlite3 as _sq3
+    conn = _sq3.connect(str(DB_PATH), isolation_level=None)
+    conn.row_factory = _sq3.Row
+    try:
+        schema_v = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='ventas'"
+        ).fetchone()
+        if not schema_v or "'credito'" in schema_v[0]:
+            return  # Ya migrado o tabla no existe todavía
+
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN")
+
+        # ── ventas ────────────────────────────────────────────────────────────
+        conn.execute("ALTER TABLE ventas RENAME TO _ventas_bk")
+        conn.execute("""
+            CREATE TABLE ventas (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha        TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                total        REAL    NOT NULL CHECK(total >= 0),
+                descuento    REAL             DEFAULT 0,
+                metodo_pago  TEXT    NOT NULL DEFAULT 'efectivo'
+                                 CHECK(metodo_pago IN ('efectivo','transferencia','tarjeta','nequi','daviplata','mixto','credito')),
+                tipo         TEXT    NOT NULL DEFAULT 'tienda'
+                                 CHECK(tipo IN ('tienda','cocina')),
+                usuario_id   INTEGER NOT NULL REFERENCES usuarios(id),
+                sesion_id    INTEGER          REFERENCES sesiones_caja(id),
+                cliente_id   INTEGER          REFERENCES clientes(id),
+                notas        TEXT
+            )
+        """)
+        conn.execute("INSERT INTO ventas SELECT * FROM _ventas_bk")
+        conn.execute("DROP TABLE _ventas_bk")
+
+        # ── pagos_venta ───────────────────────────────────────────────────────
+        conn.execute("ALTER TABLE pagos_venta RENAME TO _pagos_venta_bk")
+        conn.execute("""
+            CREATE TABLE pagos_venta (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id    INTEGER NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
+                metodo      TEXT    NOT NULL
+                                CHECK(metodo IN ('efectivo','transferencia','tarjeta','nequi','daviplata','credito')),
+                monto       REAL    NOT NULL CHECK(monto > 0)
+            )
+        """)
+        conn.execute("INSERT INTO pagos_venta SELECT * FROM _pagos_venta_bk")
+        conn.execute("DROP TABLE _pagos_venta_bk")
+
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
 
 
 # ── Datos iniciales ───────────────────────────────────────────────────────────

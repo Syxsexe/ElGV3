@@ -12,7 +12,8 @@ from ui.base import COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SM
 from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
-    FrameClientes, FrameProveedores, FrameFiscal,
+    FrameClientes, FrameProveedores, FrameFiscal, FrameGastos,
+    FrameAuditoria, FrameCreditos,
 )
 
 
@@ -206,12 +207,15 @@ class MainWindow(tk.Tk):
             ("Inventario",       self._mostrar_inventario),
             ("Proveedores",      self._mostrar_proveedores),
             ("Caja",             self._mostrar_caja),
+            ("Créditos",         self._mostrar_creditos),
+            ("Gastos",           self._mostrar_gastos),
             ("Doc. Fiscales",    self._mostrar_fiscal),
         ]
         if sesion["rol"] == "admin":
             nav_items += [
-                ("Reportes",  self._mostrar_reportes),
-                ("Usuarios",  self._mostrar_usuarios),
+                ("Reportes",   self._mostrar_reportes),
+                ("Usuarios",   self._mostrar_usuarios),
+                ("Auditoría",  self._mostrar_auditoria),
             ]
         for label, cmd in nav_items:
             self._nav_btn(label, cmd)
@@ -380,9 +384,21 @@ class MainWindow(tk.Tk):
         self._nav_click("Caja")
         self._cambiar_frame(FrameCaja)
 
+    def _mostrar_gastos(self):
+        self._nav_click("Gastos")
+        self._cambiar_frame(FrameGastos)
+
     def _mostrar_fiscal(self):
         self._nav_click("Doc. Fiscales")
         self._cambiar_frame(FrameFiscal)
+
+    def _mostrar_creditos(self):
+        self._nav_click("Créditos")
+        self._cambiar_frame(FrameCreditos)
+
+    def _mostrar_auditoria(self):
+        self._nav_click("Auditoría")
+        self._cambiar_frame(FrameAuditoria)
 
     def _mostrar_reportes(self):
         self._nav_click("Reportes")

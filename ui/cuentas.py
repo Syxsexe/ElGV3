@@ -249,14 +249,31 @@ class FrameCuentas(FrameBase):
         tk.Label(right, text="Cobrar cuenta", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16)
 
+        self.lbl_subtotal_cuenta = tk.Label(
+            right, text="",
+            font=("Segoe UI", 10),
+            bg=COLORS["surface"], fg=COLORS["text_muted"]
+        )
+        self.lbl_subtotal_cuenta.pack(pady=(6, 0))
+
         self.lbl_total_cuenta = tk.Label(
             right, text="Total: $0",
             font=("Segoe UI", 15, "bold"),
             bg=COLORS["surface"], fg=COLORS["accent"]
         )
-        self.lbl_total_cuenta.pack(pady=6)
+        self.lbl_total_cuenta.pack(pady=(0, 4))
 
-        self._emitir_factura = tk.BooleanVar(value=True)
+        tk.Label(right, text="Descuento ($)", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+        self.entry_descuento_cuenta = self._input(right)
+        self.entry_descuento_cuenta.pack(fill="x", padx=16, pady=(2, 8), ipady=4)
+        from modules.validaciones import aplicar_validacion as _av
+        _av(self.entry_descuento_cuenta, "monto")
+        self.entry_descuento_cuenta.bind(
+            "<KeyRelease>", lambda e: self._actualizar_total_con_descuento()
+        )
+
+        self._emitir_factura = tk.BooleanVar(value=False)
         tk.Checkbutton(
             right, text="Emitir factura DIAN",
             variable=self._emitir_factura,
@@ -365,6 +382,8 @@ class FrameCuentas(FrameBase):
                 formatear_pesos(item["precio_unit"]),
                 formatear_pesos(item["subtotal"])
             ))
+        self.entry_descuento_cuenta.delete(0, "end")
+        self.lbl_subtotal_cuenta.config(text="")
         self.lbl_total_cuenta.config(
             text=f"Total: {formatear_pesos(cuenta['total'])}"
         )
@@ -475,6 +494,38 @@ class FrameCuentas(FrameBase):
         except ValueError as e:
             messagebox.showerror("Error", str(e))
 
+    def _get_descuento_cuenta(self) -> float:
+        from modules.cuentas import obtener_cuenta
+        from modules.validaciones import leer_entero
+        if not self._cuenta_sel:
+            return 0.0
+        cuenta = obtener_cuenta(self._cuenta_sel)
+        if not cuenta:
+            return 0.0
+        bruto = cuenta["total"]
+        return max(0, min(leer_entero(self.entry_descuento_cuenta), bruto))
+
+    def _actualizar_total_con_descuento(self):
+        from modules.cuentas import obtener_cuenta
+        from modules.caja import formatear_pesos
+        if not self._cuenta_sel:
+            return
+        cuenta = obtener_cuenta(self._cuenta_sel)
+        if not cuenta:
+            return
+        bruto     = cuenta["total"]
+        descuento = self._get_descuento_cuenta()
+        if descuento > 0:
+            self.lbl_subtotal_cuenta.config(
+                text=f"Subtotal: {formatear_pesos(bruto)}  —  Desc: {formatear_pesos(descuento)}"
+            )
+            self.lbl_total_cuenta.config(
+                text=f"Total: {formatear_pesos(bruto - descuento)}"
+            )
+        else:
+            self.lbl_subtotal_cuenta.config(text="")
+            self.lbl_total_cuenta.config(text=f"Total: {formatear_pesos(bruto)}")
+
     def _cobrar(self):
         from modules.cuentas import obtener_cuenta
         from modules.ui_pago import abrir_dialogo_pago
@@ -488,10 +539,13 @@ class FrameCuentas(FrameBase):
             messagebox.showwarning("Cuenta vacía", "La cuenta no tiene ítems.")
             return
 
+        descuento   = self._get_descuento_cuenta()
+        total_final = max(0, cuenta["total"] - descuento)
         abrir_dialogo_pago(
-            self, cuenta["total"],
+            self, total_final,
             self._procesar_cobro,
-            titulo=f"Cobrar — {cuenta['cliente']} / {cuenta['mesa']}"
+            titulo=f"Cobrar — {cuenta['cliente']} / {cuenta['mesa']}",
+            cliente_id=cuenta.get("cliente_id"),
         )
 
     def _update_dian_status(self):
@@ -513,17 +567,21 @@ class FrameCuentas(FrameBase):
         sesion        = get_sesion_activa()
         emitir_factura = self._emitir_factura.get()
 
+        descuento = self._get_descuento_cuenta()
         try:
             venta_id = cobrar_cuenta(
                 self._cuenta_sel,
                 pagos=pagos,
-                sesion_id=sesion["id"] if sesion else None
+                sesion_id=sesion["id"] if sesion else None,
+                descuento=descuento,
             )
-            total_str = formatear_pesos(cuenta["total"])
+            total_str = formatear_pesos(max(0, cuenta["total"] - descuento))
             metodos   = " + ".join(p["metodo"] for p in pagos)
             cuenta_id_cobrada = self._cuenta_sel
             self._cuenta_sel = None
             self.tree_items.delete(*self.tree_items.get_children())
+            self.entry_descuento_cuenta.delete(0, "end")
+            self.lbl_subtotal_cuenta.config(text="")
             self.lbl_total_cuenta.config(text="Total: $0")
             self._cargar_mesas()
 

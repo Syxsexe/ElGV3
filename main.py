@@ -16,7 +16,8 @@ from ui import (
     FrameInicio, FrameVentas, FrameInventario,
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
     FrameClientes, FrameProveedores, FrameFiscal, FrameGastos,
-    FrameAuditoria, FrameCreditos,
+    FrameAuditoria, FrameCreditos, FrameDocumentos,
+    FrameConsultaPrecios, FrameLibros,
 )
 
 
@@ -205,6 +206,7 @@ class MainWindow(tk.Tk):
         nav_items = [
             ("Inicio",           self._mostrar_inicio),
             ("Nueva Venta",      self._mostrar_ventas),
+            ("Consulta Precios", self._mostrar_consulta_precios),
             ("Clientes",         self._mostrar_clientes),
             ("Cuentas",          self._mostrar_cuentas),
             ("Inventario",       self._mostrar_inventario),
@@ -212,11 +214,13 @@ class MainWindow(tk.Tk):
             ("Caja",             self._mostrar_caja),
             ("Créditos",         self._mostrar_creditos),
             ("Gastos",           self._mostrar_gastos),
+            ("Documentos",       self._mostrar_documentos),
             ("Doc. Fiscales",    self._mostrar_fiscal),
         ]
         if sesion["rol"] == "admin":
             nav_items += [
                 ("Reportes",   self._mostrar_reportes),
+                ("Libros",     self._mostrar_libros),
                 ("Usuarios",   self._mostrar_usuarios),
                 ("Auditoría",  self._mostrar_auditoria),
             ]
@@ -405,6 +409,14 @@ class MainWindow(tk.Tk):
         self._nav_click("Gastos")
         self._cambiar_frame(FrameGastos)
 
+    def _mostrar_consulta_precios(self):
+        self._nav_click("Consulta Precios")
+        self._cambiar_frame(FrameConsultaPrecios)
+
+    def _mostrar_documentos(self):
+        self._nav_click("Documentos")
+        self._cambiar_frame(FrameDocumentos)
+
     def _mostrar_fiscal(self):
         self._nav_click("Doc. Fiscales")
         self._cambiar_frame(FrameFiscal)
@@ -420,6 +432,10 @@ class MainWindow(tk.Tk):
     def _mostrar_reportes(self):
         self._nav_click("Reportes")
         self._cambiar_frame(FrameReportes)
+
+    def _mostrar_libros(self):
+        self._nav_click("Libros")
+        self._cambiar_frame(FrameLibros)
 
     def _mostrar_usuarios(self):
         self._nav_click("Usuarios")

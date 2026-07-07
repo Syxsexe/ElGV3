@@ -267,6 +267,50 @@ def crear_tablas():
         )
     """)
 
+    # ── Documentos comerciales ────────────────────────────────────────────────
+    # Cotizaciones, órdenes de pedido y remisiones (documentos previos/paralelos
+    # a la venta). Comparten estructura cabecera + ítems.
+    #   tipo:   'cotizacion' | 'orden_pedido' | 'remision'
+    #   estado: vigente | aceptada | rechazada | facturada | entregada | anulada
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS documentos_comerciales (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo           TEXT    NOT NULL CHECK(tipo IN ('cotizacion','orden_pedido','remision')),
+            numero         TEXT    NOT NULL UNIQUE,
+            cliente_id     INTEGER REFERENCES clientes(id),
+            fecha          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            vigencia       TEXT,
+            estado         TEXT    NOT NULL DEFAULT 'vigente'
+                               CHECK(estado IN ('vigente','aceptada','rechazada',
+                                                'facturada','entregada','anulada')),
+            subtotal       REAL    NOT NULL DEFAULT 0,
+            descuento      REAL             DEFAULT 0,
+            iva_porcentaje REAL             DEFAULT 0,
+            iva            REAL             DEFAULT 0,
+            total          REAL    NOT NULL DEFAULT 0,
+            usuario_id     INTEGER NOT NULL REFERENCES usuarios(id),
+            venta_id       INTEGER REFERENCES ventas(id),
+            doc_origen_id  INTEGER REFERENCES documentos_comerciales(id),
+            notas          TEXT
+        )
+    """)
+
+    # ── Ítems de documentos comerciales ───────────────────────────────────────
+    # producto_id/combo_id pueden ser NULL para ítems de texto libre.
+    # descripcion guarda el nombre "snapshot" al momento de crear el documento.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS documento_items (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            documento_id INTEGER NOT NULL REFERENCES documentos_comerciales(id) ON DELETE CASCADE,
+            producto_id  INTEGER          REFERENCES productos(id),
+            combo_id     INTEGER          REFERENCES combos(id),
+            descripcion  TEXT    NOT NULL,
+            cantidad     REAL    NOT NULL CHECK(cantidad > 0),
+            precio_unit  REAL    NOT NULL,
+            subtotal     REAL    NOT NULL
+        )
+    """)
+
     # Asegura columna cliente_id en ventas para versiones previas de la base de datos.
     columnas_ventas = [row[1] for row in conn.execute("PRAGMA table_info(ventas)").fetchall()]
     if "cliente_id" not in columnas_ventas:

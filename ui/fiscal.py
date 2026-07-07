@@ -79,6 +79,8 @@ class FrameFiscal(FrameBase):
         self._btn_primary(btn_frame, "⟳ Actualizar", self._cargar_facturas).pack(
             side="left", ipady=6, padx=(0, 6))
         self._btn_primary(btn_frame, "☰ Nota crédito", self._crear_nota_credito).pack(
+            side="left", ipady=6, padx=(0, 6))
+        self._btn_primary(btn_frame, "☰ Nota débito", self._crear_nota_debito).pack(
             side="left", ipady=6)
 
         # ── Tab: Cola de sincronización ────────────────────────────────────
@@ -163,6 +165,8 @@ class FrameFiscal(FrameBase):
         menu.add_separator()
         menu.add_command(label="Generar nota crédito",
                          command=lambda: self._crear_nota_credito(sel))
+        menu.add_command(label="Generar nota débito",
+                         command=lambda: self._crear_nota_debito(sel))
         menu.add_command(label="Reenviar a DIAN",
                          command=lambda: self._reenviar_factura(sel))
         menu.post(event.x_root, event.y_root)
@@ -247,6 +251,17 @@ class FrameFiscal(FrameBase):
                 return
             factura_id = int(sel)
         DialogNotaCredito(self, factura_id)
+
+    # ── Nota débito ────────────────────────────────────────────────────────
+
+    def _crear_nota_debito(self, factura_id=None):
+        if not factura_id:
+            sel = self.tree_facturas.focus()
+            if not sel:
+                messagebox.showwarning("Seleccionar", "Selecciona una factura.")
+                return
+            factura_id = int(sel)
+        DialogNotaDebito(self, factura_id)
 
     # ── Sync queue ─────────────────────────────────────────────────────────
 
@@ -472,6 +487,128 @@ class DialogNotaCredito(tk.Toplevel):
                 else:
                     messagebox.showwarning("Nota Crédito",
                                            "Nota crédito creada localmente. "
+                                           "Pendiente de sincronización con DIAN.")
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+
+class DialogNotaDebito(tk.Toplevel):
+    """Genera una nota débito (aumenta el valor de una factura existente)."""
+
+    def __init__(self, parent, factura_id):
+        super().__init__(parent)
+        self.factura_id = factura_id
+        self.title("Nota Débito")
+        self.configure(bg=COLORS["bg"])
+        self.resizable(False, False)
+
+        from database import get_connection
+        conn = get_connection()
+        f = conn.execute(
+            "SELECT f.*, v.total FROM facturas f"
+            " JOIN ventas v ON v.id = f.venta_id"
+            " WHERE f.id = ?", (factura_id,)
+        ).fetchone()
+        conn.close()
+
+        card = tk.Frame(self, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"],
+                        highlightthickness=1)
+        card.pack(padx=20, pady=20, ipadx=16, ipady=16)
+
+        tk.Label(card, text="Generar Nota Débito", font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(0, 8))
+
+        if f:
+            info = f"Factura N° {f['numero']} — Venta #{f['venta_id']} — ${f['total']:,.0f}"
+            tk.Label(card, text=info, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(pady=(0, 12))
+
+        tk.Label(card, text="Valor adicional ($)", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+        self.entry_valor = tk.Entry(card, font=FONT_LABEL,
+                                    bg=COLORS["surface2"], fg=COLORS["text"],
+                                    insertbackground=COLORS["accent"], relief="flat",
+                                    bd=0, highlightthickness=1,
+                                    highlightbackground=COLORS["border"],
+                                    highlightcolor=COLORS["accent"])
+        self.entry_valor.pack(fill="x", ipady=6, pady=(4, 12))
+
+        tk.Label(card, text="Motivo", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w")
+        self.txt_motivo = tk.Text(card, height=4, width=40, font=FONT_LABEL,
+                                  bg=COLORS["surface2"], fg=COLORS["text"],
+                                  relief="flat", bd=0, highlightthickness=1,
+                                  highlightbackground=COLORS["border"])
+        self.txt_motivo.pack(fill="x", pady=(4, 12))
+
+        btn_frame = tk.Frame(card, bg=COLORS["surface"])
+        btn_frame.pack(fill="x", pady=(12, 0))
+
+        tk.Button(btn_frame, text="Cancelar", font=FONT_BOLD,
+                  bg=COLORS["surface2"], fg=COLORS["text_muted"],
+                  relief="flat", cursor="hand2",
+                  command=self.destroy).pack(side="left", ipadx=16, ipady=6, padx=(0, 8))
+
+        tk.Button(btn_frame, text="Crear Nota Débito", font=FONT_BOLD,
+                  bg=COLORS["accent"], fg=COLORS["on_accent"],
+                  relief="flat", cursor="hand2",
+                  command=self._confirmar).pack(side="right", ipadx=16, ipady=6)
+
+        self.update_idletasks()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        x = (self.winfo_screenwidth() - w) // 2
+        y = (self.winfo_screenheight() - h) // 2
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.grab_set()
+
+    def _confirmar(self):
+        from modules.fiscal_documents import crear_nota_debito
+        from modules.sync import get_sync_manager
+        from database import get_connection
+
+        motivo = self.txt_motivo.get("1.0", "end").strip()
+        if not motivo:
+            messagebox.showwarning("Motivo", "Ingresa el motivo de la nota débito.")
+            return
+        try:
+            valor = float(self.entry_valor.get().replace(",", "").replace("$", "").strip())
+        except ValueError:
+            messagebox.showwarning("Valor", "Ingresa un valor adicional válido.")
+            return
+        if valor <= 0:
+            messagebox.showwarning("Valor", "El valor adicional debe ser mayor a 0.")
+            return
+
+        conn = get_connection()
+        f = conn.execute("SELECT venta_id FROM facturas WHERE id = ?",
+                         (self.factura_id,)).fetchone()
+        conn.close()
+        if not f:
+            messagebox.showerror("Error", "Factura no encontrada.")
+            return
+
+        try:
+            nd_data = crear_nota_debito(
+                venta_id=f["venta_id"],
+                motivo=motivo,
+                valor_adicional=valor,
+            )
+            sync_mgr = get_sync_manager()
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            if not loop.is_running():
+                result = loop.run_until_complete(sync_mgr.process_venta(nd_data))
+                if result.get("estado") == "sincronizado":
+                    messagebox.showinfo("Nota Débito", "Nota débito creada y enviada a DIAN.")
+                else:
+                    messagebox.showwarning("Nota Débito",
+                                           "Nota débito creada localmente. "
                                            "Pendiente de sincronización con DIAN.")
             self.destroy()
         except Exception as e:

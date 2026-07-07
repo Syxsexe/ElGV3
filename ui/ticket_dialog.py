@@ -231,3 +231,21 @@ def mostrar_ticket_pedido(parent, pedido_id: int):
         DialogTicket(parent, texto, f"Ticket — Pedido #{pedido_id}")
     except Exception as e:
         messagebox.showerror("Error", str(e), parent=parent)
+
+
+def mostrar_ticket_documento(parent, doc_id: int):
+    from modules.ticket import generar_ticket_documento
+    try:
+        texto = generar_ticket_documento(doc_id)
+        DialogTicket(parent, texto, f"Documento #{doc_id}")
+    except Exception as e:
+        messagebox.showerror("Error", str(e), parent=parent)
+
+
+def mostrar_recibo_caja(parent, abono_id: int):
+    from modules.ticket import generar_ticket_recibo_caja
+    try:
+        texto = generar_ticket_recibo_caja(abono_id)
+        DialogTicket(parent, texto, f"Recibo de Caja — RC-{abono_id:06d}")
+    except Exception as e:
+        messagebox.showerror("Error", str(e), parent=parent)

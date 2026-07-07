@@ -258,6 +258,118 @@ def generar_ticket_pedido(pedido_id: int) -> str:
     return "\n".join(lineas)
 
 
+def generar_ticket_documento(doc_id: int) -> str:
+    """
+    Genera el texto imprimible de un documento comercial
+    (cotización, orden de pedido o remisión) para impresora POS.
+    """
+    from modules.documentos import obtener_documento, TIPOS
+
+    doc = obtener_documento(doc_id)
+    if not doc:
+        raise ValueError(f"Documento #{doc_id} no encontrado.")
+
+    titulo = TIPOS.get(doc["tipo"], {}).get("titulo", "DOCUMENTO")
+
+    lineas = _cabecera()
+    lineas.append(_centrar(titulo))
+    lineas.append(_centrar(f"N° {doc['numero']}"))
+    lineas.append(_separador("-"))
+    lineas.append(_linea_dos_col("  Fecha:", doc["fecha"][:16]))
+    if doc.get("cliente_nombre"):
+        lineas.append(_linea_dos_col("  Cliente:", _truncar(doc["cliente_nombre"], 24)))
+        if doc.get("cliente_documento"):
+            lineas.append(_linea_dos_col(
+                f"  {doc.get('cliente_tipo_doc', '')}", doc["cliente_documento"]))
+    else:
+        lineas.append("  Cliente: Consumidor Final")
+    if doc["tipo"] == "cotizacion" and doc.get("vigencia"):
+        lineas.append(_linea_dos_col("  Válida hasta:", doc["vigencia"][:10]))
+    lineas.append(_separador("-"))
+
+    lineas.append(f"{'Descripcion':<{ANCHO-18}}{'Cant':>4}{'Subtotal':>14}")
+    lineas.append(_separador("-"))
+    for it in doc["items"]:
+        nombre = _truncar(it["descripcion"], ANCHO - 18)
+        cant = f"x{int(it['cantidad']) if it['cantidad'] == int(it['cantidad']) else it['cantidad']}"
+        subtotal = formatear_pesos(it["subtotal"])
+        lineas.append(f"{nombre:<{ANCHO-18}}{cant:>4}{subtotal:>14}")
+
+    lineas.append(_separador("-"))
+    if doc["descuento"] and doc["descuento"] > 0:
+        lineas.append(_linea_dos_col("  Subtotal:", formatear_pesos(doc["subtotal"])))
+        lineas.append(_linea_dos_col("  Descuento:", f"-{formatear_pesos(doc['descuento'])}"))
+    if doc["iva"] and doc["iva"] > 0:
+        lineas.append(_linea_dos_col("  IVA:", formatear_pesos(doc["iva"])))
+    lineas.append(_linea_dos_col("  TOTAL:", formatear_pesos(doc["total"])))
+
+    # Pie propio (sin "gracias por su visita" de venta): documento no es factura
+    lineas.append(_separador("-"))
+    if doc["tipo"] == "cotizacion":
+        lineas.append(_centrar("Documento no válido como factura"))
+    elif doc["tipo"] == "remision":
+        lineas += ["", _centrar("Recibido por:"), "", "  ____________________________"]
+    if doc.get("notas"):
+        lineas.append(_separador("-"))
+        lineas.append(_centrar(_truncar(doc["notas"], ANCHO)))
+    lineas += [_separador("="), "", ""]
+    return "\n".join(lineas)
+
+
+def generar_ticket_recibo_caja(abono_id: int) -> str:
+    """
+    Genera el Recibo de Caja de un abono a crédito (recaudo de cartera).
+    Comprueba el pago recibido de un cliente contra su deuda.
+    """
+    conn = get_connection()
+    abono = conn.execute("""
+        SELECT cr.id, cr.fecha, cr.monto, cr.metodo_pago, cr.notas, cr.cargo_id,
+               cl.nombre AS cliente_nombre, cl.tipo_documento, cl.documento,
+               cl.id AS cliente_id
+        FROM creditos cr
+        JOIN clientes cl ON cr.cliente_id = cl.id
+        WHERE cr.id = ? AND cr.tipo = 'abono'
+    """, (abono_id,)).fetchone()
+
+    if not abono:
+        conn.close()
+        raise ValueError(f"Abono #{abono_id} no encontrado.")
+
+    # Saldo restante del cliente después del abono
+    saldo = conn.execute("""
+        SELECT COALESCE(SUM(CASE WHEN tipo='cargo' THEN monto ELSE -monto END), 0)
+        FROM creditos WHERE cliente_id = ?
+    """, (abono["cliente_id"],)).fetchone()[0]
+    conn.close()
+
+    lineas = _cabecera()
+    lineas.append(_centrar("RECIBO DE CAJA"))
+    lineas.append(_centrar(f"N° RC-{abono['id']:06d}"))
+    lineas.append(_separador("-"))
+    lineas.append(_linea_dos_col("  Fecha:", abono["fecha"][:16]))
+    lineas.append(_linea_dos_col("  Cliente:", _truncar(abono["cliente_nombre"], 24)))
+    if abono["documento"]:
+        lineas.append(_linea_dos_col(f"  {abono['tipo_documento']}", abono["documento"]))
+    lineas.append(_separador("-"))
+    lineas.append(_centrar("Recibimos de conformidad la suma de:"))
+    lineas.append("")
+    lineas.append(_centrar(formatear_pesos(abono["monto"])))
+    lineas.append("")
+    lineas.append(_linea_dos_col("  Forma de pago:", (abono["metodo_pago"] or "efectivo").capitalize()))
+    if abono["cargo_id"]:
+        lineas.append(_linea_dos_col("  Aplicado a compra:", f"#{abono['cargo_id']}"))
+    else:
+        lineas.append("  Concepto: Abono general a cartera")
+    lineas.append(_separador("-"))
+    lineas.append(_linea_dos_col("  Saldo pendiente:", formatear_pesos(max(0, saldo))))
+    if abono["notas"]:
+        lineas.append(_separador("-"))
+        lineas.append(_centrar(_truncar(abono["notas"], ANCHO)))
+    lineas += ["", _centrar("Firma: ____________________"), "",
+               _separador("="), "", ""]
+    return "\n".join(lineas)
+
+
 # ── Impresión ─────────────────────────────────────────────────────────────────
 
 def imprimir_ticket(texto: str, impresora: str = None) -> bool:

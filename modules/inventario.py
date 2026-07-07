@@ -116,6 +116,25 @@ def buscar_productos(texto: str, tipo: str = None) -> list:
     return [dict(f) for f in filas]
 
 
+def obtener_producto_por_codigo(codigo: str) -> dict | None:
+    """
+    Retorna un producto por su código exacto (código de barras / QR), o None.
+    Usado por la consulta de precios con lector de código de barras.
+    """
+    codigo = (codigo or "").strip()
+    if not codigo:
+        return None
+    conn = get_connection()
+    fila = conn.execute("""
+        SELECT p.*, c.nombre AS categoria_nombre, c.tipo AS categoria_tipo
+        FROM productos p
+        JOIN categorias c ON p.categoria_id = c.id
+        WHERE p.codigo = ? AND p.activo = 1
+    """, (codigo,)).fetchone()
+    conn.close()
+    return dict(fila) if fila else None
+
+
 def obtener_producto(producto_id: int) -> dict | None:
     """Retorna un producto por ID, o None si no existe."""
     conn = get_connection()

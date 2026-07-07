@@ -683,6 +683,15 @@ class FrameProveedores(FrameBase):
                                      msg + "\n\n¿Imprimir ticket del pedido?"):
                 from ui.ticket_dialog import mostrar_ticket_pedido
                 mostrar_ticket_pedido(self, pedido_id)
+            # Ingreso de compra (soporte contable / factura electrónica proveedor)
+            if messagebox.askyesno(
+                    "Ingreso de compra",
+                    "¿Registrar la factura del proveedor para el libro de compras?"):
+                from modules.proveedores import obtener_pedido
+                ped = obtener_pedido(pedido_id)
+                DialogFacturaProveedor(
+                    self, ped["proveedor_id"], pedido_id=pedido_id,
+                    total_sugerido=ped.get("total") or total_pagado)
             self._cargar_pedidos()
             self._limpiar_panel()
             tk.Label(self._panel,
@@ -703,3 +712,113 @@ class FrameProveedores(FrameBase):
             self._limpiar_panel()
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
+class DialogFacturaProveedor(tk.Toplevel):
+    """Registra la factura de compra de un proveedor (ingreso de compras)."""
+
+    def __init__(self, parent, proveedor_id, pedido_id=None, total_sugerido=0):
+        super().__init__(parent)
+        self.proveedor_id = proveedor_id
+        self.pedido_id = pedido_id
+        self.title("Ingreso de compra — Factura de proveedor")
+        self.configure(bg=COLORS["bg"])
+        self.resizable(False, False)
+        self.grab_set()
+
+        from modules.compras import TIPOS_DOCUMENTO, METODOS_PAGO
+        self._TIPOS = TIPOS_DOCUMENTO
+
+        card = tk.Frame(self, bg=COLORS["surface"],
+                        highlightbackground=COLORS["border"], highlightthickness=1)
+        card.pack(padx=20, pady=20, ipadx=16, ipady=16)
+
+        tk.Label(card, text="Factura de proveedor", font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(0, 4))
+        if pedido_id:
+            tk.Label(card, text=f"Enlazada al pedido #{pedido_id}", font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(pady=(0, 10))
+
+        def _campo(lbl):
+            tk.Label(card, text=lbl, font=FONT_SMALL, bg=COLORS["surface"],
+                     fg=COLORS["text_muted"]).pack(anchor="w", pady=(6, 0))
+            e = tk.Entry(card, font=FONT_LABEL, bg=COLORS["surface2"], fg=COLORS["text"],
+                         insertbackground=COLORS["accent"], relief="flat", bd=0,
+                         highlightthickness=1, highlightbackground=COLORS["border"],
+                         highlightcolor=COLORS["accent"], width=38)
+            e.pack(fill="x", ipady=5)
+            return e
+
+        # Tipo de documento
+        tk.Label(card, text="Tipo de documento", font=FONT_SMALL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(anchor="w", pady=(0, 0))
+        self._tipo_var = tk.StringVar(value="factura")
+        tipo_row = tk.Frame(card, bg=COLORS["surface"])
+        tipo_row.pack(fill="x", pady=(2, 0))
+        for key, label in TIPOS_DOCUMENTO.items():
+            tk.Radiobutton(
+                tipo_row, text=label, variable=self._tipo_var, value=key,
+                font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text"],
+                selectcolor=COLORS["surface2"], activebackground=COLORS["surface"],
+                cursor="hand2", command=self._toggle_cufe).pack(anchor="w")
+
+        self.e_numero = _campo("Número de factura")
+        self.e_cufe = _campo("CUFE (obligatorio si es factura electrónica)")
+        self.e_base = _campo("Base gravable ($)")
+        self.e_iva = _campo("IVA ($)")
+        self.e_iva.insert(0, "0")
+        if total_sugerido:
+            self.e_base.insert(0, str(int(total_sugerido)))
+
+        # Método de pago
+        tk.Label(card, text="Método de pago", font=FONT_SMALL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(anchor="w", pady=(6, 0))
+        self._metodo_var = tk.StringVar(value="efectivo")
+        met_menu = tk.OptionMenu(card, self._metodo_var, *METODOS_PAGO)
+        met_menu.config(bg=COLORS["surface2"], fg=COLORS["text"], relief="flat",
+                        font=FONT_LABEL, anchor="w", highlightthickness=1,
+                        highlightbackground=COLORS["border"])
+        met_menu.pack(fill="x", pady=(2, 0))
+
+        self.e_notas = _campo("Notas (opcional)")
+
+        btns = tk.Frame(card, bg=COLORS["surface"])
+        btns.pack(fill="x", pady=(14, 0))
+        tk.Button(btns, text="Cancelar", font=FONT_BOLD, bg=COLORS["surface2"],
+                  fg=COLORS["text_muted"], relief="flat", cursor="hand2",
+                  command=self.destroy).pack(side="left", ipadx=14, ipady=6, padx=(0, 8))
+        tk.Button(btns, text="Registrar compra", font=FONT_BOLD, bg=COLORS["accent"],
+                  fg=COLORS["on_accent"], relief="flat", cursor="hand2",
+                  command=self._guardar).pack(side="right", ipadx=14, ipady=6)
+
+        self._toggle_cufe()
+        self.update_idletasks()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"{w}x{h}+{(self.winfo_screenwidth()-w)//2}+{(self.winfo_screenheight()-h)//2}")
+
+    def _toggle_cufe(self):
+        estado = "normal" if self._tipo_var.get() == "factura_electronica" else "disabled"
+        self.e_cufe.config(state=estado)
+
+    def _guardar(self):
+        from modules.compras import registrar_ingreso_compra
+        numero = self.e_numero.get().strip()
+        try:
+            base = float(self.e_base.get().replace(",", "").replace("$", "") or 0)
+            iva = float(self.e_iva.get().replace(",", "").replace("$", "") or 0)
+        except ValueError:
+            messagebox.showerror("Error", "Base e IVA deben ser numéricos.", parent=self)
+            return
+        cufe = self.e_cufe.get().strip() if self._tipo_var.get() == "factura_electronica" else None
+        try:
+            registrar_ingreso_compra(
+                self.proveedor_id, numero, base, iva=iva,
+                tipo_documento=self._tipo_var.get(), cufe=cufe,
+                pedido_id=self.pedido_id, metodo_pago=self._metodo_var.get(),
+                notas=self.e_notas.get().strip() or None,
+            )
+            messagebox.showinfo("Compra registrada",
+                                "Factura de compra registrada en el libro de compras.",
+                                parent=self)
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", str(e), parent=self)

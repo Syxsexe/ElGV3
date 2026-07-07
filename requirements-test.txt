@@ -1,0 +1,13 @@
+# Dependencias para ejecutar la suite de pruebas (tests/).
+# Instalar con:  pip install -r requirements-test.txt
+#
+# Los tests ejercitan el código DIAN del backend (CUFE, QR, XML UBL 2.1,
+# cola de sincronización y el servidor mock). No se fijan versiones para
+# obtener wheels compatibles con la versión de Python instalada (probado en 3.14).
+
+pytest              # runner de pruebas
+lxml                # generación/validación de XML UBL 2.1 (backend/app/dian)
+qrcode              # códigos QR fiscales (usa pillow, ya en requirements.txt)
+pydantic-settings   # backend/config.py (Settings)
+fastapi             # servidor mock DIAN (tests/test_mock_dian.py)
+uvicorn             # runner ASGI del servidor mock

@@ -328,7 +328,7 @@ class FrameCreditos(FrameBase):
         notas   = self.entry_notas_abono.get().strip() or None
         sesion  = get_sesion_activa()
         try:
-            registrar_abono(
+            abono_id = registrar_abono(
                 self._cliente_sel_id, monto,
                 metodo_pago=metodo,
                 sesion_id=sesion["id"] if sesion else None,
@@ -336,9 +336,13 @@ class FrameCreditos(FrameBase):
             )
             self.entry_abono.delete(0, "end")
             self.entry_notas_abono.delete(0, "end")
-            messagebox.showinfo("Abono registrado", f"Abono de ${monto:,.0f} registrado.")
             self._cargar_saldos()
             self._al_sel_saldo()
+            if messagebox.askyesno(
+                    "Abono registrado",
+                    f"Abono de ${monto:,.0f} registrado.\n¿Imprimir recibo de caja?"):
+                from ui.ticket_dialog import mostrar_recibo_caja
+                mostrar_recibo_caja(self, abono_id)
         except ValueError as e:
             messagebox.showerror("Error", str(e))
 

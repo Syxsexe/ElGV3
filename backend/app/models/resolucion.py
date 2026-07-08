@@ -12,6 +12,9 @@ class Resolucion(Base):
     __tablename__ = "resoluciones"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Número de resolución de facturación DIAN (p.ej. "18760000001").
+    # Requerido por el PT (Matias: resolution_number).
+    numero_resolucion: Mapped[str | None] = mapped_column(String(30), nullable=True)
     prefijo: Mapped[str] = mapped_column(String(4), nullable=False)
     tipo_documento: Mapped[str] = mapped_column(
         SAEnum("FEV", "DEE_POS", "NC", "ND", name="tipo_documento_enum"),

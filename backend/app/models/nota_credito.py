@@ -34,7 +34,8 @@ class NotaCredito(Base):
     cude: Mapped[str | None] = mapped_column(String(96), nullable=True, unique=True)
     estado_dian: Mapped[str] = mapped_column(
         SAEnum(
-            "pendiente", "enviada", "aceptada", "rechazada", "contingencia",
+            "pendiente", "enviada", "en_proceso", "aceptada", "rechazada",
+            "contingencia", "anulada",
             name="nc_estado_enum",
         ),
         nullable=False,
@@ -44,6 +45,13 @@ class NotaCredito(Base):
 
     xml_enviado: Mapped[str | None] = mapped_column(Text, nullable=True)
     xml_recibido: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Proveedor Tecnológico (capa app/fe)
+    proveedor: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    track_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    pdf_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    xml_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qr_code: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.now)
 

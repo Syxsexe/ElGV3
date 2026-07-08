@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.routes.auth import require_auth
 from app.services.factura_service import crear_y_transmitir_factura
+from app.services.nota_service import crear_y_emitir_nota
 from app.models import Factura, NotaCredito, NotaDebito
 
 router = APIRouter(prefix="/api/v1/facturacion", tags=["facturacion"], dependencies=[Depends(require_auth)])
@@ -42,6 +43,30 @@ async def crear_factura(req: FacturaRequest, session: AsyncSession = Depends(get
         notas=req.notas,
     )
     return result
+
+
+class NotaRequest(BaseModel):
+    factura_id: str
+    motivo: str
+    total: float
+    items: list | None = None
+    iva_porcentaje: float = 19.0
+
+
+@router.post("/nota-credito")
+async def crear_nota_credito(req: NotaRequest, session: AsyncSession = Depends(get_session)):
+    return await crear_y_emitir_nota(
+        session, tipo="nota_credito", factura_id=req.factura_id, motivo=req.motivo,
+        total=req.total, items=req.items, iva_porcentaje=req.iva_porcentaje,
+    )
+
+
+@router.post("/nota-debito")
+async def crear_nota_debito(req: NotaRequest, session: AsyncSession = Depends(get_session)):
+    return await crear_y_emitir_nota(
+        session, tipo="nota_debito", factura_id=req.factura_id, motivo=req.motivo,
+        total=req.total, items=req.items, iva_porcentaje=req.iva_porcentaje,
+    )
 
 
 @router.get("/factura/{factura_id}")

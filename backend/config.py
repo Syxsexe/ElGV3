@@ -30,6 +30,26 @@ class Settings(BaseSettings):
     # Formato: "client_id:client_secret,client_id2:client_secret2"
     pos_clients: str = ""
 
+    # Proveedor de Facturación Electrónica (capa app/fe).
+    #   directo -> genera XML/CUFE/firma y transmite por SOAP (código legacy).
+    #   matias  -> delega en Matias API (envía datos, el PT hace todo).
+    #   mock    -> servidor mock local (pruebas).
+    fe_provider: str = "directo"
+
+    # Matias API (Proveedor Tecnológico DIAN)
+    matias_base_url: str = "https://sandbox-api.matias-api.com/api/ubl2.1"
+    # Auth: si hay PAT (token), se usa directo; si no, login con email/password.
+    matias_token: str = ""            # Personal Access Token (Bearer) — recomendado
+    matias_email: str = ""            # fallback: login POST /auth/login
+    matias_password: str = ""
+    matias_webhook_secret: str = ""   # secret devuelto al registrar el webhook (HMAC)
+    matias_generar_pdf: bool = True   # graphic_representation
+    matias_enviar_email: bool = False  # send_email al adquiriente
+    matias_timeout: int = 30
+    # Sandbox: fuerza una respuesta DIAN vía header X-Sandbox-Force-Status
+    # (p.ej. ERROR_REJECTED, ERROR_NIT_INVALID). Vacío = camino ACCEPTED.
+    matias_force_status: str = ""
+
     # Emisor (POS owner)
     emisor_nit: str = ""
     emisor_razon_social: str = ""

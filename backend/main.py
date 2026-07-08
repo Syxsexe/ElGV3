@@ -10,6 +10,7 @@ from app.routes import (
     facturacion as facturacion_route,
     dian as dian_route,
     admin as admin_route,
+    webhooks as webhooks_route,
 )
 from app.web.router import router as web_router, templates
 
@@ -33,6 +34,7 @@ app.include_router(sync_route.router)
 app.include_router(facturacion_route.router)
 app.include_router(dian_route.router)
 app.include_router(admin_route.router)
+app.include_router(webhooks_route.router)
 
 # Admin web panel
 app.include_router(web_router)

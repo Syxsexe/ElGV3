@@ -7,6 +7,7 @@ from app.database import get_session
 from app.routes.auth import require_auth
 from app.dian.client import transmitir_factura, consultar_estado_dian
 from app.dian.contingency import get_contingency_manager
+from app.services.factura_service import reconciliar_estados_pendientes
 from app.models import Factura
 
 router = APIRouter(prefix="/api/v1/dian", tags=["dian"], dependencies=[Depends(require_auth)])
@@ -35,6 +36,27 @@ async def transmitir_a_dian(documento_id: str, session: AsyncSession = Depends(g
     await session.commit()
 
     return {"documento_id": documento_id, **dian_response}
+
+
+@router.get("/proveedor/estado")
+async def estado_proveedor():
+    """Chequeo de conexión con el PT (solo lectura, no emite)."""
+    from config import settings
+    from app.fe import get_proveedor
+    if not settings.fe_provider or settings.fe_provider.lower() == "directo":
+        return {"ok": False, "proveedor": "directo",
+                "mensaje": "FE_PROVIDER=directo: no usa proveedor externo"}
+    try:
+        prov = get_proveedor()
+    except NotImplementedError as e:
+        return {"ok": False, "proveedor": settings.fe_provider, "mensaje": str(e)}
+    return {"proveedor": prov.nombre, **(await prov.verificar_conexion())}
+
+
+@router.post("/reconciliar")
+async def reconciliar_pendientes(session: AsyncSession = Depends(get_session)):
+    """Consulta al PT el estado de las facturas en proceso (respaldo del webhook)."""
+    return await reconciliar_estados_pendientes(session)
 
 
 @router.post("/contingencia/iniciar")

@@ -18,10 +18,16 @@ from app.dian.xml_generator import generar_xml_factura
 from app.dian.signer import firmar_xml
 from app.dian.client import transmitir_factura, consultar_estado_dian
 from app.dian.contingency import get_contingency_manager
+from app.fe import get_proveedor, DocumentoFE, ItemFE, AdquirienteFE
 
 
 def _round2(val) -> Decimal:
     return Decimal(str(val)).quantize(Decimal("0.01"))
+
+
+def _usar_proveedor_externo() -> bool:
+    """True cuando FE_PROVIDER delega en un PT (capa app/fe), no en el flujo directo."""
+    return bool(settings.fe_provider) and settings.fe_provider.lower() != "directo"
 
 
 async def crear_y_transmitir_factura(
@@ -80,6 +86,27 @@ async def crear_y_transmitir_factura(
     resolucion.consecutivo_actual = consecutivo
 
     fecha_ahora = datetime.now()
+
+    # 3b. Vía Proveedor Tecnológico (Matias…): delega XML/CUFE/firma/transmisión.
+    if _usar_proveedor_externo():
+        return await _emitir_via_proveedor(
+            session,
+            resolucion=resolucion,
+            consecutivo=consecutivo,
+            fecha_ahora=fecha_ahora,
+            adquiriente_nit=adquiriente_nit,
+            adquiriente_razon_social=adquiriente_razon_social,
+            adquiriente_email=adquiriente_email,
+            adquiriente_direccion=adquiriente_direccion,
+            adquiriente_telefono=adquiriente_telefono,
+            items=items,
+            total_base=total_base,
+            iva=iva,
+            iva_porcentaje=iva_porcentaje,
+            total_con_descuento=total_con_descuento,
+            venta_id_local=venta_id_local,
+            notas=notas,
+        )
 
     # 4. Generate CUFE
     cufe = generar_cufe(
@@ -239,3 +266,179 @@ async def crear_y_transmitir_factura(
         "numero": f"{factura.prefijo}{factura.consecutivo}",
         "mensaje_dian": factura.mensaje_dian,
     }
+
+
+# ── Vía Proveedor Tecnológico (capa app/fe) ──────────────────────────────────
+
+def _items_a_itemsfe(items: list[dict], iva_porcentaje: Decimal) -> list[ItemFE]:
+    """Convierte los items del POS (subtotal CON IVA) a `ItemFE` (base SIN IVA).
+
+    Convención POS: `subtotal` de cada línea incluye IVA. Matias espera la base
+    imponible, así que extraemos el IVA de cada línea.
+    """
+    factor = 1 + iva_porcentaje / 100
+    itemsfe: list[ItemFE] = []
+    for it in items:
+        cant = Decimal(str(it.get("cantidad", 1)))
+        subt_bruto = Decimal(str(it.get("subtotal", 0)))
+        if subt_bruto <= 0:
+            pu = Decimal(str(it.get("precio_unit", 0)))
+            subt_bruto = _round2(cant * pu)
+        base_linea = _round2(subt_bruto / factor)
+        iva_linea = _round2(subt_bruto - base_linea)
+        pu_base = _round2(base_linea / cant) if cant else base_linea
+        itemsfe.append(ItemFE(
+            descripcion=str(it.get("nombre") or it.get("descripcion") or "Producto"),
+            cantidad=cant,
+            precio_unit=pu_base,
+            subtotal=base_linea,
+            iva_porcentaje=iva_porcentaje if iva_linea > 0 else Decimal("0"),
+            iva_valor=iva_linea,
+            codigo=it.get("codigo") or it.get("codigo_producto"),
+        ))
+    return itemsfe
+
+
+async def _emitir_via_proveedor(
+    session: AsyncSession,
+    *,
+    resolucion: Resolucion,
+    consecutivo: int,
+    fecha_ahora: datetime,
+    adquiriente_nit: str,
+    adquiriente_razon_social: str,
+    adquiriente_email: str | None,
+    adquiriente_direccion: str | None,
+    adquiriente_telefono: str | None,
+    items: list[dict],
+    total_base: Decimal,
+    iva: Decimal,
+    iva_porcentaje: Decimal,
+    total_con_descuento: Decimal,
+    venta_id_local: int,
+    notas: str | None,
+) -> dict:
+    """Registra la factura y la emite a través del PT configurado (FE_PROVIDER)."""
+    proveedor = get_proveedor()
+
+    # Registro local en estado 'pendiente' (aún sin CUFE/track_id).
+    factura = Factura(
+        id=uuid_lib.uuid4(),
+        resolucion_id=resolucion.id,
+        prefijo=resolucion.prefijo,
+        consecutivo=consecutivo,
+        fecha_emision=fecha_ahora,
+        tipo_documento="FEV",
+        adquiriente_nit=adquiriente_nit,
+        adquiriente_razon_social=adquiriente_razon_social,
+        adquiriente_email=adquiriente_email,
+        adquiriente_direccion=adquiriente_direccion,
+        adquiriente_telefono=adquiriente_telefono,
+        total_base=total_base,
+        iva=iva,
+        iva_porcentaje=iva_porcentaje,
+        total_impuestos=iva,
+        total=total_con_descuento,
+        estado_dian="pendiente",
+        items=items,
+        venta_id_local=venta_id_local,
+        notas=notas,
+        proveedor=proveedor.nombre,
+    )
+    session.add(factura)
+
+    doc = DocumentoFE(
+        tipo="factura",
+        prefijo=resolucion.prefijo,
+        consecutivo=consecutivo,
+        resolucion_numero=resolucion.numero_resolucion or "",
+        fecha_emision=fecha_ahora,
+        adquiriente=AdquirienteFE(
+            nit=adquiriente_nit,
+            razon_social=adquiriente_razon_social,
+            email=adquiriente_email,
+            direccion=adquiriente_direccion,
+            telefono=adquiriente_telefono,
+        ),
+        items=_items_a_itemsfe(items, iva_porcentaje),
+        total_base=total_base,
+        iva=iva,
+        total=total_con_descuento,
+        iva_porcentaje=iva_porcentaje,
+        notas=notas,
+    )
+
+    resultado = await proveedor.emitir(doc)
+
+    # Volcar resultado normalizado a la factura.
+    factura.estado_dian = resultado.estado
+    factura.track_id = resultado.track_id
+    factura.cufe = resultado.cufe
+    factura.qr_code = resultado.qr
+    factura.pdf_url = resultado.pdf_url
+    factura.xml_url = resultado.xml_url
+    factura.mensaje_dian = resultado.mensaje
+    if resultado.estado in ("aceptada", "rechazada"):
+        factura.fecha_validacion_dian = datetime.now()
+
+    await session.commit()
+
+    return {
+        "status": factura.estado_dian,
+        "cufe": factura.cufe,
+        "qr": factura.qr_code,
+        "pdf_url": factura.pdf_url,
+        "track_id": factura.track_id,
+        "factura_id": str(factura.id),
+        "numero": f"{factura.prefijo}{factura.consecutivo}",
+        "mensaje_dian": factura.mensaje_dian,
+        "proveedor": factura.proveedor,
+    }
+
+
+async def reconciliar_estados_pendientes(session: AsyncSession, *, limite: int = 50) -> dict:
+    """Respaldo del webhook: consulta al PT el estado de las facturas en proceso.
+
+    Recorre facturas en 'en_proceso'/'enviada'/'pendiente' emitidas por un PT y
+    actualiza su estado con `consultar_estado()`. Útil como job periódico por si
+    un webhook no llegó.
+    """
+    if not _usar_proveedor_externo():
+        return {"reconciliadas": 0, "detalle": [], "motivo": "FE_PROVIDER=directo"}
+
+    proveedor = get_proveedor()
+    result = await session.execute(
+        select(Factura)
+        .where(
+            Factura.proveedor == proveedor.nombre,
+            Factura.estado_dian.in_(["en_proceso", "enviada", "pendiente"]),
+        )
+        .limit(limite)
+    )
+    facturas = result.scalars().all()
+
+    detalle: list[dict] = []
+    cambiadas = 0
+    for factura in facturas:
+        res = await proveedor.consultar_estado(
+            prefijo=factura.prefijo,
+            consecutivo=factura.consecutivo,
+            track_id=factura.track_id,
+        )
+        if res.estado != factura.estado_dian and res.estado != "error":
+            factura.estado_dian = res.estado
+            if res.cufe and not factura.cufe:
+                factura.cufe = res.cufe
+            if res.mensaje:
+                factura.mensaje_dian = res.mensaje
+            if res.estado in ("aceptada", "rechazada"):
+                factura.fecha_validacion_dian = datetime.now()
+            cambiadas += 1
+            detalle.append({
+                "numero": f"{factura.prefijo}{factura.consecutivo}",
+                "estado": res.estado,
+            })
+
+    if cambiadas:
+        await session.commit()
+    return {"reconciliadas": cambiadas, "detalle": detalle}

@@ -49,13 +49,22 @@ class Factura(Base):
     qr_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado_dian: Mapped[str] = mapped_column(
         SAEnum(
-            "pendiente", "enviada", "aceptada", "rechazada", "contingencia",
+            "pendiente", "enviada", "en_proceso", "aceptada", "rechazada",
+            "contingencia", "anulada",
             name="factura_estado_enum",
         ),
         nullable=False,
         default="pendiente",
     )
     mensaje_dian: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Proveedor Tecnológico (capa app/fe): 'matias', 'directo', 'mock'…
+    proveedor: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Id de seguimiento del documento en el PT (para webhook/consulta).
+    track_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    # Enlaces a la representación gráfica y XML servidos por el PT.
+    pdf_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    xml_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # XML almacenado
     xml_enviado: Mapped[str | None] = mapped_column(Text, nullable=True)

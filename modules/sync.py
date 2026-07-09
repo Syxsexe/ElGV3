@@ -126,13 +126,14 @@ class SyncManager:
 
         try:
             result = await sync_venta(venta_data, uuid_op)
-            if result.get("cufe"):
-                self.mark_synced(uuid_op, result)
-                return {"uuid": uuid_op, "estado": "sincronizado", **result}
-            else:
+            # Éxito de sincronización = el backend respondió sin error de
+            # transporte. Puede no traer CUFE (factura local, o DIAN en proceso).
+            if "error" in result:
                 error_msg = result.get("error", "Error desconocido")
                 self.mark_error(uuid_op, error_msg)
                 return {"uuid": uuid_op, "estado": "error", "error": error_msg}
+            self.mark_synced(uuid_op, result)
+            return {"uuid": uuid_op, "estado": "sincronizado", **result}
         except Exception as e:
             self.mark_error(uuid_op, str(e))
             return {"uuid": uuid_op, "estado": "error", "error": str(e)}

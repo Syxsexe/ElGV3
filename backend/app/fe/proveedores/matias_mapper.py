@@ -21,6 +21,7 @@ from app.fe.base import DocumentoFE, ItemFE, AdquirienteFE
 CURRENCY_COP = "272"
 OP_ESTANDAR = 1                 # operation_type_id
 UNIDAD_DEFAULT = "70"           # quantity_units_id (unidad genérica) — verificar
+TIPO_ITEM_ID = "4"              # type_item_identifications_id (estándar del vendedor) — verificar
 TAX_IVA = "1"                   # tax_id IVA
 IDENT_CEDULA = "3"              # identity_document_id cédula ciudadanía — verificar
 IDENT_NIT = "6"                 # identity_document_id NIT — verificar
@@ -32,6 +33,12 @@ PAIS_CO = "45"                  # country_id Colombia — verificar
 CIUDAD_DEFAULT = "836"          # city_id (Bogotá) — verificar / configurar por emisor
 METODO_CONTADO = 1              # payment_method_id contado
 MEDIO_EFECTIVO = 10             # means_payment_id efectivo
+
+# Concepto DIAN de corrección (discrepancy_response.response_id).
+# NC: 1=Devolución parcial, 2=Anulación, 3=Rebaja, 4=Descuento, 5=Rescisión, 6=Otros.
+# ND: 1=Intereses, 2=Gastos por cobrar, 3=Cambio del valor, 4=Otros.
+CONCEPTO_NC_DEFAULT = "2"       # anulación de factura
+CONCEPTO_ND_DEFAULT = "4"       # otros
 
 # type_document_id según tipo interno.
 TIPO_DOC_ID = {
@@ -92,10 +99,13 @@ def _tax_total(base: Decimal, valor: Decimal, porcentaje: Decimal) -> dict[str, 
 def _line(item: ItemFE) -> dict[str, Any]:
     linea: dict[str, Any] = {
         "invoiced_quantity": str(_num(item.cantidad)),
+        "base_quantity": str(_num(item.cantidad)),
         "quantity_units_id": item.unidad_id or UNIDAD_DEFAULT,
         "line_extension_amount": _money(item.subtotal),
+        "free_of_charge_indicator": False,
         "description": item.descripcion,
         "code": item.codigo or "N/A",
+        "type_item_identifications_id": TIPO_ITEM_ID,
         "price_amount": _money(item.precio_unit),
     }
     # Solo agrega tax_totals si la línea tiene IVA (>0).
@@ -148,14 +158,23 @@ def construir_payload(doc: DocumentoFE, *, generar_pdf: bool, enviar_email: bool
         payload["notes"] = doc.notas
 
     # Notas crédito/débito: referencia al documento afectado.
-    # ⚠️ Estructura exacta de billing_reference por verificar con ejemplos Matias.
+    # Estructura verificada contra sandbox Matias (2026-07): billing_reference
+    # exige `date` (fecha de la factura afectada) y discrepancy_response exige
+    # `reference_id` (número afectado) + `response_id` (concepto DIAN de corrección).
     if doc.tipo in ("nota_credito", "nota_debito") and (doc.cufe_referencia or doc.numero_referencia):
+        fecha_ref = doc.fecha_referencia or doc.fecha_emision.strftime("%Y-%m-%d")
         payload["billing_reference"] = {
             "number": doc.numero_referencia,
             "uuid": doc.cufe_referencia,
-            "issue_date": doc.fecha_emision.strftime("%Y-%m-%d"),
+            "date": fecha_ref,
         }
-        if doc.motivo:
-            payload["discrepancy_response"] = {"description": doc.motivo}
+        concepto = doc.concepto_nota_id or (
+            CONCEPTO_NC_DEFAULT if doc.tipo == "nota_credito" else CONCEPTO_ND_DEFAULT
+        )
+        payload["discrepancy_response"] = {
+            "reference_id": doc.numero_referencia,
+            "response_id": concepto,
+            "description": doc.motivo or "",
+        }
 
     return payload

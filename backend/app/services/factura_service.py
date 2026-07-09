@@ -21,8 +21,25 @@ from app.dian.contingency import get_contingency_manager
 from app.fe import get_proveedor, DocumentoFE, ItemFE, AdquirienteFE
 
 
+# Adquiriente genérico DIAN cuando la venta no se factura a un cliente concreto.
+NIT_CONSUMIDOR_FINAL = "222222222222"
+RAZON_CONSUMIDOR_FINAL = "CONSUMIDOR FINAL"
+
+
 def _round2(val) -> Decimal:
     return Decimal(str(val)).quantize(Decimal("0.01"))
+
+
+def _resolver_adquiriente(nit: str | None, razon_social: str | None) -> tuple[str, str]:
+    """Aplica el consumidor final por defecto.
+
+    Si no se indica un NIT concreto (o es el genérico), la factura va a
+    'CONSUMIDOR FINAL' salvo que se pase explícitamente cliente + NIT.
+    """
+    nit_limpio = (nit or "").replace("-", "").strip()
+    if not nit_limpio or nit_limpio == NIT_CONSUMIDOR_FINAL:
+        return NIT_CONSUMIDOR_FINAL, (razon_social or RAZON_CONSUMIDOR_FINAL)
+    return nit_limpio, (razon_social or RAZON_CONSUMIDOR_FINAL)
 
 
 def _usar_proveedor_externo() -> bool:
@@ -35,8 +52,8 @@ async def crear_y_transmitir_factura(
     *,
     venta_id_local: int,
     uuid_operacion: str,
-    adquiriente_nit: str,
-    adquiriente_razon_social: str,
+    adquiriente_nit: str | None = None,
+    adquiriente_razon_social: str | None = None,
     adquiriente_email: str | None = None,
     adquiriente_direccion: str | None = None,
     adquiriente_telefono: str | None = None,
@@ -44,6 +61,7 @@ async def crear_y_transmitir_factura(
     total: Decimal | float,
     descuento: Decimal | float = 0,
     notas: str | None = None,
+    emitir_dian: bool = True,
 ) -> dict:
     """
     Full electronic invoice creation and DIAN transmission.
@@ -57,7 +75,38 @@ async def crear_y_transmitir_factura(
     8. Update record with response
     """
 
-    # 1. Get active resolution
+    # 0. Adquiriente: consumidor final por defecto salvo que se indique cliente.
+    adquiriente_nit, adquiriente_razon_social = _resolver_adquiriente(
+        adquiriente_nit, adquiriente_razon_social
+    )
+
+    # 1. Calculate values (no dependen de la resolución).
+    total_dec = _round2(total)
+    descuento_dec = _round2(descuento)
+    total_con_descuento = _round2(total_dec - descuento_dec)
+    iva_porcentaje = Decimal("19.00")
+    total_base = _round2(total_con_descuento / (1 + iva_porcentaje / 100))
+    iva = _round2(total_con_descuento - total_base)
+
+    # 2. Factura "solo local": no se emite a DIAN, numeración propia (prefijo LOC).
+    if not emitir_dian:
+        return await _guardar_factura_local(
+            session,
+            adquiriente_nit=adquiriente_nit,
+            adquiriente_razon_social=adquiriente_razon_social,
+            adquiriente_email=adquiriente_email,
+            adquiriente_direccion=adquiriente_direccion,
+            adquiriente_telefono=adquiriente_telefono,
+            items=items,
+            total_base=total_base,
+            iva=iva,
+            iva_porcentaje=iva_porcentaje,
+            total_con_descuento=total_con_descuento,
+            venta_id_local=venta_id_local,
+            notas=notas,
+        )
+
+    # 3. Get active resolution (sólo para las que sí se emiten a DIAN).
     result = await session.execute(
         select(Resolucion).where(
             Resolucion.activa == True,
@@ -73,15 +122,7 @@ async def crear_y_transmitir_factura(
             "error": "No hay resolución activa disponible para facturación electrónica",
         }
 
-    # 2. Calculate values
-    total_dec = _round2(total)
-    descuento_dec = _round2(descuento)
-    total_con_descuento = _round2(total_dec - descuento_dec)
-    iva_porcentaje = Decimal("19.00")
-    total_base = _round2(total_con_descuento / (1 + iva_porcentaje / 100))
-    iva = _round2(total_con_descuento - total_base)
-
-    # 3. Next consecutive
+    # 4. Next consecutive
     consecutivo = resolucion.consecutivo_actual + 1
     resolucion.consecutivo_actual = consecutivo
 
@@ -265,6 +306,71 @@ async def crear_y_transmitir_factura(
         "factura_id": str(factura.id),
         "numero": f"{factura.prefijo}{factura.consecutivo}",
         "mensaje_dian": factura.mensaje_dian,
+    }
+
+
+# ── Factura solo local (no emitida a DIAN) ───────────────────────────────────
+
+async def _guardar_factura_local(
+    session: AsyncSession,
+    *,
+    adquiriente_nit: str,
+    adquiriente_razon_social: str,
+    adquiriente_email: str | None,
+    adquiriente_direccion: str | None,
+    adquiriente_telefono: str | None,
+    items: list[dict],
+    total_base: Decimal,
+    iva: Decimal,
+    iva_porcentaje: Decimal,
+    total_con_descuento: Decimal,
+    venta_id_local: int,
+    notas: str | None,
+) -> dict:
+    """Guarda una factura que NO se emite a DIAN, con numeración propia.
+
+    Usa el prefijo `FACTURA_LOCAL_PREFIJO` (p.ej. LOC) y un consecutivo
+    independiente del de la resolución electrónica, para no dejar huecos en la
+    secuencia oficial. No genera CUFE ni consume resolución.
+    """
+    prefijo = (settings.factura_local_prefijo or "LOC")[:4]
+
+    # Siguiente consecutivo local (max+1 dentro del mismo prefijo local).
+    result = await session.execute(
+        select(func.max(Factura.consecutivo)).where(Factura.prefijo == prefijo)
+    )
+    consecutivo = (result.scalar() or 0) + 1
+
+    factura = Factura(
+        id=uuid_lib.uuid4(),
+        resolucion_id=None,
+        prefijo=prefijo,
+        consecutivo=consecutivo,
+        fecha_emision=datetime.now(),
+        tipo_documento="FEV",
+        adquiriente_nit=adquiriente_nit,
+        adquiriente_razon_social=adquiriente_razon_social,
+        adquiriente_email=adquiriente_email,
+        adquiriente_direccion=adquiriente_direccion,
+        adquiriente_telefono=adquiriente_telefono,
+        total_base=total_base,
+        iva=iva,
+        iva_porcentaje=iva_porcentaje,
+        total_impuestos=iva,
+        total=total_con_descuento,
+        estado_dian="local",
+        items=items,
+        venta_id_local=venta_id_local,
+        notas=notas,
+    )
+    session.add(factura)
+    await session.commit()
+
+    return {
+        "status": "local",
+        "factura_id": str(factura.id),
+        "numero": f"{prefijo}{consecutivo}",
+        "mensaje": "Factura guardada solo en local (no emitida a DIAN).",
     }
 
 

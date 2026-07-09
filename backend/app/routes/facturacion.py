@@ -15,8 +15,9 @@ router = APIRouter(prefix="/api/v1/facturacion", tags=["facturacion"], dependenc
 class FacturaRequest(BaseModel):
     venta_id_local: int
     uuid_operacion: str
-    adquiriente_nit: str
-    adquiriente_razon_social: str
+    # Adquiriente opcional: si no se envía, la factura va a CONSUMIDOR FINAL.
+    adquiriente_nit: str | None = None
+    adquiriente_razon_social: str | None = None
     adquiriente_email: str | None = None
     adquiriente_direccion: str | None = None
     adquiriente_telefono: str | None = None
@@ -24,6 +25,8 @@ class FacturaRequest(BaseModel):
     total: float = 0
     descuento: float = 0
     notas: str | None = None
+    # emitir_dian=False -> se guarda solo en local (numeración propia, sin DIAN).
+    emitir_dian: bool = True
 
 
 @router.post("/factura")
@@ -41,6 +44,7 @@ async def crear_factura(req: FacturaRequest, session: AsyncSession = Depends(get
         total=req.total,
         descuento=req.descuento,
         notas=req.notas,
+        emitir_dian=req.emitir_dian,
     )
     return result
 
@@ -51,6 +55,7 @@ class NotaRequest(BaseModel):
     total: float
     items: list | None = None
     iva_porcentaje: float = 19.0
+    concepto_id: str | None = None   # response_id DIAN (NC 1-6 / ND 1-4); None → default
 
 
 @router.post("/nota-credito")
@@ -58,6 +63,7 @@ async def crear_nota_credito(req: NotaRequest, session: AsyncSession = Depends(g
     return await crear_y_emitir_nota(
         session, tipo="nota_credito", factura_id=req.factura_id, motivo=req.motivo,
         total=req.total, items=req.items, iva_porcentaje=req.iva_porcentaje,
+        concepto_id=req.concepto_id,
     )
 
 
@@ -66,6 +72,7 @@ async def crear_nota_debito(req: NotaRequest, session: AsyncSession = Depends(ge
     return await crear_y_emitir_nota(
         session, tipo="nota_debito", factura_id=req.factura_id, motivo=req.motivo,
         total=req.total, items=req.items, iva_porcentaje=req.iva_porcentaje,
+        concepto_id=req.concepto_id,
     )
 
 

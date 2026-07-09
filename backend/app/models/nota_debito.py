@@ -35,7 +35,7 @@ class NotaDebito(Base):
     estado_dian: Mapped[str] = mapped_column(
         SAEnum(
             "pendiente", "enviada", "en_proceso", "aceptada", "rechazada",
-            "contingencia", "anulada",
+            "contingencia", "anulada", "error",
             name="nd_estado_enum",
         ),
         nullable=False,

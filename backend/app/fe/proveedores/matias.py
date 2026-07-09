@@ -148,7 +148,25 @@ class MatiasProvider(ProveedorFE):
                 mensaje=f"Error de conexión con Matias: {e}",
             )
 
-        return self._parse_documento(resp, numero_defecto=doc.numero)
+        resultado = self._parse_documento(resp, numero_defecto=doc.numero)
+
+        # El PT puede devolver 5xx DESPUÉS de haber creado y validado el
+        # documento (p.ej. un crash en su generación del PDF). Reintentar el
+        # POST duplicaría la factura (consume consecutivo DIAN), así que
+        # confirmamos por consulta de estado antes de darla por perdida.
+        if resultado.estado == "error" and resp.status_code >= 500:
+            verificado = await self.consultar_estado(
+                prefijo=doc.prefijo, consecutivo=doc.consecutivo
+            )
+            if verificado.cufe:
+                logger.warning(
+                    "POST %s devolvió HTTP %s pero el documento %s SÍ se creó "
+                    "(CUFE %s); uso el estado consultado.",
+                    ruta, resp.status_code, doc.numero, verificado.cufe,
+                )
+                return verificado
+
+        return resultado
 
     # ── Consulta de estado (respaldo del webhook) ────────────────────────────
     async def consultar_estado(
@@ -177,7 +195,7 @@ class MatiasProvider(ProveedorFE):
                 estado="error", numero=numero,
                 mensaje=f"Error consultando estado en Matias: {e}",
             )
-        return self._parse_documento(resp, numero_defecto=numero)
+        return self._parse_status_document(resp, numero_defecto=numero)
 
     def _parse_documento(self, resp: httpx.Response, *, numero_defecto: str) -> ResultadoFE:
         raw: dict[str, Any]
@@ -226,6 +244,49 @@ class MatiasProvider(ProveedorFE):
             pdf_url=pdf.get("url") or None,
             xml_url=adjunto.get("url") or None,
             mensaje=mensaje,
+            raw=raw,
+        )
+
+    def _parse_status_document(self, resp: httpx.Response, *, numero_defecto: str) -> ResultadoFE:
+        """Parsea GET /status, cuya forma es {document:{...}, status, success}
+        (distinta a la de emisión). Se usa en la consulta de estado y en el
+        respaldo de `emitir` cuando el POST devuelve 5xx."""
+        try:
+            raw = resp.json()
+        except (json.JSONDecodeError, ValueError):
+            raw = {"raw_text": resp.text}
+
+        if resp.status_code >= 400:
+            return ResultadoFE(
+                estado="error", numero=numero_defecto,
+                mensaje=f"HTTP {resp.status_code}: {raw.get('message') or resp.text[:300]}",
+                raw=raw,
+            )
+
+        doc = raw.get("document") or {}
+        if not doc:
+            return ResultadoFE(
+                estado="error", numero=numero_defecto,
+                mensaje=raw.get("message") or "Documento no encontrado", raw=raw,
+            )
+
+        texto_estado = (raw.get("status") or "").lower()
+        if "rechaz" in texto_estado or "reject" in texto_estado:
+            estado: Estado = "rechazada"
+        elif doc.get("is_valid"):
+            estado = "aceptada"
+        else:
+            # Existe pero DIAN aún no lo valida (validación asíncrona 30 min–2 h).
+            estado = "en_proceso"
+
+        qr = doc.get("qr") or {}
+        return ResultadoFE(
+            estado=estado,
+            cufe=doc.get("document_key"),
+            track_id=str(doc.get("uuid")) if doc.get("uuid") else None,
+            numero=doc.get("document_number") or numero_defecto,
+            qr=qr.get("qrDian") or qr.get("url") or None,
+            mensaje=raw.get("status") or raw.get("message"),
             raw=raw,
         )
 

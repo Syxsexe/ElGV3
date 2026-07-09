@@ -38,6 +38,7 @@ async def crear_y_emitir_nota(
     total: Decimal | float,
     items: list[dict] | None = None,
     iva_porcentaje: Decimal | float = Decimal("19"),
+    concepto_id: str | None = None,  # response_id DIAN (NC 1-6 / ND 1-4); None → default del mapper
 ) -> dict:
     """Emite una nota (crédito/débito) referida a `factura_id` vía el PT."""
     if tipo not in _CONFIG:
@@ -134,6 +135,8 @@ async def crear_y_emitir_nota(
         notas=motivo,
         cufe_referencia=factura.cufe,
         numero_referencia=f"{factura.prefijo}{factura.consecutivo}",
+        fecha_referencia=factura.fecha_emision.strftime("%Y-%m-%d"),
+        concepto_nota_id=concepto_id,
         motivo=motivo,
     )
 

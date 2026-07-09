@@ -299,7 +299,7 @@ class FrameVentas(FrameBase):
 
         self._emitir_factura = tk.BooleanVar(value=False)
         tk.Checkbutton(
-            right, text="Emitir factura DIAN",
+            right, text="Emitir a DIAN (si no, queda solo local)",
             variable=self._emitir_factura,
             font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["text"],
@@ -449,7 +449,7 @@ class FrameVentas(FrameBase):
         from modules.dian_client import is_configured
 
         cliente_id = self._get_cliente_id()
-        emitir_factura = self._emitir_factura.get()
+        emitir_dian = self._emitir_factura.get()
 
         try:
             venta_id = registrar_venta(
@@ -458,7 +458,7 @@ class FrameVentas(FrameBase):
                 descuento=self._get_descuento(),
                 sesion_id=self.sesion_id,
                 cliente_id=cliente_id,
-                emitir_factura=emitir_factura
+                emitir_factura=emitir_dian
             )
             total_str = formatear_pesos(sum(p["monto"] for p in pagos))
             metodos   = " + ".join(p["metodo"] for p in pagos)
@@ -466,9 +466,11 @@ class FrameVentas(FrameBase):
             self._buscar()
             self._ultimo_venta_id = venta_id
 
-            # ── DIAN Sync ─────────────────────────────────────────────────
+            # ── Sync backend ──────────────────────────────────────────────
+            # Sincronizamos siempre que el backend esté configurado: las que no
+            # se emiten a DIAN quedan como factura local (LOC) en el backend.
             dian_result = {"status": "no_configurado"}
-            if is_configured() and emitir_factura:
+            if is_configured():
                 try:
                     from database import get_connection
                     conn = get_connection()
@@ -488,7 +490,9 @@ class FrameVentas(FrameBase):
                         from modules.clientes import obtener_cliente
                         cliente = obtener_cliente(cliente_id)
 
-                    dian_payload = preparar_venta_para_dian(venta_data, cliente)
+                    dian_payload = preparar_venta_para_dian(
+                        venta_data, cliente, emitir_dian=emitir_dian
+                    )
 
                     import asyncio
                     sync_mgr = get_sync_manager()
@@ -508,11 +512,15 @@ class FrameVentas(FrameBase):
                     dian_result = {"status": "error", "error": str(e)}
 
             # ── Show DIAN status dialog if applicable ────────────────────
-            if emitir_factura and dian_result.get("status") != "no_configurado":
+            # Solo mostramos el diálogo DIAN cuando se pidió emitir.
+            if emitir_dian and dian_result.get("status") != "no_configurado":
                 DialogDianStatus(self, dian_result)
 
             # ── Ticket ────────────────────────────────────────────────────
-            if dian_result.get("status") in ("aceptada", "contingencia", "no_configurado"):
+            if dian_result.get("status") in (
+                "aceptada", "contingencia", "no_configurado",
+                "local", "en_proceso", "pendiente",
+            ):
                 if messagebox.askyesno(
                     "Venta registrada",
                     f"Venta #{venta_id}\nTotal: {total_str}\nMétodo: {metodos}\n\n¿Imprimir ticket?"

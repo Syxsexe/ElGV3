@@ -98,10 +98,15 @@ def crear_nota_debito(
     }
 
 
-def preparar_venta_para_dian(venta_data: dict, cliente: dict = None) -> dict:
+def preparar_venta_para_dian(
+    venta_data: dict, cliente: dict = None, emitir_dian: bool = True
+) -> dict:
     """
     Prepares sale data for DIAN electronic invoicing.
     Extracts required fields from the local sale structure.
+
+    emitir_dian=False -> el backend la guarda solo en local (numeración LOC),
+    sin transmitir a DIAN.
     """
     return {
         "venta_id": venta_data["id"],
@@ -111,6 +116,7 @@ def preparar_venta_para_dian(venta_data: dict, cliente: dict = None) -> dict:
         "metodo_pago": venta_data.get("metodo_pago", "efectivo"),
         "tipo": venta_data.get("tipo", "tienda"),
         "vendedor_id": venta_data.get("usuario_id"),
+        "emitir_dian": emitir_dian,
         "adquiriente": {
             "nit": cliente["documento"] if cliente else "222222222222",
             "razon_social": cliente["nombre"] if cliente else "CONSUMIDOR FINAL",

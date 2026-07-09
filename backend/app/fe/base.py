@@ -81,6 +81,8 @@ class DocumentoFE:
     # Para notas crédito/débito: documento afectado + motivo.
     cufe_referencia: str | None = None
     numero_referencia: str | None = None
+    fecha_referencia: str | None = None       # fecha de emisión de la factura afectada (YYYY-MM-DD)
+    concepto_nota_id: str | None = None        # response_id: concepto DIAN de corrección (NC 1-6 / ND 1-4)
     motivo: str | None = None
     # Datos de pago (opcionales; el adaptador aplica defaults).
     metodo_pago_id: str | None = None         # payment_method_id (1=contado,2=crédito)

@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     #   mock    -> servidor mock local (pruebas).
     fe_provider: str = "directo"
 
+    # Facturas "solo local" (no emitidas a DIAN): prefijo de su propia
+    # secuencia, independiente del consecutivo de la resolución electrónica.
+    # Máx. 4 caracteres (columna prefijo).
+    factura_local_prefijo: str = "LOC"
+
     # Matias API (Proveedor Tecnológico DIAN)
     matias_base_url: str = "https://sandbox-api.matias-api.com/api/ubl2.1"
     # Auth: si hay PAT (token), se usa directo; si no, login con email/password.

@@ -25,6 +25,8 @@ class VentoSyncRequest(BaseModel):
     adquiriente: dict | None = None
     items: list = []
     pagos: list = []
+    # False -> factura solo local (no se emite a DIAN, numeración LOC).
+    emitir_dian: bool = True
 
 
 @router.post("/venta")

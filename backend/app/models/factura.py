@@ -15,8 +15,10 @@ class Factura(Base):
     __tablename__ = "facturas"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    resolucion_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("resoluciones.id"), nullable=False
+    # Nullable: las facturas "solo local" (no emitidas a DIAN) no dependen de
+    # una resolución electrónica.
+    resolucion_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resoluciones.id"), nullable=True
     )
     prefijo: Mapped[str] = mapped_column(String(4), nullable=False)
     consecutivo: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -49,8 +51,8 @@ class Factura(Base):
     qr_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado_dian: Mapped[str] = mapped_column(
         SAEnum(
-            "pendiente", "enviada", "en_proceso", "aceptada", "rechazada",
-            "contingencia", "anulada",
+            "local", "pendiente", "enviada", "en_proceso", "aceptada", "rechazada",
+            "contingencia", "anulada", "error",
             name="factura_estado_enum",
         ),
         nullable=False,

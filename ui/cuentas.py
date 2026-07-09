@@ -275,7 +275,7 @@ class FrameCuentas(FrameBase):
 
         self._emitir_factura = tk.BooleanVar(value=False)
         tk.Checkbutton(
-            right, text="Emitir factura DIAN",
+            right, text="Emitir a DIAN (si no, queda solo local)",
             variable=self._emitir_factura,
             font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["text"],
@@ -565,7 +565,7 @@ class FrameCuentas(FrameBase):
 
         cuenta        = obtener_cuenta(self._cuenta_sel)
         sesion        = get_sesion_activa()
-        emitir_factura = self._emitir_factura.get()
+        emitir_dian   = self._emitir_factura.get()
 
         descuento = self._get_descuento_cuenta()
         try:
@@ -585,9 +585,11 @@ class FrameCuentas(FrameBase):
             self.lbl_total_cuenta.config(text="Total: $0")
             self._cargar_mesas()
 
-            # ── DIAN Sync ─────────────────────────────────────────────────
+            # ── Sync backend ──────────────────────────────────────────────
+            # Siempre que el backend esté configurado: las no emitidas quedan
+            # como factura local (LOC) en el backend.
             dian_result = {"status": "no_configurado"}
-            if is_configured() and emitir_factura:
+            if is_configured():
                 try:
                     from database import get_connection
                     conn = get_connection()
@@ -606,7 +608,9 @@ class FrameCuentas(FrameBase):
                         from modules.clientes import obtener_cliente
                         cliente = obtener_cliente(cuenta["cliente_id"])
 
-                    dian_payload = preparar_venta_para_dian(venta_data, cliente)
+                    dian_payload = preparar_venta_para_dian(
+                        venta_data, cliente, emitir_dian=emitir_dian
+                    )
 
                     import asyncio
                     sync_mgr = get_sync_manager()
@@ -626,7 +630,7 @@ class FrameCuentas(FrameBase):
                     dian_result = {"status": "error", "error": str(e)}
 
             # ── Diálogo estado DIAN ───────────────────────────────────────
-            if emitir_factura and dian_result.get("status") != "no_configurado":
+            if emitir_dian and dian_result.get("status") != "no_configurado":
                 from ui.ventas import DialogDianStatus
                 DialogDianStatus(self, dian_result)
 

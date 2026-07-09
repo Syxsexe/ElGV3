@@ -505,6 +505,16 @@ class FrameDocumentos(FrameBase):
         self._btn_danger(acciones, "✕ Anular", self._anular).pack(
             side="left", padx=(8, 0), ipadx=6, ipady=4)
 
+        # Al facturar un documento: emitir a DIAN o dejarlo solo local.
+        self._emitir_factura = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            acciones, text="Emitir a DIAN (si no, queda solo local)",
+            variable=self._emitir_factura, font=FONT_SMALL,
+            bg=COLORS["bg"], fg=COLORS["text"],
+            selectcolor=COLORS["surface2"], activebackground=COLORS["bg"],
+            activeforeground=COLORS["text"], cursor="hand2",
+        ).pack(side="right", padx=(0, 4))
+
         self._recargar()
 
     # ── Datos ─────────────────────────────────────────────────────────────────
@@ -608,16 +618,22 @@ class FrameDocumentos(FrameBase):
         sesion = get_sesion_activa()
         sesion_id = sesion["id"] if sesion else None
 
+        emitir_dian = self._emitir_factura.get()
+
         def _on_pago(pagos):
             from modules.ventas import registrar_venta
             try:
                 venta_id = registrar_venta(
                     carrito, pagos=pagos, sesion_id=sesion_id,
                     cliente_id=doc["cliente_id"],
-                    emitir_factura=bool(doc["cliente_id"]),
+                    emitir_factura=emitir_dian or bool(doc["cliente_id"]),
                 )
                 marcar_facturado(doc_id, venta_id)
                 self._recargar()
+
+                # Emitir a DIAN / registrar en backend (local si emitir_dian=False).
+                self._sync_dian(venta_id, pagos, doc["cliente_id"], emitir_dian)
+
                 if messagebox.askyesno("Facturado",
                                        f"Venta #{venta_id} registrada.\n¿Imprimir ticket?",
                                        parent=self):
@@ -628,6 +644,63 @@ class FrameDocumentos(FrameBase):
 
         abrir_dialogo_pago(self, carrito.total(), _on_pago,
                            cliente_id=doc["cliente_id"])
+
+    def _sync_dian(self, venta_id, pagos, cliente_id, emitir_dian):
+        """Sincroniza la venta al backend: emite a DIAN o la deja solo local.
+
+        Igual que en Ventas/Cuentas: sincroniza siempre que el backend esté
+        configurado; el flag `emitir_dian` decide si se transmite a DIAN o
+        queda como factura local (numeración LOC).
+        """
+        from modules.dian_client import is_configured
+        if not is_configured():
+            return
+
+        try:
+            from database import get_connection
+            from modules.fiscal_documents import preparar_venta_para_dian
+            from modules.sync import get_sync_manager
+
+            conn = get_connection()
+            venta_data = dict(conn.execute(
+                "SELECT * FROM ventas WHERE id = ?", (venta_id,)
+            ).fetchone())
+            detalle = conn.execute(
+                "SELECT * FROM detalle_venta WHERE venta_id = ?", (venta_id,)
+            ).fetchall()
+            conn.close()
+            venta_data["detalle"] = [dict(d) for d in detalle]
+            venta_data["pagos"] = pagos
+
+            cliente = None
+            if cliente_id:
+                from modules.clientes import obtener_cliente
+                cliente = obtener_cliente(cliente_id)
+
+            dian_payload = preparar_venta_para_dian(
+                venta_data, cliente, emitir_dian=emitir_dian
+            )
+
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            if loop.is_running():
+                dian_result = {"status": "pendiente", "mensaje": "Sincronización en cola"}
+            else:
+                dian_result = loop.run_until_complete(
+                    get_sync_manager().process_venta(dian_payload)
+                )
+        except Exception as e:
+            dian_result = {"status": "error", "error": str(e)}
+
+        # Solo mostramos el diálogo DIAN cuando se pidió emitir.
+        if emitir_dian and dian_result.get("status") != "no_configurado":
+            from ui.ventas import DialogDianStatus
+            DialogDianStatus(self, dian_result)
 
     def _anular(self):
         from modules.documentos import anular_documento

@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from app.models import Factura, Resolucion, SyncLog
+from app.models import Factura, Resolucion, SyncLog, NotaCredito, NotaDebito
 from app.dian.cufe import generar_cufe
 from app.dian.qr import generar_qr_base64
 from app.dian.xml_generator import generar_xml_factura
@@ -502,49 +502,72 @@ async def _emitir_via_proveedor(
     }
 
 
-async def reconciliar_estados_pendientes(session: AsyncSession, *, limite: int = 50) -> dict:
-    """Respaldo del webhook: consulta al PT el estado de las facturas en proceso.
+_PENDIENTES = ["en_proceso", "enviada", "pendiente"]
 
-    Recorre facturas en 'en_proceso'/'enviada'/'pendiente' emitidas por un PT y
-    actualiza su estado con `consultar_estado()`. Útil como job periódico por si
-    un webhook no llegó.
+
+async def _reconciliar_modelo(session, proveedor, modelo, *, campo_id: str,
+                              tiene_fecha_valida: bool, limite: int) -> tuple[int, list[dict]]:
+    """Consulta al PT el estado de los documentos pendientes de un modelo y los
+    actualiza. `campo_id` = atributo del identificador DIAN (cufe/cude)."""
+    result = await session.execute(
+        select(modelo)
+        .where(
+            modelo.proveedor == proveedor.nombre,
+            modelo.estado_dian.in_(_PENDIENTES),
+        )
+        .limit(limite)
+    )
+    docs = result.scalars().all()
+
+    detalle: list[dict] = []
+    cambiados = 0
+    for doc in docs:
+        res = await proveedor.consultar_estado(
+            prefijo=doc.prefijo, consecutivo=doc.consecutivo, track_id=doc.track_id,
+        )
+        if res.estado != doc.estado_dian and res.estado != "error":
+            doc.estado_dian = res.estado
+            if res.cufe and not getattr(doc, campo_id):
+                setattr(doc, campo_id, res.cufe)
+            if res.mensaje:
+                doc.mensaje_dian = res.mensaje
+            if tiene_fecha_valida and res.estado in ("aceptada", "rechazada"):
+                doc.fecha_validacion_dian = datetime.now()
+            cambiados += 1
+            detalle.append({
+                "tipo": modelo.__name__,
+                "numero": f"{doc.prefijo}{doc.consecutivo}",
+                "estado": res.estado,
+            })
+    return cambiados, detalle
+
+
+async def reconciliar_estados_pendientes(session: AsyncSession, *, limite: int = 50) -> dict:
+    """Respaldo/alternativa al webhook: consulta al PT el estado de los documentos
+    en 'en_proceso'/'enviada'/'pendiente' (facturas Y notas crédito/débito) y
+    actualiza su estado con `consultar_estado()`. Job periódico imprescindible en
+    despliegue local sin webhook (veredicto DIAN asíncrono).
     """
     if not _usar_proveedor_externo():
         return {"reconciliadas": 0, "detalle": [], "motivo": "FE_PROVIDER=directo"}
 
     proveedor = get_proveedor()
-    result = await session.execute(
-        select(Factura)
-        .where(
-            Factura.proveedor == proveedor.nombre,
-            Factura.estado_dian.in_(["en_proceso", "enviada", "pendiente"]),
-        )
-        .limit(limite)
-    )
-    facturas = result.scalars().all()
-
     detalle: list[dict] = []
-    cambiadas = 0
-    for factura in facturas:
-        res = await proveedor.consultar_estado(
-            prefijo=factura.prefijo,
-            consecutivo=factura.consecutivo,
-            track_id=factura.track_id,
+    total = 0
+    # (modelo, campo id DIAN, ¿tiene fecha_validacion_dian?)
+    objetivos = [
+        (Factura, "cufe", True),
+        (NotaCredito, "cude", False),
+        (NotaDebito, "cude", False),
+    ]
+    for modelo, campo_id, tiene_fecha in objetivos:
+        n, det = await _reconciliar_modelo(
+            session, proveedor, modelo,
+            campo_id=campo_id, tiene_fecha_valida=tiene_fecha, limite=limite,
         )
-        if res.estado != factura.estado_dian and res.estado != "error":
-            factura.estado_dian = res.estado
-            if res.cufe and not factura.cufe:
-                factura.cufe = res.cufe
-            if res.mensaje:
-                factura.mensaje_dian = res.mensaje
-            if res.estado in ("aceptada", "rechazada"):
-                factura.fecha_validacion_dian = datetime.now()
-            cambiadas += 1
-            detalle.append({
-                "numero": f"{factura.prefijo}{factura.consecutivo}",
-                "estado": res.estado,
-            })
+        total += n
+        detalle.extend(det)
 
-    if cambiadas:
+    if total:
         await session.commit()
-    return {"reconciliadas": cambiadas, "detalle": detalle}
+    return {"reconciliadas": total, "detalle": detalle}

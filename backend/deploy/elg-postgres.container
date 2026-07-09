@@ -1,0 +1,25 @@
+# PostgreSQL del backend El G POS (Quadlet → systemd de usuario).
+[Unit]
+Description=El G POS - PostgreSQL
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=elg-postgres
+Image=docker.io/library/postgres:16
+Network=elg.network
+# Datos en volumen persistente (sobreviven a recrear el contenedor).
+Volume=elg-pgdata.volume:/var/lib/postgresql/data
+# Puerto expuesto al host (para psql/depuración). Puedes quitarlo si no lo usas.
+PublishPort=5432:5432
+Environment=POSTGRES_USER=elg
+Environment=POSTGRES_PASSWORD=elg
+Environment=POSTGRES_DB=elg_pos
+
+[Service]
+Restart=always
+# Postgres puede tardar en cerrar; dale margen.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

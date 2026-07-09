@@ -15,8 +15,9 @@ echo "→ PostgreSQL ($PG)"
 if podman container exists "$PG"; then
   podman start "$PG" >/dev/null
 else
-  podman run -d --name "$PG" --network "$NET" \
+  podman run -d --name "$PG" --network "$NET" --restart=always \
     -e POSTGRES_USER=elg -e POSTGRES_PASSWORD=elg -e POSTGRES_DB=elg_pos \
+    -v elg-pgdata:/var/lib/postgresql/data \
     -p 5432:5432 docker.io/library/postgres:16 >/dev/null
 fi
 
@@ -25,7 +26,7 @@ podman build -t "$IMG" -f "$ROOT/backend/Containerfile" "$ROOT/backend"
 
 echo "→ Backend ($BE)"
 podman rm -f "$BE" >/dev/null 2>&1 || true
-podman run -d --name "$BE" --network "$NET" \
+podman run -d --name "$BE" --network "$NET" --restart=always \
   -p 8000:8000 \
   -v "$ROOT":/app:z \
   "$IMG" >/dev/null

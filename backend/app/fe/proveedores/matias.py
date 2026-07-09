@@ -29,6 +29,11 @@ from app.fe.proveedores.matias_mapper import construir_payload
 logger = logging.getLogger(__name__)
 
 
+def _es_verdadero(v: Any) -> bool:
+    """Normaliza el is_valid de Matias (1/'1'/True/'true') a bool."""
+    return str(v).strip().lower() in ("1", "true", "t", "yes")
+
+
 # StatusCode DIAN → estado interno.
 def _estado_por_status_code(code: str | None) -> Estado:
     if code == "00":
@@ -179,17 +184,14 @@ class MatiasProvider(ProveedorFE):
                 if not token:
                     return ResultadoFE(estado="error", numero=numero,
                                        mensaje="Sin credenciales Matias")
-                if track_id:
-                    resp = await client.get(
-                        f"{self.base_url}/status/document/{track_id}",
-                        headers=self._headers(token),
-                    )
-                else:
-                    resp = await client.get(
-                        f"{self.base_url}/status",
-                        params={"prefix": prefijo, "number": f"{prefijo}{consecutivo}"},
-                        headers=self._headers(token),
-                    )
+                # Consulta por prefijo+número (verificada). NOTA: la ruta
+                # /status/document/{track_id} devuelve 405 en la API real, así
+                # que no se usa; el track_id se conserva sólo por compatibilidad.
+                resp = await client.get(
+                    f"{self.base_url}/status",
+                    params={"prefix": prefijo, "number": f"{prefijo}{consecutivo}"},
+                    headers=self._headers(token),
+                )
         except httpx.RequestError as e:
             return ResultadoFE(
                 estado="error", numero=numero,
@@ -317,27 +319,52 @@ class MatiasProvider(ProveedorFE):
     def verificar_firma_webhook(self, body: bytes, firma: str | None) -> bool:
         if not self.webhook_secret or not firma:
             return False
-        esperado = hmac.new(
-            self.webhook_secret.encode("utf-8"), body, hashlib.sha256
-        ).hexdigest()
-        # Matias envía el header como "sha256=<hex>".
-        recibido = firma.split("=", 1)[1] if "=" in firma else firma
-        return hmac.compare_digest(esperado, recibido)
+        # Matias/APIDIAN firma el JSON COMPACTO (sin espacios) del cuerpo, NO los
+        # bytes crudos que envía (verificado con un webhook real). Probamos varias
+        # serializaciones y aceptamos si alguna coincide; al ser HMAC, sin el secret
+        # no se puede forjar ninguna. El header puede venir como "sha256=<hex>".
+        recibido = (firma.split("=", 1)[1] if "=" in firma else firma).strip().lower()
+        candidatos: list[bytes] = [body]
+        try:
+            obj = json.loads(body)
+            candidatos.append(json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+            candidatos.append(json.dumps(obj, separators=(",", ":"), ensure_ascii=True).encode("utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            pass
+        clave = self.webhook_secret.encode("utf-8")
+        for cand in candidatos:
+            esperado = hmac.new(clave, cand, hashlib.sha256).hexdigest()
+            if hmac.compare_digest(esperado, recibido):
+                return True
+        return False
 
     def parse_webhook(self, payload: dict[str, Any]) -> EventoWebhook:
-        evento = payload.get("event", "")
+        # Formato real Matias/APIDIAN v3 (verificado con webhook capturado):
+        # el tipo va en `type` (también en header X-Webhook-Event) y el
+        # identificador de seguimiento del documento es `data.uuid`.
+        evento = payload.get("type") or payload.get("event") or ""
         data = payload.get("data") or {}
-        estado = _EVENTO_ESTADO.get(evento, "en_proceso")
-        # track_id: id de seguimiento del PT (data.track_id o document_id).
-        track_id = data.get("track_id")
-        if track_id is None and data.get("document_id") is not None:
-            track_id = str(data.get("document_id"))
+        track_id = (
+            data.get("uuid")
+            or data.get("track_id")
+            or (str(data.get("document_id")) if data.get("document_id") is not None else None)
+        )
+        # Estado: rechazo/anulación mandan; si no, `is_valid` es la señal real
+        # (en sandbox llega 1 de inmediato; en producción 0 hasta que DIAN valide).
+        if evento == "document.rejected":
+            estado: Estado = "rechazada"
+        elif evento == "document.voided":
+            estado = "anulada"
+        elif _es_verdadero(data.get("is_valid")):
+            estado = "aceptada"
+        else:
+            estado = _EVENTO_ESTADO.get(evento, "en_proceso")
         return EventoWebhook(
             evento=evento,
             estado=estado,
             track_id=track_id,
             cufe=data.get("cufe") or data.get("XmlDocumentKey"),
-            numero=data.get("number") or data.get("document_number"),
-            mensaje=data.get("status") or data.get("message"),
+            numero=data.get("document_number") or data.get("number"),
+            mensaje=data.get("status_message") or data.get("message") or evento,
             raw=payload,
         )

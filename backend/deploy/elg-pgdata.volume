@@ -1,0 +1,4 @@
+# Volumen persistente para los datos de PostgreSQL (Quadlet).
+# IMPRESCINDIBLE: sin esto, borrar el contenedor perdería TODAS las facturas.
+[Volume]
+VolumeName=elg-pgdata

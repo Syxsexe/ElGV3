@@ -1,0 +1,22 @@
+# Backend El G POS (FastAPI) — Quadlet → systemd de usuario.
+# Arranca después de Postgres y se reinicia solo ante fallos o al prender el PC.
+[Unit]
+Description=El G POS - Backend FastAPI
+Requires=elg-postgres.service
+After=elg-postgres.service
+
+[Container]
+ContainerName=elg-backend
+Image=localhost/elg-backend-img:latest
+Network=elg.network
+PublishPort=8000:8000
+# El repo se monta como volumen (el código y backend/.env viven ahí).
+# __REPO__ lo sustituye instalar-autoarranque.sh por la ruta real del repo.
+Volume=__REPO__:/app:z
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

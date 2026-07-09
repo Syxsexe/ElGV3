@@ -1,0 +1,4 @@
+# Red Podman compartida por Postgres y el backend (Quadlet).
+# El backend resuelve la BD por el nombre del contenedor "elg-postgres".
+[Network]
+NetworkName=elg-net

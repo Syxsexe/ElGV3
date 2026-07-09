@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # (p.ej. ERROR_REJECTED, ERROR_NIT_INVALID). Vacío = camino ACCEPTED.
     matias_force_status: str = ""
 
+    # Reconciliación periódica: cada cuántos segundos el backend consulta al PT
+    # el estado de las facturas 'en_proceso' (respaldo/alternativa al webhook,
+    # imprescindible si NO se usa webhook). 0 = desactivado.
+    reconciliacion_intervalo_seg: int = 600
+
     # Emisor (POS owner)
     emisor_nit: str = ""
     emisor_razon_social: str = ""

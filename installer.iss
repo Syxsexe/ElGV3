@@ -39,6 +39,9 @@ Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; Gr
 [Files]
 ; Empaqueta toda la carpeta generada por PyInstaller (onedir).
 Source: "dist\ElGV3\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Script de respaldo automático + checklist de puesta en marcha (quedan en {app}).
+Source: "registrar_respaldo.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "PUESTA_EN_MARCHA.md";     DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

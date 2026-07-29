@@ -470,6 +470,24 @@ class MainWindow(tk.Tk):
 # ════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    import sys
+
+    # Modo respaldo (headless): ElGV3.exe --backup [carpeta_destino]
+    # Lo usa la tarea programada de Windows; no abre la interfaz.
+    if "--backup" in sys.argv:
+        from modules.respaldo import respaldar
+        i = sys.argv.index("--backup")
+        destino = None
+        if len(sys.argv) > i + 1 and not sys.argv[i + 1].startswith("-"):
+            destino = sys.argv[i + 1]
+        try:
+            ruta = respaldar(destino)
+            print(f"Respaldo creado: {ruta}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"ERROR en respaldo: {e}", file=sys.stderr)
+            sys.exit(1)
+
     inicializar()
     app = LoginWindow()
     app.mainloop()

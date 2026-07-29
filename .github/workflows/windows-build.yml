@@ -1,9 +1,15 @@
-name: Build Windows EXE
+name: Build Windows (EXE + instalador)
 
+# Genera el ejecutable y el instalador en un runner Windows real (GitHub lo provee),
+# así no necesitas una PC/VM Windows para compilar.
+#
+# Se dispara manualmente (Actions -> Run workflow) o al publicar un tag vX.Y.Z.
+# Nota: los runners Windows cuestan 2x minutos en repos privados; por eso NO corre
+# en cada push. Si quieres que corra en cada push a main, añade el bloque `push`.
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
+  push:
+    tags: [ 'v*' ]
 
 jobs:
   build:
@@ -11,22 +17,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Instalar Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pyinstaller
 
-      - name: Build executable with PyInstaller
+      - name: Empaquetar con PyInstaller (usa ElGV3.spec)
+        run: pyinstaller ElGV3.spec --noconfirm
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compilar el instalador
         run: |
-          python -m PyInstaller --onefile --windowed --name elg-pos main.py
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
 
-      - name: Upload artifact
+      - name: Subir el instalador (ElGV3-Setup.exe)
         uses: actions/upload-artifact@v4
         with:
-          name: elg-pos-windows
-          path: dist/elg-pos.exe
+          name: ElGV3-Setup
+          path: Output/ElGV3-Setup.exe
+          if-no-files-found: error
+
+      - name: Subir la app suelta (onedir, por si acaso)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ElGV3-app-onedir
+          path: dist/ElGV3/**
+
+      # Si el disparador fue un tag vX.Y.Z, publica el instalador como Release.
+      - name: Publicar Release (solo en tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Output/ElGV3-Setup.exe

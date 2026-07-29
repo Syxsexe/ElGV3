@@ -4,7 +4,9 @@
 > en una PC/VM **Windows**.
 
 ## Requisitos en la máquina Windows
-- Python 3.x (marcado "Add Python to PATH" al instalar).
+- **Python 3.12 de 64 bits** (recomendado; marcar "Add Python to PATH" al instalar).
+  Evita el 3.14 recién salido: algunas dependencias aún no traen *wheels* para él y
+  el build puede fallar al instalar. 3.12 es un piso probado y estable.
 - [Inno Setup](https://jrsoftware.org/isdl.php) (para el instalador).
 
 ## 1. Generar el ejecutable

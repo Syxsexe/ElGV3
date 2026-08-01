@@ -185,13 +185,17 @@ class MainWindow(tk.Tk):
 
     def _build(self):
         # ── Sidebar ───────────────────────────────────────────────────────────
+        # Estructura en 3 zonas para que el menú funcione en cualquier resolución:
+        #   • arriba : branding (fijo)
+        #   • abajo  : pie con usuario, tema y cerrar sesión (fijo, nunca se pierde)
+        #   • medio  : lista de navegación con scroll propio si no cabe entera
         self.sidebar = tk.Frame(self, bg=COLORS["surface"], width=220)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
-        # Branding
+        # Branding (arriba, fijo)
         brand = tk.Frame(self.sidebar, bg=COLORS["surface"])
-        brand.pack(fill="x", pady=(28, 0))
+        brand.pack(side="top", fill="x", pady=(22, 0))
         tk.Label(brand, text="El G", font=("Segoe UI", 22, "bold"),
                  bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w", padx=24)
         tk.Label(brand, text="Punto de Venta",
@@ -199,10 +203,68 @@ class MainWindow(tk.Tk):
                  fg=COLORS["text_dim"]).pack(anchor="w", padx=24, pady=(0, 4))
 
         tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=20, pady=(14, 10))
+            side="top", fill="x", padx=20, pady=(12, 8))
 
-        # Navegación
-        sesion    = auth.get_sesion()
+        # ── Pie de sidebar (abajo, FIJO — se empaqueta antes que el medio para que
+        #     quede anclado y nunca se salga de pantalla) ──────────────────────
+        sesion = auth.get_sesion()
+
+        btn_salir = tk.Button(
+            self.sidebar, text="Cerrar sesión", font=FONT_SMALL,
+            bg=COLORS["surface"], fg=COLORS["text_dim"],
+            relief="flat", cursor="hand2", command=self._cerrar_sesion,
+            activebackground=COLORS["surface2"],
+            activeforeground=COLORS["danger"],
+        )
+        btn_salir.pack(side="bottom", padx=20, pady=(4, 16), anchor="w")
+        btn_salir.bind("<Enter>", lambda e: btn_salir.config(fg=COLORS["danger"]))
+        btn_salir.bind("<Leave>", lambda e: btn_salir.config(fg=COLORS["text_dim"]))
+
+        es_oscuro = tema_actual() == "oscuro"
+        btn_tema = tk.Button(
+            self.sidebar,
+            text="☀  Tema claro" if es_oscuro else "🌙  Tema oscuro",
+            font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text_muted"],
+            relief="flat", cursor="hand2", command=self._cambiar_tema,
+            activebackground=COLORS["surface2"], activeforeground=COLORS["accent"],
+        )
+        btn_tema.pack(side="bottom", padx=20, pady=(6, 0), anchor="w")
+        btn_tema.bind("<Enter>", lambda e: btn_tema.config(fg=COLORS["accent"]))
+        btn_tema.bind("<Leave>", lambda e: btn_tema.config(fg=COLORS["text_muted"]))
+
+        pie = tk.Frame(self.sidebar, bg=COLORS["surface"])
+        pie.pack(side="bottom", padx=20, pady=(0, 6), fill="x")
+        tk.Label(pie, text=sesion["usuario"], font=FONT_BOLD,
+                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w")
+        tk.Label(pie, text=sesion["rol"].capitalize(), font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w")
+
+        tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(
+            side="bottom", fill="x", padx=20, pady=(8, 10))
+
+        # ── Navegación (medio, con scroll propio) ──────────────────────────────
+        nav_wrap = tk.Frame(self.sidebar, bg=COLORS["surface"])
+        nav_wrap.pack(side="top", fill="both", expand=True)
+
+        self._nav_canvas = tk.Canvas(nav_wrap, bg=COLORS["surface"],
+                                     highlightthickness=0, bd=0)
+        self._nav_sb = ttk.Scrollbar(nav_wrap, orient="vertical",
+                                     command=self._nav_canvas.yview)
+        self._nav_canvas.configure(yscrollcommand=self._nav_sb.set)
+        self._nav_canvas.pack(side="left", fill="both", expand=True)
+
+        self._nav_inner = tk.Frame(self._nav_canvas, bg=COLORS["surface"])
+        self._nav_win = self._nav_canvas.create_window(
+            (0, 0), window=self._nav_inner, anchor="nw")
+        self._nav_canvas.bind(
+            "<Configure>",
+            lambda e: self._nav_canvas.itemconfig(self._nav_win, width=e.width))
+        self._nav_inner.bind("<Configure>", self._on_nav_resize)
+        # La rueda controla el menú mientras el puntero está sobre el sidebar y
+        # el contenido cuando entra al área de contenido. Se cambia solo al ENTRAR
+        # a cada zona (nunca al salir) para no oscilar al pasar sobre los botones.
+        self.sidebar.bind("<Enter>", self._activar_scroll_nav)
+
         nav_items = [
             ("Inicio",           self._mostrar_inicio),
             ("Nueva Venta",      self._mostrar_ventas),
@@ -227,44 +289,7 @@ class MainWindow(tk.Tk):
         for label, cmd in nav_items:
             self._nav_btn(label, cmd)
 
-        # Spacer + pie de sidebar
-        tk.Frame(self.sidebar, bg=COLORS["surface"]).pack(expand=True, fill="y")
-        tk.Frame(self.sidebar, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=20, pady=(0, 12))
-
-        pie = tk.Frame(self.sidebar, bg=COLORS["surface"])
-        pie.pack(padx=20, pady=(0, 6), fill="x")
-
-        tk.Label(pie, text=sesion["usuario"], font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w")
-        tk.Label(pie, text=sesion["rol"].capitalize(), font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["accent"]).pack(anchor="w")
-
-        # Toggle de tema (claro / oscuro)
-        es_oscuro = tema_actual() == "oscuro"
-        btn_tema = tk.Button(
-            self.sidebar,
-            text="☀  Tema claro" if es_oscuro else "🌙  Tema oscuro",
-            font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text_muted"],
-            relief="flat", cursor="hand2", command=self._cambiar_tema,
-            activebackground=COLORS["surface2"], activeforeground=COLORS["accent"],
-        )
-        btn_tema.pack(padx=20, pady=(8, 0), anchor="w")
-        btn_tema.bind("<Enter>", lambda e: btn_tema.config(fg=COLORS["accent"]))
-        btn_tema.bind("<Leave>", lambda e: btn_tema.config(fg=COLORS["text_muted"]))
-
-        btn_salir = tk.Button(
-            self.sidebar, text="Cerrar sesión", font=FONT_SMALL,
-            bg=COLORS["surface"], fg=COLORS["text_dim"],
-            relief="flat", cursor="hand2", command=self._cerrar_sesion,
-            activebackground=COLORS["surface2"],
-            activeforeground=COLORS["danger"],
-        )
-        btn_salir.pack(padx=20, pady=(4, 20), anchor="w")
-        btn_salir.bind("<Enter>", lambda e: btn_salir.config(fg=COLORS["danger"]))
-        btn_salir.bind("<Leave>", lambda e: btn_salir.config(fg=COLORS["text_dim"]))
-
-        # ── Área de contenido ─────────────────────────────────────────────────
+        # ── Área de contenido (scroll vertical y horizontal) ───────────────────
         self._content_outer = tk.Frame(self, bg=COLORS["bg"])
         self._content_outer.pack(side="right", expand=True, fill="both")
 
@@ -272,8 +297,12 @@ class MainWindow(tk.Tk):
                                   highlightthickness=0, bd=0)
         self._scrollbar = ttk.Scrollbar(self._content_outer, orient="vertical",
                                          command=self._canvas.yview)
-        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._scrollbar_x = ttk.Scrollbar(self._content_outer, orient="horizontal",
+                                           command=self._canvas.xview)
+        self._canvas.configure(yscrollcommand=self._scrollbar.set,
+                               xscrollcommand=self._scrollbar_x.set)
         self._scrollbar.pack(side="right", fill="y")
+        self._scrollbar_x.pack(side="bottom", fill="x")
         self._canvas.pack(side="left", expand=True, fill="both")
 
         self.content = tk.Frame(self._canvas, bg=COLORS["bg"])
@@ -282,23 +311,32 @@ class MainWindow(tk.Tk):
 
         self._canvas.bind("<Configure>", self._on_canvas_resize)
         self.content.bind("<Configure>",  self._on_content_resize)
-        self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-        self._canvas.bind_all("<Button-4>",   self._on_mousewheel)
-        self._canvas.bind_all("<Button-5>",   self._on_mousewheel)
+        self._canvas.bind("<Enter>", self._activar_scroll_contenido)
+        self._activar_scroll_contenido()
 
         self._mostrar_inicio()
 
-    # ── Scroll ────────────────────────────────────────────────────────────────
+    # ── Scroll del contenido ────────────────────────────────────────────────
 
     def _on_canvas_resize(self, event):
-        self._canvas.itemconfig(self._canvas_window, width=event.width)
+        # El contenido nunca es más angosto que el canvas (así llena el ancho),
+        # pero si necesita más (tarjetas/tablas anchas) crece y aparece el scroll
+        # horizontal en vez de recortarse.
+        ancho = max(event.width, self.content.winfo_reqwidth())
+        self._canvas.itemconfig(self._canvas_window, width=ancho)
 
     def _on_content_resize(self, event):
+        ancho = max(self._canvas.winfo_width(), self.content.winfo_reqwidth())
+        self._canvas.itemconfig(self._canvas_window, width=ancho)
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
         if self.content.winfo_reqheight() > self._canvas.winfo_height():
             self._scrollbar.pack(side="right", fill="y")
         else:
             self._scrollbar.pack_forget()
+        if self.content.winfo_reqwidth() > self._canvas.winfo_width():
+            self._scrollbar_x.pack(side="bottom", fill="x")
+        else:
+            self._scrollbar_x.pack_forget()
 
     def _on_mousewheel(self, event):
         if self.content.winfo_reqheight() <= self._canvas.winfo_height():
@@ -312,11 +350,41 @@ class MainWindow(tk.Tk):
 
     def _resetear_scroll(self):
         self._canvas.yview_moveto(0)
+        self._canvas.xview_moveto(0)
+
+    # ── Scroll del menú lateral ─────────────────────────────────────────────
+
+    def _on_nav_resize(self, event):
+        self._nav_canvas.configure(scrollregion=self._nav_canvas.bbox("all"))
+        if self._nav_inner.winfo_reqheight() > self._nav_canvas.winfo_height():
+            self._nav_sb.pack(side="right", fill="y")
+        else:
+            self._nav_sb.pack_forget()
+
+    def _nav_mousewheel(self, event):
+        if self._nav_inner.winfo_reqheight() <= self._nav_canvas.winfo_height():
+            return
+        if event.num == 4:
+            self._nav_canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self._nav_canvas.yview_scroll(1, "units")
+        else:
+            self._nav_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _activar_scroll_nav(self, event=None):
+        self._canvas.bind_all("<MouseWheel>", self._nav_mousewheel)
+        self._canvas.bind_all("<Button-4>",   self._nav_mousewheel)
+        self._canvas.bind_all("<Button-5>",   self._nav_mousewheel)
+
+    def _activar_scroll_contenido(self, event=None):
+        self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self._canvas.bind_all("<Button-4>",   self._on_mousewheel)
+        self._canvas.bind_all("<Button-5>",   self._on_mousewheel)
 
     # ── Navegación ────────────────────────────────────────────────────────────
 
     def _nav_btn(self, label, cmd):
-        wrap = tk.Frame(self.sidebar, bg=COLORS["surface"], cursor="hand2")
+        wrap = tk.Frame(self._nav_inner, bg=COLORS["surface"], cursor="hand2")
         wrap.pack(fill="x", pady=1)
 
         # Indicador izquierdo (3px, visible solo en activo)

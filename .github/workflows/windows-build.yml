@@ -11,6 +11,10 @@ on:
   push:
     tags: [ 'v*' ]
 
+# El token del workflow necesita escritura para poder crear el Release.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest

@@ -3,7 +3,7 @@ ui/inventario.py — El G POS
 Gestión de inventario: Tienda · Insumos · Recetas · Combos.
 """
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import auth
 from ui.base import (
     FrameBase, COLORS,
@@ -104,6 +104,12 @@ class FrameInventario(FrameBase):
                 command=self._cambiar_tab, padx=14, pady=6,
             ).pack(side="left", padx=(0, 4))
 
+        # Importar desde Excel (solo admin) — a la derecha de las pestañas
+        if auth.es_admin():
+            self._btn_secondary(
+                tab_frame, "⭱  Importar Excel", self._importar_excel
+            ).pack(side="right", ipady=4, ipadx=6)
+
         # Barra de búsqueda
         buscar_row = tk.Frame(left, bg=COLORS["bg"])
         buscar_row.pack(fill="x", pady=(0, 6))
@@ -180,6 +186,50 @@ class FrameInventario(FrameBase):
             self._configurar_columnas_combos()
             self._cargar_combos()
             self._construir_panel_combo()
+
+    # ── Importar desde Excel ──────────────────────────────────────────────────
+
+    def _importar_excel(self):
+        ruta = filedialog.askopenfilename(
+            title="Selecciona el Excel de inventario",
+            filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
+        )
+        if not ruta:
+            return
+        if not messagebox.askyesno(
+            "Importar inventario",
+            "Se importarán los productos e insumos del archivo.\n\n"
+            "Los que ya existan (por código o nombre) se actualizarán; "
+            "no se duplican.\n\n¿Continuar?",
+        ):
+            return
+        try:
+            from modules.importador import importar_inventario
+            res = importar_inventario(ruta)
+        except Exception as e:
+            messagebox.showerror("Error al importar", str(e))
+            return
+
+        resumen = (
+            f"Productos: {res['productos_nuevos']} nuevos, "
+            f"{res['productos_actualizados']} actualizados\n"
+            f"Insumos: {res['insumos_nuevos']} nuevos, "
+            f"{res['insumos_actualizados']} actualizados\n"
+            f"Categorías creadas: {res['categorias_creadas']}"
+        )
+        if res.get("categorias_ajustadas"):
+            resumen += f", ajustadas: {res['categorias_ajustadas']}"
+        if res["omitidos"]:
+            n = len(res["omitidos"])
+            muestra = "\n".join(f"  • {o}" for o in res["omitidos"][:8])
+            extra = f"\n  … y {n - 8} más" if n > 8 else ""
+            resumen += (
+                f"\n\nOmitidos ({n}, sin precio de venta):\n{muestra}{extra}"
+            )
+        messagebox.showinfo("Importación completada", resumen)
+
+        # Refrescar la vista actual (recarga tabla + categorías nuevas)
+        self._cambiar_tab()
 
     # ── Selección en tabla ────────────────────────────────────────────────────
 

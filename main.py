@@ -556,6 +556,34 @@ if __name__ == "__main__":
             print(f"ERROR en respaldo: {e}", file=sys.stderr)
             sys.exit(1)
 
+    # Modo importación (headless): ElGV3.exe --import "archivo.xlsx"
+    # Carga el inventario (hojas PRODUCTOS e INSUMOS) a la base local.
+    if "--import" in sys.argv:
+        from modules.importador import importar_inventario
+        i = sys.argv.index("--import")
+        if len(sys.argv) <= i + 1:
+            print('ERROR: falta la ruta. Uso: ElGV3.exe --import "archivo.xlsx"',
+                  file=sys.stderr)
+            sys.exit(1)
+        ruta = sys.argv[i + 1]
+        inicializar()   # asegura que la BD y las categorías base existan
+        try:
+            res = importar_inventario(ruta)
+            print(f"Productos: {res['productos_nuevos']} nuevos, "
+                  f"{res['productos_actualizados']} actualizados")
+            print(f"Insumos:   {res['insumos_nuevos']} nuevos, "
+                  f"{res['insumos_actualizados']} actualizados")
+            print(f"Categorías creadas: {res['categorias_creadas']}, "
+                  f"ajustadas: {res['categorias_ajustadas']}")
+            if res["omitidos"]:
+                print(f"Omitidos ({len(res['omitidos'])}, sin precio_venta):")
+                for o in res["omitidos"]:
+                    print(f"   - {o}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"ERROR en importación: {e}", file=sys.stderr)
+            sys.exit(1)
+
     inicializar()
     app = LoginWindow()
     app.mainloop()

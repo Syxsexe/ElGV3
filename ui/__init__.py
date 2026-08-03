@@ -16,4 +16,5 @@ from ui.libros       import FrameLibros
 from ui.gastos       import FrameGastos
 from ui.auditoria    import FrameAuditoria
 from ui.creditos     import FrameCreditos
+from ui.torneos      import FrameTorneos
 

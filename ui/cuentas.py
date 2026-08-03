@@ -46,23 +46,10 @@ class FrameCuentas(FrameBase):
         right.bind("<Configure>",
             lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all")))
 
-        def _on_right_wheel(event):
-            try:
-                rx = right_outer.winfo_rootx()
-                rw = right_outer.winfo_width()
-                if not (rx <= event.x_root <= rx + rw):
-                    return
-            except Exception:
-                return
-            if event.num == 4:
-                right_canvas.yview_scroll(-1, "units")
-            elif event.num == 5:
-                right_canvas.yview_scroll(1, "units")
-            else:
-                right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        right_canvas.bind_all("<MouseWheel>", _on_right_wheel)
-        right_canvas.bind_all("<Button-4>",   _on_right_wheel)
-        right_canvas.bind_all("<Button-5>",   _on_right_wheel)
+        # La rueda controla el panel derecho solo mientras el puntero esté sobre
+        # él (sin bind_all permanente que rompa el scroll global de main.py).
+        from ui.scroll import rueda_al_entrar
+        rueda_al_entrar(right_canvas, right_outer, right_canvas, right)
 
         # ── Panel izquierdo DESPUÉS ───────────────────────────────────────────
         left = tk.Frame(main, bg=COLORS["bg"])

@@ -1,6 +1,11 @@
 """
 ui/inventario.py — El G POS
 Gestión de inventario: Tienda · Insumos · Recetas · Combos.
+
+Diseño pensado para pantallas de BAJA RESOLUCIÓN (1366x768): la tabla ocupa TODO
+el ancho y los formularios de alta/edición se abren en ventanas emergentes
+(ui.modal.ModalForm), con alto tope y botones de acción siempre visibles.
+Se entra a crear con "+ Nuevo" y a editar con "✎ Editar" o doble-clic en la fila.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -9,6 +14,7 @@ from ui.base import (
     FrameBase, COLORS,
     FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_NAV, FONT_KPI,
 )
+from ui.modal import ModalForm
 
 
 class FrameInventario(FrameBase):
@@ -19,7 +25,9 @@ class FrameInventario(FrameBase):
         self._combo_sel          = None
         self._producto_receta_id = None
         self._receta_lineas      = []
+        self._combo_lineas       = []
         self._modo               = "nuevo"
+        self._modal              = None
         self._build()
 
     # ── Layout ───────────────────────────────────────────────────────────────
@@ -44,50 +52,11 @@ class FrameInventario(FrameBase):
             "stock_min": "Stock Mín",
         }
 
-        self._main_frame = tk.Frame(self, bg=COLORS["bg"])
-        self._main_frame.pack(fill="both", expand=True, padx=32, pady=(0, 24))
+        cont = tk.Frame(self, bg=COLORS["bg"])
+        cont.pack(fill="both", expand=True, padx=32, pady=(0, 24))
 
-        # Panel derecho primero (define espacio restante)
-        self._panel_outer = tk.Frame(
-            self._main_frame, bg=COLORS["border"],
-            highlightbackground=COLORS["border"], highlightthickness=1,
-            width=302,
-        )
-        self._panel_outer.pack(side="right", fill="y")
-        self._panel_outer.pack_propagate(False)
-
-        self._panel_canvas = tk.Canvas(
-            self._panel_outer, bg=COLORS["surface"],
-            highlightthickness=0, bd=0, width=300,
-        )
-        self._panel_scroll = tk.Scrollbar(
-            self._panel_outer, orient="vertical",
-            command=self._panel_canvas.yview,
-        )
-        self._panel_canvas.configure(yscrollcommand=self._panel_scroll.set)
-        self._panel_scroll.pack(side="right", fill="y")
-        self._panel_canvas.pack(side="left", fill="both", expand=True)
-
-        self._panel = tk.Frame(self._panel_canvas, bg=COLORS["surface"])
-        self._panel_win = self._panel_canvas.create_window(
-            (0, 0), window=self._panel, anchor="nw",
-        )
-        self._panel_canvas.bind(
-            "<Configure>",
-            lambda e: self._panel_canvas.itemconfig(self._panel_win, width=e.width),
-        )
-        self._panel.bind(
-            "<Configure>",
-            lambda e: self._panel_canvas.configure(
-                scrollregion=self._panel_canvas.bbox("all")),
-        )
-        self._panel_canvas.bind_all("<MouseWheel>", self._on_panel_wheel)
-
-        # Panel izquierdo
-        left = tk.Frame(self._main_frame, bg=COLORS["bg"])
-        left.pack(side="left", fill="both", expand=True, padx=(0, 12))
-
-        tab_frame = tk.Frame(left, bg=COLORS["bg"])
+        # ── Barra de pestañas + acciones ───────────────────────────────────
+        tab_frame = tk.Frame(cont, bg=COLORS["bg"])
         tab_frame.pack(fill="x", pady=(0, 10))
         self._tab = tk.StringVar(value="tienda")
         for texto, valor in [
@@ -104,14 +73,20 @@ class FrameInventario(FrameBase):
                 command=self._cambiar_tab, padx=14, pady=6,
             ).pack(side="left", padx=(0, 4))
 
-        # Importar desde Excel (solo admin) — a la derecha de las pestañas
+        # Acciones a la derecha (Importar solo admin; Nuevo solo admin).
         if auth.es_admin():
             self._btn_secondary(
                 tab_frame, "⭱  Importar Excel", self._importar_excel
             ).pack(side="right", ipady=4, ipadx=6)
+            self._btn_primary(
+                tab_frame, "+ Nuevo", self._nuevo
+            ).pack(side="right", padx=(0, 8), ipady=4, ipadx=12)
+        self._btn_secondary(
+            tab_frame, "✎ Editar", self._editar
+        ).pack(side="right", padx=(0, 8), ipady=4, ipadx=12)
 
-        # Barra de búsqueda
-        buscar_row = tk.Frame(left, bg=COLORS["bg"])
+        # ── Barra de búsqueda ───────────────────────────────────────────────
+        buscar_row = tk.Frame(cont, bg=COLORS["bg"])
         buscar_row.pack(fill="x", pady=(0, 6))
         tk.Label(buscar_row, text="Buscar:", font=FONT_SMALL,
                  bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side="left", padx=(0, 6))
@@ -123,31 +98,15 @@ class FrameInventario(FrameBase):
                   relief="flat", cursor="hand2",
                   command=self._limpiar_busqueda).pack(side="left", padx=(4, 0))
 
-        tabla_wrap = tk.Frame(left, bg=COLORS["bg"])
+        # ── Tabla a todo el ancho ───────────────────────────────────────────
+        tabla_wrap = tk.Frame(cont, bg=COLORS["bg"])
         tabla_wrap.pack(fill="both", expand=True)
-        self.tree = self._tabla(tabla_wrap, list(self._cols_prods.keys()), alto=16)
-        self.tree.bind("<<TreeviewSelect>>", self._al_seleccionar)
+        self.tree = self._tabla(tabla_wrap, list(self._cols_prods.keys()), alto=10)
+        self.tree.bind("<Double-1>", lambda e: self._editar())
         self._configurar_columnas_prods()
         self._cargar_tienda()
 
-        self._construir_panel_producto()
-
-    def _on_panel_wheel(self, event):
-        try:
-            px = self._panel_outer.winfo_rootx()
-            pw = self._panel_outer.winfo_width()
-            if not (px <= event.x_root <= px + pw):
-                return
-        except Exception:
-            return
-        if event.num == 4:
-            self._panel_canvas.yview_scroll(-1, "units")
-        elif event.num == 5:
-            self._panel_canvas.yview_scroll(1, "units")
-        else:
-            self._panel_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    # ── Cambio de pestaña ─────────────────────────────────────────────────────
+    # ── Cambio de pestaña / búsqueda ────────────────────────────────────────
 
     def _filtrar(self):
         texto = self._entry_buscar.get().strip().lower()
@@ -168,24 +127,49 @@ class FrameInventario(FrameBase):
 
     def _cambiar_tab(self):
         self._limpiar_busqueda()
-        self._limpiar_panel()
         tab = self._tab.get()
         if tab == "tienda":
             self._configurar_columnas_prods()
             self._cargar_tienda()
-            self._construir_panel_producto()
         elif tab == "insumos":
             self._configurar_columnas_insumos()
             self._cargar_insumos()
-            self._construir_panel_insumo()
         elif tab == "recetas":
             self._configurar_columnas_prods_cocina()
             self._cargar_cocina()
-            self._construir_panel_plato()
         else:
             self._configurar_columnas_combos()
             self._cargar_combos()
-            self._construir_panel_combo()
+
+    # ── Acciones Nuevo / Editar ─────────────────────────────────────────────
+
+    def _nuevo(self):
+        tab = self._tab.get()
+        if tab == "tienda":
+            self._modal_producto()
+        elif tab == "insumos":
+            self._modal_insumo()
+        elif tab == "recetas":
+            self._modal_plato()
+        else:
+            self._modal_combo()
+
+    def _editar(self):
+        iid = self.tree.focus()
+        if not iid:
+            messagebox.showinfo(
+                "Selecciona una fila",
+                "Elige una fila de la tabla para editarla (o haz doble-clic).")
+            return
+        tab = self._tab.get()
+        if tab == "tienda":
+            self._modal_producto(int(iid))
+        elif tab == "insumos":
+            self._modal_insumo(int(iid.replace("i", "")))
+        elif tab == "recetas":
+            self._modal_plato(int(iid))
+        else:
+            self._modal_combo(int(iid.replace("c", "")))
 
     # ── Importar desde Excel ──────────────────────────────────────────────────
 
@@ -230,42 +214,6 @@ class FrameInventario(FrameBase):
 
         # Refrescar la vista actual (recarga tabla + categorías nuevas)
         self._cambiar_tab()
-
-    # ── Selección en tabla ────────────────────────────────────────────────────
-
-    def _al_seleccionar(self, event=None):
-        sel = self.tree.focus()
-        if not sel:
-            return
-        tab = self._tab.get()
-        if tab == "tienda":
-            self._producto_sel = int(sel)
-            self._modo = "editar"
-            self._cargar_producto_en_form(self._producto_sel)
-        elif tab == "insumos":
-            self._insumo_sel = int(sel.replace("i", ""))
-            self._modo = "editar"
-            self._cargar_insumo_en_form(self._insumo_sel)
-        elif tab == "recetas":
-            self._producto_receta_id = int(sel)
-            self._modo = "editar"
-            self._cargar_plato_en_panel(self._producto_receta_id)
-        else:
-            self._combo_sel = int(sel.replace("c", ""))
-            self._modo = "editar"
-            self._cargar_combo_en_panel(self._combo_sel)
-
-    def _limpiar_seleccion(self):
-        self._producto_sel       = None
-        self._insumo_sel         = None
-        self._producto_receta_id = None
-        self._modo               = "nuevo"
-
-    def _limpiar_panel(self):
-        for w in self._panel.winfo_children():
-            w.destroy()
-        self._panel_canvas.yview_moveto(0)
-        self._limpiar_seleccion()
 
     # ── Configuración de columnas ─────────────────────────────────────────────
 
@@ -377,24 +325,28 @@ class FrameInventario(FrameBase):
             ))
 
     # ══════════════════════════════════════════════════════════
-    # PANEL — TIENDA (productos tipo tienda)
+    # MODAL — TIENDA (productos tipo tienda)
     # ══════════════════════════════════════════════════════════
 
-    def _construir_panel_producto(self):
-        self._limpiar_panel()
+    def _modal_producto(self, producto_id=None):
         from modules.validaciones import aplicar_validacion
         from modules.inventario import listar_categorias
 
-        self._lbl_modo = tk.Label(self._panel, text="Nuevo producto",
-                                   font=FONT_BOLD, bg=COLORS["surface"],
-                                   fg=COLORS["text"])
-        self._lbl_modo.pack(anchor="w", padx=16, pady=(16, 12))
+        editar = producto_id is not None
+        self._producto_sel = producto_id
+        self._modo = "editar" if editar else "nuevo"
+
+        m = ModalForm(self, "Editar producto" if editar else "Nuevo producto",
+                      ancho=440)
+        self._modal = m
+        body = m.body
 
         def campo(label, attr, tipo_val=None):
-            tk.Label(self._panel, text=label, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-            e = self._input(self._panel)
-            e.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
+            tk.Label(body, text=label, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16, pady=(8, 0))
+            e = self._input(body)
+            e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
             if tipo_val:
                 aplicar_validacion(e, tipo_val)
             setattr(self, attr, e)
@@ -406,42 +358,41 @@ class FrameInventario(FrameBase):
         campo("Stock inicial",      "_p_stock",   "entero")
         campo("Stock mínimo",       "_p_minimo",  "entero")
 
-        # Solo categorías de tienda
         cats = listar_categorias(tipo="tienda")
         self._cats_map = {c["nombre"]: c["id"] for c in cats}
         self._p_cat_var = tk.StringVar()
-        tk.Label(self._panel, text="Categoría", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+        tk.Label(body, text="Categoría", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16, pady=(8, 0))
         self._combo_cat = ttk.Combobox(
-            self._panel, textvariable=self._p_cat_var,
+            body, textvariable=self._p_cat_var,
             values=list(self._cats_map.keys()),
             font=FONT_LABEL, state="readonly",
         )
         if cats:
             self._combo_cat.set(cats[0]["nombre"])
-        self._combo_cat.pack(fill="x", padx=16, pady=(2, 12))
-
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=(0, 8))
+        self._combo_cat.pack(fill="x", padx=16, pady=(2, 16))
 
         if auth.es_admin():
-            self._btn_primary(self._panel, "Guardar producto",
-                              self._guardar_producto).pack(fill="x", padx=16, ipady=8)
-            self._btn_danger(self._panel, "Desactivar producto",
-                             self._desactivar_producto).pack(
-                                 fill="x", padx=16, pady=(6, 0), ipady=6)
+            self._btn_primary(m.footer, "Guardar",
+                              self._guardar_producto).pack(
+                                  side="right", ipady=6, ipadx=16)
+            if editar:
+                self._btn_danger(m.footer, "Desactivar",
+                                 self._desactivar_producto).pack(
+                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
-        tk.Button(self._panel, text="+ Nuevo (limpiar)",
-                  font=FONT_SMALL, bg=COLORS["surface"],
-                  fg=COLORS["text_muted"], relief="flat", cursor="hand2",
-                  command=self._nuevo_producto).pack(pady=(8, 16))
+        if editar:
+            self._cargar_producto_en_form(producto_id)
+        m.mostrar()
 
     def _cargar_producto_en_form(self, producto_id: int):
         from modules.inventario import obtener_producto
         p = obtener_producto(producto_id)
         if not p:
             return
-        self._lbl_modo.config(text=f"Editando: {p['nombre'][:22]}")
         for entry, valor in [
             (self._p_nombre, p["nombre"]),
             (self._p_codigo, p["codigo"] or ""),
@@ -454,14 +405,6 @@ class FrameInventario(FrameBase):
             entry.insert(0, valor)
         if p["categoria_nombre"] in self._cats_map:
             self._combo_cat.set(p["categoria_nombre"])
-
-    def _nuevo_producto(self):
-        self._limpiar_seleccion()
-        self.tree.selection_remove(*self.tree.selection())
-        self._lbl_modo.config(text="Nuevo producto")
-        for e in [self._p_nombre, self._p_codigo, self._p_pventa,
-                  self._p_pcosto, self._p_stock, self._p_minimo]:
-            e.delete(0, "end")
 
     def _guardar_producto(self):
         from modules.inventario import crear_producto, editar_producto
@@ -498,7 +441,7 @@ class FrameInventario(FrameBase):
                 )
                 messagebox.showinfo("Guardado", "✓ Producto actualizado.")
             self._cargar_tienda()
-            self._nuevo_producto()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -515,20 +458,23 @@ class FrameInventario(FrameBase):
         desactivar_producto(self._producto_sel)
         messagebox.showinfo("Desactivado", "✓ Producto desactivado.")
         self._cargar_tienda()
-        self._nuevo_producto()
+        self._cerrar_modal()
 
     # ══════════════════════════════════════════════════════════
-    # PANEL — INSUMOS
+    # MODAL — INSUMOS
     # ══════════════════════════════════════════════════════════
 
-    def _construir_panel_insumo(self):
-        self._limpiar_panel()
+    def _modal_insumo(self, insumo_id=None):
         from modules.validaciones import aplicar_validacion
 
-        self._lbl_modo_i = tk.Label(self._panel, text="Nuevo insumo",
-                                     font=FONT_BOLD, bg=COLORS["surface"],
-                                     fg=COLORS["text"])
-        self._lbl_modo_i.pack(anchor="w", padx=16, pady=(16, 6))
+        editar = insumo_id is not None
+        self._insumo_sel = insumo_id
+        self._modo = "editar" if editar else "nuevo"
+
+        m = ModalForm(self, "Editar insumo" if editar else "Nuevo insumo",
+                      ancho=440)
+        self._modal = m
+        body = m.body
 
         UNIDADES = [
             ("g",       "Gramos (g)"),
@@ -541,11 +487,12 @@ class FrameInventario(FrameBase):
         self._unidades_map     = {u[1]: u[0] for u in UNIDADES}
         self._unidades_map_inv = {u[0]: u[1] for u in UNIDADES}
 
-        tk.Label(self._panel, text="Unidad base", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+        tk.Label(body, text="Unidad base", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16, pady=(8, 0))
         self._i_unidad_var = tk.StringVar(value="Gramos (g)")
         self._combo_unidad = ttk.Combobox(
-            self._panel, textvariable=self._i_unidad_var,
+            body, textvariable=self._i_unidad_var,
             values=[u[1] for u in UNIDADES],
             font=FONT_LABEL, state="readonly",
         )
@@ -553,47 +500,46 @@ class FrameInventario(FrameBase):
         self._combo_unidad.bind("<<ComboboxSelected>>", self._on_unidad_change)
 
         self._lbl_ayuda_unidad = tk.Label(
-            self._panel,
+            body,
             text="Stock en la unidad base.\nEj: 3 kg de carne → 3000 en gramos",
             font=("Segoe UI", 8), bg=COLORS["surface"],
             fg=COLORS["text_dim"], justify="left",
         )
         self._lbl_ayuda_unidad.pack(anchor="w", padx=16, pady=(0, 8))
 
-        tk.Label(self._panel, text="Nombre del insumo *", font=FONT_SMALL,
+        tk.Label(body, text="Nombre del insumo *", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        self._i_nombre = self._input(self._panel)
+        self._i_nombre = self._input(body)
         self._i_nombre.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
 
-        self._lbl_stock_i = tk.Label(self._panel, text="Stock actual (g)",
-                                      font=FONT_SMALL, bg=COLORS["surface"],
-                                      fg=COLORS["text_muted"])
+        self._lbl_stock_i = tk.Label(body, text="Stock actual (g)",
+                                     font=FONT_SMALL, bg=COLORS["surface"],
+                                     fg=COLORS["text_muted"])
         self._lbl_stock_i.pack(anchor="w", padx=16)
-        self._i_stock = self._input(self._panel)
+        self._i_stock = self._input(body)
         self._i_stock.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
         aplicar_validacion(self._i_stock, "decimal")
 
-        self._lbl_minimo_i = tk.Label(self._panel, text="Stock mínimo (g)",
-                                       font=FONT_SMALL, bg=COLORS["surface"],
-                                       fg=COLORS["text_muted"])
+        self._lbl_minimo_i = tk.Label(body, text="Stock mínimo (g)",
+                                      font=FONT_SMALL, bg=COLORS["surface"],
+                                      fg=COLORS["text_muted"])
         self._lbl_minimo_i.pack(anchor="w", padx=16)
-        self._i_minimo = self._input(self._panel)
+        self._i_minimo = self._input(body)
         self._i_minimo.pack(fill="x", padx=16, pady=(2, 12), ipady=5)
         aplicar_validacion(self._i_minimo, "decimal")
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=8)
-
         if auth.es_admin():
-            self._btn_primary(self._panel, "Guardar insumo",
-                              self._guardar_insumo).pack(fill="x", padx=16, ipady=8)
+            self._btn_primary(m.footer, "Guardar",
+                              self._guardar_insumo).pack(
+                                  side="right", ipady=6, ipadx=16)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
-        tk.Button(self._panel, text="+ Nuevo (limpiar)",
-                  font=FONT_SMALL, bg=COLORS["surface"],
-                  fg=COLORS["text_muted"], relief="flat", cursor="hand2",
-                  command=self._nuevo_insumo).pack(pady=(8, 16))
-
-        self._actualizar_labels_stock()
+        if editar:
+            self._cargar_insumo_en_form(insumo_id)
+        else:
+            self._actualizar_labels_stock()
+        m.mostrar()
 
     def _on_unidad_change(self, event=None):
         self._actualizar_labels_stock()
@@ -616,7 +562,6 @@ class FrameInventario(FrameBase):
         i = obtener_insumo(insumo_id)
         if not i:
             return
-        self._lbl_modo_i.config(text=f"Editando: {i['nombre'][:22]}")
         display = self._unidades_map_inv.get(i["unidad"], i["unidad"])
         self._combo_unidad.set(display)
         self._actualizar_labels_stock()
@@ -626,15 +571,6 @@ class FrameInventario(FrameBase):
             entry.delete(0, "end")
             v = int(valor) if valor == int(valor) else valor
             entry.insert(0, str(v))
-
-    def _nuevo_insumo(self):
-        self._limpiar_seleccion()
-        self.tree.selection_remove(*self.tree.selection())
-        self._lbl_modo_i.config(text="Nuevo insumo")
-        for e in [self._i_nombre, self._i_stock, self._i_minimo]:
-            e.delete(0, "end")
-        self._combo_unidad.set("Gramos (g)")
-        self._actualizar_labels_stock()
 
     def _guardar_insumo(self):
         from modules.inventario import crear_insumo, editar_insumo
@@ -661,41 +597,41 @@ class FrameInventario(FrameBase):
                 )
                 messagebox.showinfo("Guardado", "Insumo actualizado.")
             self._cargar_insumos()
-            self._nuevo_insumo()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
     # ══════════════════════════════════════════════════════════
-    # PANEL — RECETAS (platos de cocina + sus ingredientes)
+    # MODAL — RECETAS (platos de cocina + sus ingredientes)
     # ══════════════════════════════════════════════════════════
 
-    def _construir_panel_plato(self):
-        """Panel unificado: crear/editar plato de cocina + gestionar su receta."""
-        self._limpiar_panel()
+    def _modal_plato(self, producto_id=None):
+        """Modal: crear/editar plato de cocina + gestionar su receta."""
         from modules.validaciones import aplicar_validacion
         from modules.inventario import listar_categorias, listar_insumos
 
-        self._receta_lineas      = []
-        self._producto_receta_id = None
-        self._modo               = "nuevo"
+        editar = producto_id is not None
+        self._producto_receta_id = producto_id
+        self._modo = "editar" if editar else "nuevo"
+        self._receta_lineas = []
 
-        # ── Encabezado ────────────────────────────────────────────────────────
-        self._lbl_modo_r = tk.Label(self._panel, text="Nuevo plato",
-                                     font=FONT_BOLD, bg=COLORS["surface"],
-                                     fg=COLORS["text"])
-        self._lbl_modo_r.pack(anchor="w", padx=16, pady=(16, 12))
+        m = ModalForm(self, "Editar plato" if editar else "Nuevo plato",
+                      ancho=460)
+        self._modal = m
+        body = m.body
 
         # ── Datos del plato ───────────────────────────────────────────────────
         def campo(label, attr, tipo_val=None):
-            tk.Label(self._panel, text=label, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-            e = self._input(self._panel)
-            e.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
+            tk.Label(body, text=label, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16, pady=(8, 0))
+            e = self._input(body)
+            e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
             if tipo_val:
                 aplicar_validacion(e, tipo_val)
             setattr(self, attr, e)
 
-        campo("Nombre del plato *",   "_r_nombre")
+        campo("Nombre del plato *",    "_r_nombre")
         campo("Precio de venta ($) *", "_r_pventa", "monto")
         campo("Stock mínimo",          "_r_minimo", "entero")
         self._r_minimo.insert(0, "0")
@@ -703,10 +639,11 @@ class FrameInventario(FrameBase):
         cats = listar_categorias(tipo="cocina")
         self._cats_cocina_map = {c["nombre"]: c["id"] for c in cats}
         self._r_cat_var = tk.StringVar()
-        tk.Label(self._panel, text="Categoría", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+        tk.Label(body, text="Categoría", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16, pady=(8, 0))
         self._combo_cat_r = ttk.Combobox(
-            self._panel, textvariable=self._r_cat_var,
+            body, textvariable=self._r_cat_var,
             values=list(self._cats_cocina_map.keys()),
             font=FONT_LABEL, state="readonly",
         )
@@ -714,24 +651,24 @@ class FrameInventario(FrameBase):
             self._combo_cat_r.set(cats[0]["nombre"])
         self._combo_cat_r.pack(fill="x", padx=16, pady=(2, 12))
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(
             fill="x", padx=16, pady=(0, 10))
 
         # ── Sección ingredientes ──────────────────────────────────────────────
-        tk.Label(self._panel, text="Ingredientes (insumos)", font=FONT_BOLD,
+        tk.Label(body, text="Ingredientes (insumos)", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(0, 6))
 
         insumos = listar_insumos()
         self._insumos_lista_r = insumos
         self._insumos_map_r   = {i["nombre"]: i for i in insumos}
 
-        tk.Label(self._panel, text="Buscar insumo", font=FONT_SMALL,
+        tk.Label(body, text="Buscar insumo", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        self._entry_buscar_insumo_r = self._input(self._panel)
+        self._entry_buscar_insumo_r = self._input(body)
         self._entry_buscar_insumo_r.pack(fill="x", padx=16, pady=(2, 4), ipady=5)
         self._entry_buscar_insumo_r.bind("<KeyRelease>", self._filtrar_insumos_r)
 
-        lst_wrap = tk.Frame(self._panel, bg=COLORS["surface"])
+        lst_wrap = tk.Frame(body, bg=COLORS["surface"])
         lst_wrap.pack(fill="x", padx=16, pady=(0, 6))
         self._lst_insumos_r = tk.Listbox(
             lst_wrap, font=FONT_SMALL, height=5,
@@ -742,7 +679,7 @@ class FrameInventario(FrameBase):
         )
         self._lst_insumos_r.pack(fill="x")
 
-        cant_frame = tk.Frame(self._panel, bg=COLORS["surface"])
+        cant_frame = tk.Frame(body, bg=COLORS["surface"])
         cant_frame.pack(fill="x", padx=16, pady=(0, 6))
         tk.Label(cant_frame, text="Cantidad:", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
@@ -751,42 +688,41 @@ class FrameInventario(FrameBase):
         self._entry_cant_r.pack(side="left", padx=(6, 0), ipady=4)
         aplicar_validacion(self._entry_cant_r, "decimal")
 
-        self._btn_primary(self._panel, "+ Agregar ingrediente",
+        self._btn_primary(body, "+ Agregar ingrediente",
                           self._agregar_insumo_r).pack(fill="x", padx=16, ipady=6)
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(
             fill="x", padx=16, pady=10)
 
         # ── Lista de ingredientes de la receta ────────────────────────────────
-        tk.Label(self._panel, text="Receta actual", font=FONT_BOLD,
+        tk.Label(body, text="Receta actual", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(0, 6))
 
-        self._frame_tabla_r = tk.Frame(self._panel, bg=COLORS["surface"])
+        self._frame_tabla_r = tk.Frame(body, bg=COLORS["surface"])
         self._frame_tabla_r.pack(fill="x", padx=16)
 
         self._lbl_resumen_r = tk.Label(
-            self._panel, text="", font=FONT_SMALL,
+            body, text="", font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["success"],
         )
-        self._lbl_resumen_r.pack(anchor="w", padx=16, pady=(6, 0))
-
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=10)
+        self._lbl_resumen_r.pack(anchor="w", padx=16, pady=(6, 12))
 
         if auth.es_admin():
-            self._btn_primary(self._panel, "Guardar plato",
-                              self._guardar_plato).pack(fill="x", padx=16, ipady=8)
-            self._btn_danger(self._panel, "Desactivar plato",
-                             self._desactivar_plato).pack(
-                                 fill="x", padx=16, pady=(6, 0), ipady=6)
+            self._btn_primary(m.footer, "Guardar",
+                              self._guardar_plato).pack(
+                                  side="right", ipady=6, ipadx=16)
+            if editar:
+                self._btn_danger(m.footer, "Desactivar",
+                                 self._desactivar_plato).pack(
+                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
-        tk.Button(self._panel, text="+ Nuevo (limpiar)",
-                  font=FONT_SMALL, bg=COLORS["surface"],
-                  fg=COLORS["text_muted"], relief="flat", cursor="hand2",
-                  command=self._nuevo_plato).pack(pady=(8, 16))
-
+        if editar:
+            self._cargar_plato_en_panel(producto_id)
         self._filtrar_insumos_r()
         self._refrescar_tabla_r()
+        m.mostrar()
 
     def _cargar_plato_en_panel(self, producto_id: int):
         from modules.inventario import obtener_producto, obtener_receta
@@ -796,8 +732,6 @@ class FrameInventario(FrameBase):
             return
 
         self._producto_receta_id = producto_id
-        self._lbl_modo_r.config(text=f"Editando: {producto['nombre'][:22]}")
-
         for entry, valor in [
             (self._r_nombre, producto["nombre"]),
             (self._r_pventa, str(int(producto["precio_venta"]))),
@@ -817,24 +751,6 @@ class FrameInventario(FrameBase):
              "cantidad": r["cantidad"], "unidad": r["unidad"]}
             for r in receta
         ]
-        self._filtrar_insumos_r()
-        self._refrescar_tabla_r()
-
-    def _nuevo_plato(self):
-        self._producto_receta_id = None
-        self._modo               = "nuevo"
-        self.tree.selection_remove(*self.tree.selection())
-        self._lbl_modo_r.config(text="Nuevo plato")
-        self._r_nombre.delete(0, "end")
-        self._r_pventa.delete(0, "end")
-        self._r_minimo.delete(0, "end")
-        self._r_minimo.insert(0, "0")
-        if self._cats_cocina_map:
-            self._combo_cat_r.set(list(self._cats_cocina_map.keys())[0])
-        self._receta_lineas = []
-        self._entry_buscar_insumo_r.delete(0, "end")
-        self._filtrar_insumos_r()
-        self._refrescar_tabla_r()
 
     def _guardar_plato(self):
         from modules.inventario import crear_producto, editar_producto, guardar_receta
@@ -878,7 +794,7 @@ class FrameInventario(FrameBase):
                 guardar_receta(self._producto_receta_id, receta)
                 messagebox.showinfo("Guardado", "✓ Plato y receta actualizados.")
             self._cargar_cocina()
-            self._nuevo_plato()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -897,7 +813,7 @@ class FrameInventario(FrameBase):
         desactivar_producto(self._producto_receta_id)
         messagebox.showinfo("Desactivado", "✓ Plato desactivado.")
         self._cargar_cocina()
-        self._nuevo_plato()
+        self._cerrar_modal()
 
     # ── Helpers: ingredientes ─────────────────────────────────────────────────
 
@@ -972,40 +888,41 @@ class FrameInventario(FrameBase):
             text=f"{n} ingrediente{'s' if n != 1 else ''}" if n else "")
 
     # ══════════════════════════════════════════════════════════
-    # PANEL — COMBOS
+    # MODAL — COMBOS
     # ══════════════════════════════════════════════════════════
 
-    def _construir_panel_combo(self):
-        self._limpiar_panel()
-        self._combo_lineas = []
-        self._combo_sel    = None
-        self._modo         = "nuevo"
-
+    def _modal_combo(self, combo_id=None):
         from modules.validaciones import aplicar_validacion
 
-        self._lbl_modo_c = tk.Label(self._panel, text="Nuevo combo",
-                                     font=FONT_BOLD, bg=COLORS["surface"],
-                                     fg=COLORS["text"])
-        self._lbl_modo_c.pack(anchor="w", padx=16, pady=(16, 12))
+        editar = combo_id is not None
+        self._combo_sel = combo_id
+        self._modo = "editar" if editar else "nuevo"
+        self._combo_lineas = []
+
+        m = ModalForm(self, "Editar combo" if editar else "Nuevo combo",
+                      ancho=460)
+        self._modal = m
+        body = m.body
 
         def campo(label, attr, tipo_val=None):
-            tk.Label(self._panel, text=label, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-            e = self._input(self._panel)
-            e.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
+            tk.Label(body, text=label, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16, pady=(8, 0))
+            e = self._input(body)
+            e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
             if tipo_val:
                 aplicar_validacion(e, tipo_val)
             setattr(self, attr, e)
 
-        campo("Nombre del combo *",      "_c_nombre")
-        campo("Precio ($) *",            "_c_precio",  "monto")
-        campo("Descripción (opcional)",  "_c_desc")
+        campo("Nombre del combo *",     "_c_nombre")
+        campo("Precio ($) *",           "_c_precio",  "monto")
+        campo("Descripción (opcional)", "_c_desc")
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=(0, 10))
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=16, pady=(10, 10))
 
         # Buscador de productos (tienda + cocina)
-        tk.Label(self._panel, text="Agregar productos al combo", font=FONT_BOLD,
+        tk.Label(body, text="Agregar productos al combo", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(0, 6))
 
         from modules.inventario import listar_productos
@@ -1013,13 +930,13 @@ class FrameInventario(FrameBase):
         self._prods_combo_lista = prods
         self._prods_combo_map   = {p["nombre"]: p["id"] for p in prods}
 
-        tk.Label(self._panel, text="Buscar producto", font=FONT_SMALL,
+        tk.Label(body, text="Buscar producto", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        self._c_buscar = self._input(self._panel)
+        self._c_buscar = self._input(body)
         self._c_buscar.pack(fill="x", padx=16, pady=(2, 4), ipady=5)
         self._c_buscar.bind("<KeyRelease>", self._filtrar_prods_combo)
 
-        lst_wrap = tk.Frame(self._panel, bg=COLORS["surface"])
+        lst_wrap = tk.Frame(body, bg=COLORS["surface"])
         lst_wrap.pack(fill="x", padx=16, pady=(0, 6))
         self._lst_prods_combo = tk.Listbox(
             lst_wrap, font=FONT_SMALL, height=4,
@@ -1030,7 +947,7 @@ class FrameInventario(FrameBase):
         )
         self._lst_prods_combo.pack(fill="x")
 
-        cant_frame = tk.Frame(self._panel, bg=COLORS["surface"])
+        cant_frame = tk.Frame(body, bg=COLORS["surface"])
         cant_frame.pack(fill="x", padx=16, pady=(0, 6))
         tk.Label(cant_frame, text="Cantidad:", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
@@ -1039,41 +956,40 @@ class FrameInventario(FrameBase):
         self._c_cant.pack(side="left", padx=(6, 0), ipady=4)
         aplicar_validacion(self._c_cant, "entero")
 
-        self._btn_primary(self._panel, "+ Agregar producto",
+        self._btn_primary(body, "+ Agregar producto",
                           self._agregar_prod_combo).pack(fill="x", padx=16, ipady=6)
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(
             fill="x", padx=16, pady=10)
 
-        tk.Label(self._panel, text="Contenido del combo", font=FONT_BOLD,
+        tk.Label(body, text="Contenido del combo", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(0, 6))
 
-        self._frame_tabla_combo = tk.Frame(self._panel, bg=COLORS["surface"])
+        self._frame_tabla_combo = tk.Frame(body, bg=COLORS["surface"])
         self._frame_tabla_combo.pack(fill="x", padx=16)
 
         self._lbl_resumen_combo = tk.Label(
-            self._panel, text="Sin productos aún", font=FONT_SMALL,
+            body, text="Sin productos aún", font=FONT_SMALL,
             bg=COLORS["surface"], fg=COLORS["text_muted"],
         )
-        self._lbl_resumen_combo.pack(anchor="w", padx=16, pady=(6, 0))
-
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=10)
+        self._lbl_resumen_combo.pack(anchor="w", padx=16, pady=(6, 12))
 
         if auth.es_admin():
-            self._btn_primary(self._panel, "Guardar combo",
-                              self._guardar_combo).pack(fill="x", padx=16, ipady=8)
-            self._btn_danger(self._panel, "Desactivar / Activar combo",
-                             self._desactivar_combo).pack(
-                                 fill="x", padx=16, pady=(6, 0), ipady=6)
+            self._btn_primary(m.footer, "Guardar",
+                              self._guardar_combo).pack(
+                                  side="right", ipady=6, ipadx=16)
+            if editar:
+                self._btn_danger(m.footer, "Activar / Desactivar",
+                                 self._desactivar_combo).pack(
+                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
-        tk.Button(self._panel, text="+ Nuevo (limpiar)",
-                  font=FONT_SMALL, bg=COLORS["surface"],
-                  fg=COLORS["text_muted"], relief="flat", cursor="hand2",
-                  command=self._nuevo_combo).pack(pady=(8, 16))
-
+        if editar:
+            self._cargar_combo_en_panel(combo_id)
         self._filtrar_prods_combo()
         self._refrescar_tabla_combo()
+        m.mostrar()
 
     def _filtrar_prods_combo(self, event=None):
         texto = self._c_buscar.get().strip().lower()
@@ -1157,7 +1073,6 @@ class FrameInventario(FrameBase):
         conn.close()
         if not combo:
             return
-        self._lbl_modo_c.config(text=f"Editando: {combo['nombre'][:22]}")
         self._c_nombre.delete(0, "end")
         self._c_nombre.insert(0, combo["nombre"])
         self._c_precio.delete(0, "end")
@@ -1169,18 +1084,6 @@ class FrameInventario(FrameBase):
             {"producto_id": p["producto_id"], "nombre": p["nombre"], "cantidad": p["cantidad"]}
             for p in prods
         ]
-        self._refrescar_tabla_combo()
-
-    def _nuevo_combo(self):
-        self._limpiar_seleccion()
-        self._combo_sel = None
-        self._modo      = "nuevo"
-        self.tree.selection_remove(*self.tree.selection())
-        self._lbl_modo_c.config(text="Nuevo combo")
-        for e in [self._c_nombre, self._c_precio, self._c_desc]:
-            e.delete(0, "end")
-        self._combo_lineas = []
-        self._refrescar_tabla_combo()
 
     def _guardar_combo(self):
         from modules.validaciones import leer_entero, leer_texto
@@ -1219,7 +1122,7 @@ class FrameInventario(FrameBase):
                 conn.close()
                 messagebox.showinfo("Guardado", "Combo actualizado.")
             self._cargar_combos()
-            self._nuevo_combo()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -1242,5 +1145,15 @@ class FrameInventario(FrameBase):
             return
         editar_combo(self._combo_sel, activo=nuevo_estado)
         self._cargar_combos()
-        self._nuevo_combo()
+        self._cerrar_modal()
         messagebox.showinfo("Listo", f"Combo {accion}do correctamente.")
+
+    # ── Utilidad ──────────────────────────────────────────────────────────────
+
+    def _cerrar_modal(self):
+        if self._modal is not None:
+            try:
+                self._modal.cerrar()
+            except tk.TclError:
+                pass
+            self._modal = None

@@ -1,63 +1,45 @@
 """
 ui/usuarios.py — El G POS
+Gestión de accesos. Alta de usuario en ventana emergente (ui.modal.ModalForm)
+para caber en pantallas de baja resolución (1366x768); la tabla ocupa todo el
+ancho y se desactiva con el botón de la barra superior.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
 import auth
 from ui.base import FrameBase, COLORS, FONT_TITLE, FONT_SUB, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_NAV, FONT_KPI
+from ui.modal import ModalForm
+
 
 class FrameUsuarios(FrameBase):
     def __init__(self, parent):
         super().__init__(parent, "Usuarios", "Gestión de accesos al sistema")
+        self._modal = None
         self._build()
 
     def _build(self):
+        # Barra de acciones
+        acciones = tk.Frame(self, bg=COLORS["bg"])
+        acciones.pack(fill="x", padx=32, pady=(0, 10))
+        self._btn_primary(acciones, "+ Nuevo usuario", self._modal_usuario).pack(
+            side="right", padx=(8, 0), ipady=4, ipadx=12)
+        self._btn_danger(acciones, "Desactivar seleccionado", self._desactivar).pack(
+            side="right", ipady=4, ipadx=10)
+
         main = tk.Frame(self, bg=COLORS["bg"])
         main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
 
-        # Tabla
         tabla_wrap = tk.Frame(main, bg=COLORS["bg"])
-        tabla_wrap.pack(side="left", fill="both", expand=True, padx=(0, 16))
+        tabla_wrap.pack(fill="both", expand=True)
         self.tree = self._tabla(tabla_wrap,
                                 ("ID", "Usuario", "Rol", "Activo", "Creado"),
-                                alto=16)
+                                alto=12)
         self.tree.column("ID",      width=40)
-        self.tree.column("Usuario", width=160, anchor="w")
-        self.tree.column("Rol",     width=90)
-        self.tree.column("Activo",  width=70)
-        self.tree.column("Creado",  width=150)
+        self.tree.column("Usuario", width=200, anchor="w")
+        self.tree.column("Rol",     width=110)
+        self.tree.column("Activo",  width=80)
+        self.tree.column("Creado",  width=160)
         self._cargar_usuarios()
-
-        # Panel lateral
-        panel = self._card(main, width=260)
-        panel.pack(side="right", fill="y")
-        panel.pack_propagate(False)
-
-        tk.Label(panel, text="Nuevo usuario", font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(16, 12))
-
-        for lbl, attr in [("Usuario", "entry_nuevo_user"), ("Contraseña", "entry_nuevo_pass")]:
-            tk.Label(panel, text=lbl, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-            e = self._input(panel, show="●" if lbl == "Contraseña" else None)
-            e.pack(fill="x", padx=16, pady=(2, 10), ipady=5)
-            setattr(self, attr, e)
-
-        tk.Label(panel, text="Rol", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        self.combo_rol = ttk.Combobox(panel, values=["admin", "vendedor"],
-                                       font=FONT_LABEL, state="readonly")
-        self.combo_rol.set("vendedor")
-        self.combo_rol.pack(fill="x", padx=16, pady=(2, 16))
-
-        self._btn_primary(panel, "Crear usuario", self._crear).pack(
-            fill="x", padx=16, ipady=8)
-
-        sep = tk.Frame(panel, bg=COLORS["border"], height=1)
-        sep.pack(fill="x", padx=16, pady=16)
-
-        self._btn_danger(panel, "Desactivar seleccionado",
-                         self._desactivar).pack(fill="x", padx=16, ipady=8)
 
     def _cargar_usuarios(self):
         from auth import listar_usuarios
@@ -68,6 +50,36 @@ class FrameUsuarios(FrameBase):
                 "Sí" if u["activo"] else "No",
                 u["creado_en"][:10]
             ))
+
+    # ── Modal: nuevo usuario ────────────────────────────────────────────────
+
+    def _modal_usuario(self):
+        m = ModalForm(self, "Nuevo usuario", ancho=380)
+        self._modal = m
+        body = m.body
+
+        for lbl, attr in [("Usuario", "entry_nuevo_user"), ("Contraseña", "entry_nuevo_pass")]:
+            tk.Label(body, text=lbl, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16, pady=(8, 0))
+            e = self._input(body, show="●" if lbl == "Contraseña" else None)
+            e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
+            setattr(self, attr, e)
+
+        tk.Label(body, text="Rol", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16, pady=(8, 0))
+        self.combo_rol = ttk.Combobox(body, values=["admin", "vendedor"],
+                                       font=FONT_LABEL, state="readonly")
+        self.combo_rol.set("vendedor")
+        self.combo_rol.pack(fill="x", padx=16, pady=(2, 12))
+
+        self._btn_primary(m.footer, "Crear usuario", self._crear).pack(
+            side="right", ipady=6, ipadx=16)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
+
+        m.mostrar()
 
     def _crear(self):
         from auth import crear_usuario
@@ -81,9 +93,13 @@ class FrameUsuarios(FrameBase):
         ok = crear_usuario(usuario, contrasena, rol)
         if ok:
             messagebox.showinfo("Creado", f"✓ Usuario '{usuario}' creado.")
-            self.entry_nuevo_user.delete(0, "end")
-            self.entry_nuevo_pass.delete(0, "end")
             self._cargar_usuarios()
+            if self._modal is not None:
+                try:
+                    self._modal.cerrar()
+                except tk.TclError:
+                    pass
+                self._modal = None
         else:
             messagebox.showerror("Error", "El nombre de usuario ya existe.")
 
@@ -98,4 +114,3 @@ class FrameUsuarios(FrameBase):
             return
         desactivar_usuario(usuario_id)
         self._cargar_usuarios()
-

@@ -17,7 +17,7 @@ from ui import (
     FrameCaja, FrameReportes, FrameUsuarios, FrameCuentas,
     FrameClientes, FrameProveedores, FrameFiscal, FrameGastos,
     FrameAuditoria, FrameCreditos, FrameDocumentos,
-    FrameConsultaPrecios, FrameLibros,
+    FrameConsultaPrecios, FrameLibros, FrameTorneos,
 )
 
 
@@ -276,6 +276,7 @@ class MainWindow(tk.Tk):
             ("Caja",             self._mostrar_caja),
             ("Créditos",         self._mostrar_creditos),
             ("Gastos",           self._mostrar_gastos),
+            ("Torneos",          self._mostrar_torneos),
             ("Documentos",       self._mostrar_documentos),
             ("Doc. Fiscales",    self._mostrar_fiscal),
         ]
@@ -476,6 +477,10 @@ class MainWindow(tk.Tk):
     def _mostrar_gastos(self):
         self._nav_click("Gastos")
         self._cambiar_frame(FrameGastos)
+
+    def _mostrar_torneos(self):
+        self._nav_click("Torneos")
+        self._cambiar_frame(FrameTorneos)
 
     def _mostrar_consulta_precios(self):
         self._nav_click("Consulta Precios")

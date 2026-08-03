@@ -122,6 +122,10 @@ class FrameCreditos(FrameBase):
         sb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
+        # Rueda del mouse sobre el panel (solo al entrar, sin romper main.py).
+        from ui.scroll import rueda_al_entrar
+        rueda_al_entrar(canvas, right, canvas, sf)
+
         def _lbl(texto):
             tk.Label(sf, text=texto, font=FONT_SMALL,
                      bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)

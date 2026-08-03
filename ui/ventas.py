@@ -179,19 +179,10 @@ class FrameVentas(FrameBase):
         right.bind("<Configure>", lambda e: right_cv.configure(
             scrollregion=right_cv.bbox("all")))
 
-        def _scroll_right(e):
-            try:
-                rx = right_outer.winfo_rootx()
-                if not (rx <= e.x_root <= rx + right_outer.winfo_width()):
-                    return
-            except Exception:
-                return
-            if e.num == 4:   right_cv.yview_scroll(-1, "units")
-            elif e.num == 5: right_cv.yview_scroll(1,  "units")
-            else:            right_cv.yview_scroll(int(-1*(e.delta/120)), "units")
-        right_cv.bind_all("<MouseWheel>", _scroll_right)
-        right_cv.bind_all("<Button-4>",   _scroll_right)
-        right_cv.bind_all("<Button-5>",   _scroll_right)
+        # La rueda controla el carrito solo mientras el puntero esté sobre él
+        # (sin bind_all permanente que rompa el scroll global de main.py).
+        from ui.scroll import rueda_al_entrar
+        rueda_al_entrar(right_cv, right_outer, right_cv, right)
 
         # ── Título ────────────────────────────────────────────────────────────
         tk.Label(right, text="Carrito", font=FONT_BOLD,

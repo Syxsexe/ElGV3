@@ -311,6 +311,56 @@ def crear_tablas():
         )
     """)
 
+    # ── Torneos ───────────────────────────────────────────────────────────────
+    # Registra un torneo de TCG: el dinero recaudado entre los jugadores (ingreso)
+    # y los sobres/productos entregados como premio (salen del inventario). Así el
+    # stock queda correcto y la ganancia = recaudado − costo de los premios.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS torneos (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre        TEXT    NOT NULL,
+            juego         TEXT,
+            fecha         TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            num_jugadores INTEGER          DEFAULT 0,
+            recaudado     REAL    NOT NULL DEFAULT 0,
+            costo_premios REAL    NOT NULL DEFAULT 0,
+            ganancia      REAL    NOT NULL DEFAULT 0,
+            usuario_id    INTEGER          REFERENCES usuarios(id),
+            sesion_id     INTEGER          REFERENCES sesiones_caja(id),
+            venta_id      INTEGER          REFERENCES ventas(id),
+            notas         TEXT
+        )
+    """)
+
+    # ── Participantes / inscripciones de cada torneo ──────────────────────────
+    # Cada jugador es una inscripción con su monto y método de pago. Si el método
+    # es 'credito' queda ligado a un cliente (cargo en la tabla creditos) para
+    # poder cobrarlo después, igual que se hacía con el "item de torneo" por jugador.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS torneo_participantes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            torneo_id   INTEGER NOT NULL REFERENCES torneos(id) ON DELETE CASCADE,
+            cliente_id  INTEGER          REFERENCES clientes(id),
+            nombre      TEXT    NOT NULL,
+            monto       REAL    NOT NULL DEFAULT 0,
+            metodo_pago TEXT    NOT NULL DEFAULT 'efectivo',
+            cargo_id    INTEGER
+        )
+    """)
+
+    # ── Premios entregados en cada torneo (salidas de inventario) ─────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS torneo_premios (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            torneo_id      INTEGER NOT NULL REFERENCES torneos(id) ON DELETE CASCADE,
+            producto_id    INTEGER NOT NULL REFERENCES productos(id),
+            nombre         TEXT    NOT NULL,
+            cantidad       REAL    NOT NULL CHECK(cantidad > 0),
+            costo_unit     REAL    NOT NULL DEFAULT 0,
+            subtotal_costo REAL    NOT NULL DEFAULT 0
+        )
+    """)
+
     # Asegura columna cliente_id en ventas para versiones previas de la base de datos.
     columnas_ventas = [row[1] for row in conn.execute("PRAGMA table_info(ventas)").fetchall()]
     if "cliente_id" not in columnas_ventas:

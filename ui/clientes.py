@@ -1,10 +1,15 @@
 """
 ui/clientes.py — El G POS
 Gestión de clientes para facturación y clientes frecuentes.
+
+Alta/edición en ventana emergente (ui.modal.ModalForm) para caber en pantallas
+de baja resolución (1366x768): la tabla ocupa todo el ancho, se crea/edita con
+"+ Nuevo" / "✎ Editar" y se ve el detalle (compras y crédito) con doble-clic.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ui.base import FrameBase, COLORS, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_TITLE, FONT_KPI
+from ui.modal import ModalForm
 
 from modules.clientes import TIPOS_DOCUMENTO
 
@@ -47,18 +52,23 @@ class FrameClientes(FrameBase):
     def __init__(self, parent):
         super().__init__(parent, "Clientes", "Registro de clientes y datos fiscales")
         self._cliente_sel_id = None
+        self._modal = None
         self._build()
 
     def _build(self):
+        # Barra de acciones
+        acciones = tk.Frame(self, bg=COLORS["bg"])
+        acciones.pack(fill="x", padx=32, pady=(0, 8))
+        self._btn_primary(acciones, "+ Nuevo", self._modal_cliente).pack(
+            side="right", padx=(8, 0), ipady=4, ipadx=12)
+        self._btn_secondary(acciones, "✎ Editar", self._editar).pack(
+            side="right", ipady=4, ipadx=12)
+
         main = tk.Frame(self, bg=COLORS["bg"])
         main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
 
-        # ── Tabla izquierda ───────────────────────────────────────────────────
         left = tk.Frame(main, bg=COLORS["bg"])
-        left.pack(side="left", fill="both", expand=True, padx=(0, 12))
-
-        tk.Label(left, text="Clientes registrados", font=FONT_BOLD,
-                 bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w", pady=(0, 6))
+        left.pack(fill="both", expand=True)
 
         tk.Label(left, text="Doble clic para ver detalles, compras y crédito del cliente.",
                  font=FONT_SMALL, bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(anchor="w", pady=(0, 6))
@@ -80,63 +90,73 @@ class FrameClientes(FrameBase):
         tabla_wrap.pack(fill="both", expand=True)
 
         cols = ("ID", "Nombre", "Documento", "Tipo", "Régimen", "Activo")
-        self.tree = self._tabla(tabla_wrap, cols, alto=18)
+        self.tree = self._tabla(tabla_wrap, cols, alto=12)
         self.tree.column("ID",        width=40)
-        self.tree.column("Nombre",    width=200, anchor="w")
-        self.tree.column("Documento", width=120)
-        self.tree.column("Tipo",      width=90)
-        self.tree.column("Régimen",   width=130)
+        self.tree.column("Nombre",    width=220, anchor="w")
+        self.tree.column("Documento", width=130)
+        self.tree.column("Tipo",      width=100)
+        self.tree.column("Régimen",   width=150)
         self.tree.column("Activo",    width=60)
-        self.tree.bind("<<TreeviewSelect>>", self._al_seleccionar)
-        self.tree.bind("<Double-1>",         self._abrir_detalle)
+        self.tree.bind("<Double-1>", self._abrir_detalle)
 
         self._cargar_clientes()
 
-        # ── Panel derecho: formulario scrollable ──────────────────────────────
-        panel = self._card(main, width=340)
-        panel.pack(side="right", fill="y")
-        panel.pack_propagate(False)
+    # ── Tabla ─────────────────────────────────────────────────────────────────
 
-        canvas = tk.Canvas(panel, bg=COLORS["surface"], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(panel, orient="vertical", command=canvas.yview)
-        sf = tk.Frame(canvas, bg=COLORS["surface"])   # scroll_frame
+    def _filtrar_clientes(self):
+        filtro = self._entry_buscar.get().strip().lower()
+        self._cargar_clientes(filtro=filtro)
 
-        win_id = canvas.create_window((0, 0), window=sf, anchor="nw")
+    def _cargar_clientes(self, filtro=""):
+        from modules.clientes import listar_clientes
+        self.tree.delete(*self.tree.get_children())
+        for c in listar_clientes():
+            if filtro and filtro not in f"{c['nombre']} {c['documento']} {c.get('telefono','')} {c.get('email','')}".lower():
+                continue
+            self.tree.insert("", "end", iid=str(c["id"]), values=(
+                c["id"], c["nombre"], c["documento"], c["tipo_documento"],
+                c.get("regimen") or "—",
+                "Sí" if c["activo"] else "No",
+            ))
 
-        canvas.bind("<Configure>",
-                    lambda e: canvas.itemconfig(win_id, width=e.width))
-        sf.bind("<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.configure(yscrollcommand=scrollbar.set)
+    def _editar(self):
+        sel = self.tree.focus()
+        if not sel:
+            messagebox.showinfo("Selecciona una fila",
+                                "Elige un cliente de la tabla para editarlo.")
+            return
+        self._modal_cliente(int(sel))
 
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+    def _abrir_detalle(self, event=None):
+        sel = self.tree.focus()
+        if not sel:
+            return
+        DialogCliente(self, int(sel))
 
-        def _wheel(e):
-            if e.num == 4:   canvas.yview_scroll(-1, "units")
-            elif e.num == 5: canvas.yview_scroll(1,  "units")
-            else:            canvas.yview_scroll(int(-1*(e.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _wheel)
-        canvas.bind_all("<Button-4>",   _wheel)
-        canvas.bind_all("<Button-5>",   _wheel)
+    # ── Modal alta/edición ──────────────────────────────────────────────────
 
-        # ── Encabezado del formulario ─────────────────────────────────────────
-        self._lbl_form_titulo = tk.Label(sf, text="Nuevo cliente", font=FONT_BOLD,
-                                          bg=COLORS["surface"], fg=COLORS["text"])
-        self._lbl_form_titulo.pack(anchor="w", padx=16, pady=(16, 12))
+    def _modal_cliente(self, cliente_id=None):
+        editar = cliente_id is not None
+        self._cliente_sel_id = cliente_id
+
+        m = ModalForm(self, "Editar cliente" if editar else "Nuevo cliente",
+                      ancho=420)
+        self._modal = m
+        body = m.body
 
         def field_label(texto):
-            tk.Label(sf, text=texto, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+            tk.Label(body, text=texto, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16, pady=(8, 0))
 
         def entry_field(attr):
-            e = self._input(sf)
-            e.pack(fill="x", padx=16, pady=(3, 10), ipady=5)
+            e = self._input(body)
+            e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
             setattr(self, attr, e)
 
         def select_field(attr, var, options):
-            m = _make_optmenu(sf, var, options)
-            m.pack(fill="x", padx=16, pady=(3, 10), ipady=2)
+            mm = _make_optmenu(body, var, options)
+            mm.pack(fill="x", padx=16, pady=(2, 0), ipady=2)
             setattr(self, attr, var)
 
         field_label("Nombre *")
@@ -168,95 +188,49 @@ class FrameClientes(FrameBase):
 
         field_label("Municipio")
         entry_field("entry_municipio")
+        # separación al final del cuerpo
+        tk.Frame(body, bg=COLORS["surface"], height=8).pack()
 
-        # ── Botones ───────────────────────────────────────────────────────────
-        tk.Frame(sf, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=(4, 12))
+        self._btn_primary(
+            m.footer, "Guardar" if editar else "Crear cliente",
+            self._editar_cliente if editar else self._crear_cliente
+        ).pack(side="right", ipady=6, ipadx=16)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
-        self._btn_crear = self._btn_primary(sf, "Crear cliente", self._crear_cliente)
-        self._btn_crear.pack(fill="x", padx=16, ipady=10)
+        if editar:
+            self._cargar_cliente_en_form(cliente_id)
+        m.mostrar()
 
-        self._btn_editar = self._btn_primary(sf, "Guardar cambios", self._editar_cliente)
-        self._btn_editar.pack(fill="x", padx=16, ipady=10, pady=(6, 0))
-        self._btn_editar.pack_forget()
-
-        tk.Button(sf, text="Nuevo (limpiar)", font=FONT_SMALL,
-                  bg=COLORS["surface"], fg=COLORS["text_muted"],
-                  relief="flat", cursor="hand2",
-                  command=self._limpiar_form).pack(pady=(8, 16))
-
-    # ── Tabla ─────────────────────────────────────────────────────────────────
-
-    def _filtrar_clientes(self):
-        filtro = self._entry_buscar.get().strip().lower()
-        self._cargar_clientes(filtro=filtro)
-
-    def _cargar_clientes(self, filtro=""):
-        from modules.clientes import listar_clientes
-        self.tree.delete(*self.tree.get_children())
-        for c in listar_clientes():
-            if filtro and filtro not in f"{c['nombre']} {c['documento']} {c.get('telefono','')} {c.get('email','')}".lower():
-                continue
-            self.tree.insert("", "end", iid=str(c["id"]), values=(
-                c["id"], c["nombre"], c["documento"], c["tipo_documento"],
-                c.get("regimen") or "—",
-                "Sí" if c["activo"] else "No",
-            ))
-
-    def _al_seleccionar(self, event=None):
+    def _cargar_cliente_en_form(self, cliente_id: int):
         from modules.clientes import obtener_cliente
-        sel = self.tree.focus()
-        if not sel:
-            return
-        c = obtener_cliente(int(sel))
+        c = obtener_cliente(cliente_id)
         if not c:
             return
-        self._cliente_sel_id = c["id"]
-        self._lbl_form_titulo.config(text=f"Editar — {c['nombre']}")
-
         self.entry_nombre.delete(0, "end")
         self.entry_nombre.insert(0, c["nombre"])
-
         self.combo_tipo.set(c.get("tipo_documento") or TIPOS_DOCUMENTO[0])
-
         self.entry_documento.delete(0, "end")
         self.entry_documento.insert(0, c.get("documento") or "")
-
         self.entry_direccion.delete(0, "end")
         self.entry_direccion.insert(0, c.get("direccion") or "")
-
         self.entry_telefono.delete(0, "end")
         self.entry_telefono.insert(0, c.get("telefono") or "")
-
         self.entry_email.delete(0, "end")
         self.entry_email.insert(0, c.get("email") or "")
-
         self.combo_regimen.set(c.get("regimen") or REGIMENES[0])
         self.combo_responsabilidad.set(
             c.get("responsabilidad_fiscal") or RESPONSABILIDADES[0])
-
         self.entry_municipio.delete(0, "end")
         self.entry_municipio.insert(0, c.get("municipio") or "")
 
-        self._btn_crear.pack_forget()
-        self._btn_editar.pack(fill="x", padx=16, ipady=10)
-
-    def _abrir_detalle(self, event=None):
-        sel = self.tree.focus()
-        if not sel:
-            return
-        DialogCliente(self, int(sel))
-
-    def _limpiar_form(self):
-        self._cliente_sel_id = None
-        self._lbl_form_titulo.config(text="Nuevo cliente")
-        for attr in ("entry_nombre", "entry_documento", "entry_direccion",
-                     "entry_telefono", "entry_email", "entry_municipio"):
-            getattr(self, attr).delete(0, "end")
-        self.combo_tipo.set(TIPOS_DOCUMENTO[0])
-        self.combo_regimen.set(REGIMENES[0])
-        self.combo_responsabilidad.set(RESPONSABILIDADES[0])
-        self._btn_editar.pack_forget()
-        self._btn_crear.pack(fill="x", padx=16, ipady=10)
+    def _cerrar_modal(self):
+        if self._modal is not None:
+            try:
+                self._modal.cerrar()
+            except tk.TclError:
+                pass
+            self._modal = None
 
     # ── Acciones ──────────────────────────────────────────────────────────────
 
@@ -283,8 +257,8 @@ class FrameClientes(FrameBase):
                 municipio=self.entry_municipio.get().strip() or None,
             )
             messagebox.showinfo("Éxito", f"Cliente '{nombre}' creado correctamente.")
-            self._limpiar_form()
             self._cargar_clientes()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -314,8 +288,8 @@ class FrameClientes(FrameBase):
                 municipio=self.entry_municipio.get().strip() or None,
             )
             messagebox.showinfo("Éxito", "Cliente actualizado correctamente.")
-            self._limpiar_form()
             self._cargar_clientes()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -582,7 +556,7 @@ class DialogCliente(tk.Toplevel):
         self.tree_cargos = self._make_tree(left, cols_c, alto=9, expand=True)
         self.tree_cargos.heading("id",        text="#")
         self.tree_cargos.heading("fecha",     text="Fecha compra")
-        self.tree_cargos.heading("venta",     text="Venta #")
+        self.tree_cargos.heading("venta",     text="Origen")
         self.tree_cargos.heading("total",     text="Total")
         self.tree_cargos.heading("pagado",    text="Pagado")
         self.tree_cargos.heading("pendiente", text="Pendiente")
@@ -590,7 +564,7 @@ class DialogCliente(tk.Toplevel):
         self.tree_cargos.heading("estado",    text="Estado")
         self.tree_cargos.column("id",        width=35,  anchor="center")
         self.tree_cargos.column("fecha",     width=128, anchor="w")
-        self.tree_cargos.column("venta",     width=55,  anchor="center")
+        self.tree_cargos.column("venta",     width=95,  anchor="center")
         self.tree_cargos.column("total",     width=92,  anchor="e")
         self.tree_cargos.column("pagado",    width=88,  anchor="e")
         self.tree_cargos.column("pendiente", width=92,  anchor="e")
@@ -698,10 +672,17 @@ class DialogCliente(tk.Toplevel):
             venc   = c["fecha_vencimiento"][:10] if c.get("fecha_vencimiento") else "—"
             estado = "VENCIDA" if c["vencido"] else "Al día"
             tag    = "vencido" if c["vencido"] else "al_dia"
+            # Distinguir el origen: torneo (por sus notas) vs venta normal.
+            if "torneo" in (c.get("notas") or "").lower():
+                origen = "🏆 Torneo"
+            elif c.get("venta_id"):
+                origen = f"Venta #{c['venta_id']}"
+            else:
+                origen = "—"
             self.tree_cargos.insert("", "end", iid=str(c["id"]), values=(
                 c["id"],
                 c["fecha"][:16],
-                c.get("venta_id") or "—",
+                origen,
                 formatear_pesos(c["monto"]),
                 formatear_pesos(c["pagado"]),
                 formatear_pesos(c["pendiente"]),
@@ -874,7 +855,9 @@ class DialogCliente(tk.Toplevel):
 
     def _centrar(self):
         self.update_idletasks()
-        w, h = 980, 700
+        # Ajustar a la pantalla (baja resolución): no exceder el alto disponible.
+        w = min(980, self.winfo_screenwidth() - 40)
+        h = min(700, self.winfo_screenheight() - 60)
         x = (self.winfo_screenwidth()  - w) // 2
         y = (self.winfo_screenheight() - h) // 2
-        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.geometry(f"{w}x{h}+{x}+{max(y, 0)}")

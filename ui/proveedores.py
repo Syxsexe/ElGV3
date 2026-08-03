@@ -1,11 +1,16 @@
 """
 ui/proveedores.py — El G POS
 Gestión de proveedores y pedidos de stock.
+
+Formularios en ventanas emergentes (ui.modal.ModalForm) para caber en pantallas
+de baja resolución (1366x768): la tabla ocupa todo el ancho y se crea/edita con
+"+ Nuevo" / "✎ Editar" / doble-clic.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
 import auth
 from ui.base import FrameBase, COLORS, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_KPI
+from ui.modal import ModalForm
 
 
 class FrameProveedores(FrameBase):
@@ -15,10 +20,11 @@ class FrameProveedores(FrameBase):
         self._pedido_sel    = None
         self._pedido_items  = []   # ítems del pedido en construcción
         self._modo_prov     = "nuevo"
+        self._modal         = None
         self._build()
 
     def _build(self):
-        # Tabs: Proveedores | Pedidos
+        # Tabs: Proveedores | Pedidos + acciones
         tab_frame = tk.Frame(self, bg=COLORS["bg"])
         tab_frame.pack(fill="x", padx=32, pady=(0, 12))
         self._tab = tk.StringVar(value="proveedores")
@@ -31,41 +37,17 @@ class FrameProveedores(FrameBase):
                 command=self._cambiar_tab, padx=14, pady=6,
             ).pack(side="left", padx=(0, 4))
 
-        # Contenedor principal
+        if auth.es_admin():
+            self._btn_primary(tab_frame, "+ Nuevo", self._nuevo).pack(
+                side="right", padx=(0, 8), ipady=4, ipadx=12)
+        self._btn_secondary(tab_frame, "✎ Editar / Ver", self._editar).pack(
+            side="right", padx=(0, 8), ipady=4, ipadx=12)
+
+        # Contenedor principal (tabla a todo el ancho)
         self._main = tk.Frame(self, bg=COLORS["bg"])
         self._main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
 
-        # Panel derecho scrolleable (primero para pack order)
-        right_outer = tk.Frame(self._main, bg=COLORS["border"],
-                               highlightbackground=COLORS["border"],
-                               highlightthickness=1, width=302)
-        right_outer.pack(side="right", fill="y")
-        right_outer.pack_propagate(False)
-
-        right_canvas = tk.Canvas(right_outer, bg=COLORS["surface"],
-                                  highlightthickness=0, bd=0, width=300)
-        right_scroll = tk.Scrollbar(right_outer, orient="vertical",
-                                     command=right_canvas.yview)
-        right_canvas.configure(yscrollcommand=right_scroll.set)
-        right_scroll.pack(side="right", fill="y")
-        right_canvas.pack(side="left", fill="both", expand=True)
-
-        self._panel = tk.Frame(right_canvas, bg=COLORS["surface"])
-        self._panel_win = right_canvas.create_window(
-            (0, 0), window=self._panel, anchor="nw"
-        )
-        right_canvas.bind("<Configure>",
-            lambda e: right_canvas.itemconfig(self._panel_win, width=e.width))
-        self._panel.bind("<Configure>",
-            lambda e: right_canvas.configure(
-                scrollregion=right_canvas.bbox("all")))
-        self._right_canvas = right_canvas
-
-        # Panel izquierdo: tabla
-        left = tk.Frame(self._main, bg=COLORS["bg"])
-        left.pack(side="left", fill="both", expand=True, padx=(0, 12))
-
-        buscar_row = tk.Frame(left, bg=COLORS["bg"])
+        buscar_row = tk.Frame(self._main, bg=COLORS["bg"])
         buscar_row.pack(fill="x", pady=(0, 6))
         tk.Label(buscar_row, text="Buscar:", font=FONT_SMALL,
                  bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side="left", padx=(0, 6))
@@ -78,25 +60,15 @@ class FrameProveedores(FrameBase):
                   command=lambda: (self._entry_buscar.delete(0, "end"),
                                    self._filtrar())).pack(side="left", padx=(4, 0))
 
-        tabla_wrap = tk.Frame(left, bg=COLORS["bg"])
+        tabla_wrap = tk.Frame(self._main, bg=COLORS["bg"])
         tabla_wrap.pack(fill="both", expand=True)
 
         cols = ("id", "nombre", "contacto", "telefono", "estado")
-        self.tree = self._tabla(tabla_wrap, cols, alto=18)
-        self.tree.heading("id",       text="#")
-        self.tree.heading("nombre",   text="Nombre")
-        self.tree.heading("contacto", text="Contacto")
-        self.tree.heading("telefono", text="Telefono")
-        self.tree.heading("estado",   text="Estado")
-        self.tree.column("id",       width=40)
-        self.tree.column("nombre",   width=200, anchor="w")
-        self.tree.column("contacto", width=150, anchor="w")
-        self.tree.column("telefono", width=120)
-        self.tree.column("estado",   width=80)
-        self.tree.bind("<<TreeviewSelect>>", self._al_seleccionar)
+        self.tree = self._tabla(tabla_wrap, cols, alto=12)
+        self._configurar_cols_proveedores()
+        self.tree.bind("<Double-1>", lambda e: self._editar())
 
         self._cargar_proveedores()
-        self._construir_panel_proveedor()
 
     # ── Navegación entre tabs ─────────────────────────────────────────────────
     def _filtrar(self):
@@ -108,34 +80,39 @@ class FrameProveedores(FrameBase):
 
     def _cambiar_tab(self):
         self._entry_buscar.delete(0, "end")
-        self._limpiar_panel()
         self._proveedor_sel = None
         self._pedido_sel    = None
         if self._tab.get() == "proveedores":
             self._configurar_cols_proveedores()
             self._cargar_proveedores()
-            self._construir_panel_proveedor()
         else:
             self._configurar_cols_pedidos()
             self._cargar_pedidos()
-            self._construir_panel_pedido()
 
-    def _limpiar_panel(self):
-        for w in self._panel.winfo_children():
-            w.destroy()
-        self._right_canvas.yview_moveto(0)
+    def _nuevo(self):
+        if self._tab.get() == "proveedores":
+            self._modal_proveedor()
+        else:
+            self._modal_pedido()
 
-    def _al_seleccionar(self, event=None):
+    def _editar(self):
         sel = self.tree.focus()
         if not sel:
+            messagebox.showinfo("Selecciona una fila",
+                                "Elige una fila de la tabla (o haz doble-clic).")
             return
         if self._tab.get() == "proveedores":
-            self._proveedor_sel = int(sel)
-            self._modo_prov = "editar"
-            self._cargar_proveedor_en_form(self._proveedor_sel)
+            self._modal_proveedor(int(sel))
         else:
-            self._pedido_sel = int(sel)
-            self._cargar_pedido_en_panel(self._pedido_sel)
+            self._modal_pedido_detalle(int(sel))
+
+    def _cerrar_modal(self):
+        if self._modal is not None:
+            try:
+                self._modal.cerrar()
+            except tk.TclError:
+                pass
+            self._modal = None
 
     # ══════════════════════════════════════════════════════════
     # TAB PROVEEDORES
@@ -150,10 +127,10 @@ class FrameProveedores(FrameBase):
         self.tree.heading("telefono", text="Telefono")
         self.tree.heading("estado",   text="Estado")
         self.tree.column("id",       width=40)
-        self.tree.column("nombre",   width=200, anchor="w")
-        self.tree.column("contacto", width=150, anchor="w")
-        self.tree.column("telefono", width=120)
-        self.tree.column("estado",   width=80)
+        self.tree.column("nombre",   width=220, anchor="w")
+        self.tree.column("contacto", width=180, anchor="w")
+        self.tree.column("telefono", width=140)
+        self.tree.column("estado",   width=90)
 
     def _cargar_proveedores(self, filtro=""):
         from modules.proveedores import listar_proveedores
@@ -169,14 +146,15 @@ class FrameProveedores(FrameBase):
                 estado
             ))
 
-    def _construir_panel_proveedor(self):
-        self._limpiar_panel()
-        self._modo_prov = "nuevo"
+    def _modal_proveedor(self, proveedor_id=None):
+        editar = proveedor_id is not None
+        self._proveedor_sel = proveedor_id
+        self._modo_prov = "editar" if editar else "nuevo"
 
-        self._lbl_modo_p = tk.Label(self._panel, text="Nuevo proveedor",
-                                     font=FONT_BOLD, bg=COLORS["surface"],
-                                     fg=COLORS["text"])
-        self._lbl_modo_p.pack(anchor="w", padx=16, pady=(16, 12))
+        m = ModalForm(self, "Editar proveedor" if editar else "Nuevo proveedor",
+                      ancho=420)
+        self._modal = m
+        body = m.body
 
         campos = [
             ("Nombre *",   "_p_nombre"),
@@ -185,33 +163,33 @@ class FrameProveedores(FrameBase):
             ("Email",      "_p_email"),
         ]
         for label, attr in campos:
-            tk.Label(self._panel, text=label, font=FONT_SMALL,
-                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-            e = self._input(self._panel)
-            e.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
+            tk.Label(body, text=label, font=FONT_SMALL,
+                     bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                         anchor="w", padx=16, pady=(8, 0))
+            e = self._input(body)
+            e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
             setattr(self, attr, e)
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=8)
-
         if auth.es_admin():
-            self._btn_primary(self._panel, "Guardar proveedor",
-                              self._guardar_proveedor).pack(fill="x", padx=16, ipady=8)
-            self._btn_danger(self._panel, "Desactivar proveedor",
-                             self._desactivar_proveedor).pack(
-                                 fill="x", padx=16, pady=(6, 0), ipady=6)
+            self._btn_primary(m.footer, "Guardar",
+                              self._guardar_proveedor).pack(
+                                  side="right", ipady=6, ipadx=16)
+            if editar:
+                self._btn_danger(m.footer, "Activar / Desactivar",
+                                 self._desactivar_proveedor).pack(
+                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
-        tk.Button(self._panel, text="+ Nuevo (limpiar)",
-                  font=FONT_SMALL, bg=COLORS["surface"],
-                  fg=COLORS["text_muted"], relief="flat", cursor="hand2",
-                  command=self._nuevo_proveedor).pack(pady=(8, 16))
+        if editar:
+            self._cargar_proveedor_en_form(proveedor_id)
+        m.mostrar()
 
     def _cargar_proveedor_en_form(self, proveedor_id: int):
         from modules.proveedores import obtener_proveedor
         p = obtener_proveedor(proveedor_id)
         if not p:
             return
-        self._lbl_modo_p.config(text=f"Editando: {p['nombre'][:22]}")
         for entry, valor in [
             (self._p_nombre,   p["nombre"]),
             (self._p_contacto, p["contacto"] or ""),
@@ -220,15 +198,6 @@ class FrameProveedores(FrameBase):
         ]:
             entry.delete(0, "end")
             entry.insert(0, valor)
-
-    def _nuevo_proveedor(self):
-        self._proveedor_sel = None
-        self._modo_prov     = "nuevo"
-        self.tree.selection_remove(*self.tree.selection())
-        self._lbl_modo_p.config(text="Nuevo proveedor")
-        for e in [self._p_nombre, self._p_contacto,
-                  self._p_telefono, self._p_email]:
-            e.delete(0, "end")
 
     def _guardar_proveedor(self):
         from modules.proveedores import crear_proveedor, editar_proveedor
@@ -251,7 +220,7 @@ class FrameProveedores(FrameBase):
                                   telefono=telefono, email=email)
                 messagebox.showinfo("Guardado", "Proveedor actualizado.")
             self._cargar_proveedores()
-            self._nuevo_proveedor()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -269,7 +238,7 @@ class FrameProveedores(FrameBase):
             return
         editar_proveedor(self._proveedor_sel, activo=nuevo)
         self._cargar_proveedores()
-        self._nuevo_proveedor()
+        self._cerrar_modal()
 
     # ══════════════════════════════════════════════════════════
     # TAB PEDIDOS
@@ -280,8 +249,8 @@ class FrameProveedores(FrameBase):
         self.tree["columns"] = cols
         textos = {"pid": "#", "fecha": "Fecha", "proveedor": "Proveedor",
                   "items": "Items", "total": "Total", "estado": "Estado"}
-        anchos = {"pid": 40, "fecha": 140, "proveedor": 180,
-                  "items": 60, "total": 110, "estado": 90}
+        anchos = {"pid": 40, "fecha": 150, "proveedor": 220,
+                  "items": 70, "total": 130, "estado": 100}
         for col in cols:
             self.tree.heading(col, text=textos[col])
             anchor = "w" if col == "proveedor" else "center"
@@ -303,22 +272,21 @@ class FrameProveedores(FrameBase):
                 p["estado"].capitalize()
             ))
 
-    def _construir_panel_pedido(self):
-        self._limpiar_panel()
+    def _modal_pedido(self):
         self._pedido_items = []
-
-        tk.Label(self._panel, text="Nuevo pedido", font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(
-                     anchor="w", padx=16, pady=(16, 10))
+        m = ModalForm(self, "Nuevo pedido", ancho=460)
+        self._modal = m
+        body = m.body
 
         # Proveedor
         from modules.proveedores import listar_proveedores
         provs = listar_proveedores()
         self._provs_map = {p["nombre"]: p["id"] for p in provs}
-        tk.Label(self._panel, text="Proveedor", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+        tk.Label(body, text="Proveedor", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
+                     anchor="w", padx=16, pady=(8, 0))
         self._combo_prov = ttk.Combobox(
-            self._panel, values=list(self._provs_map.keys()),
+            body, values=list(self._provs_map.keys()),
             font=FONT_LABEL, state="readonly"
         )
         if provs:
@@ -326,10 +294,10 @@ class FrameProveedores(FrameBase):
         self._combo_prov.pack(fill="x", padx=16, pady=(2, 10))
 
         # Tipo de ítem
-        tk.Label(self._panel, text="Tipo de item", font=FONT_SMALL,
+        tk.Label(body, text="Tipo de item", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
         self._tipo_item = tk.StringVar(value="producto")
-        tipo_frame = tk.Frame(self._panel, bg=COLORS["surface"])
+        tipo_frame = tk.Frame(body, bg=COLORS["surface"])
         tipo_frame.pack(fill="x", padx=16, pady=(2, 6))
         for t, v in [("Producto", "producto"), ("Insumo", "insumo")]:
             tk.Radiobutton(
@@ -342,13 +310,13 @@ class FrameProveedores(FrameBase):
             ).pack(side="left", padx=(0, 4))
 
         # Buscar ítem
-        tk.Label(self._panel, text="Buscar", font=FONT_SMALL,
+        tk.Label(body, text="Buscar", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        self._entry_buscar_item = self._input(self._panel)
+        self._entry_buscar_item = self._input(body)
         self._entry_buscar_item.pack(fill="x", padx=16, pady=(2, 4), ipady=5)
         self._entry_buscar_item.bind("<KeyRelease>", self._actualizar_lista_items)
 
-        lst_wrap = tk.Frame(self._panel, bg=COLORS["surface"])
+        lst_wrap = tk.Frame(body, bg=COLORS["surface"])
         lst_wrap.pack(fill="x", padx=16, pady=(0, 6))
         self._lst_items_pedido = tk.Listbox(
             lst_wrap, font=FONT_SMALL, height=4,
@@ -361,7 +329,7 @@ class FrameProveedores(FrameBase):
 
         # Cantidad y precio
         from modules.validaciones import aplicar_validacion
-        grid = tk.Frame(self._panel, bg=COLORS["surface"])
+        grid = tk.Frame(body, bg=COLORS["surface"])
         grid.pack(fill="x", padx=16, pady=(0, 6))
 
         tk.Label(grid, text="Cantidad:", font=FONT_SMALL,
@@ -380,45 +348,46 @@ class FrameProveedores(FrameBase):
         self._entry_precio_item.grid(row=1, column=1, padx=(6, 0), ipady=4)
         aplicar_validacion(self._entry_precio_item, "monto")
 
-        self._btn_primary(self._panel, "+ Agregar al pedido",
+        self._btn_primary(body, "+ Agregar al pedido",
                           self._agregar_item_pedido).pack(fill="x", padx=16, ipady=6)
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(
             fill="x", padx=16, pady=10)
 
         # Tabla de ítems del pedido
-        tk.Label(self._panel, text="Contenido del pedido", font=FONT_BOLD,
+        tk.Label(body, text="Contenido del pedido", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(
                      anchor="w", padx=16, pady=(0, 6))
-        self._frame_tabla_pedido = tk.Frame(self._panel, bg=COLORS["surface"])
+        self._frame_tabla_pedido = tk.Frame(body, bg=COLORS["surface"])
         self._frame_tabla_pedido.pack(fill="x", padx=16)
 
         self._lbl_total_pedido = tk.Label(
-            self._panel, text="Total: $0", font=FONT_BOLD,
+            body, text="Total: $0", font=FONT_BOLD,
             bg=COLORS["surface"], fg=COLORS["accent"]
         )
         self._lbl_total_pedido.pack(anchor="w", padx=16, pady=(6, 0))
 
         # Notas
-        tk.Label(self._panel, text="Notas (opcional)", font=FONT_SMALL,
+        tk.Label(body, text="Notas (opcional)", font=FONT_SMALL,
                  bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(
                      anchor="w", padx=16, pady=(10, 0))
-        self._txt_notas = tk.Text(self._panel, height=2, font=FONT_SMALL,
+        self._txt_notas = tk.Text(body, height=2, font=FONT_SMALL,
                                    bg=COLORS["surface2"], fg=COLORS["text"],
                                    insertbackground=COLORS["accent"],
                                    relief="flat", highlightthickness=1,
                                    highlightbackground=COLORS["border"])
-        self._txt_notas.pack(fill="x", padx=16, pady=(2, 10))
-
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=16, pady=(0, 10))
+        self._txt_notas.pack(fill="x", padx=16, pady=(2, 12))
 
         if auth.es_admin():
-            self._btn_primary(self._panel, "Crear pedido",
-                              self._crear_pedido).pack(fill="x", padx=16, ipady=8)
+            self._btn_primary(m.footer, "Crear pedido",
+                              self._crear_pedido).pack(
+                                  side="right", ipady=6, ipadx=16)
+        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
 
         self._actualizar_lista_items()
         self._refrescar_tabla_pedido()
+        m.mostrar()
 
     def _actualizar_lista_items(self, event=None):
         """Actualiza el listbox según el tipo seleccionado (producto/insumo)."""
@@ -545,60 +514,55 @@ class FrameProveedores(FrameBase):
                                 f"Pedido #{pid} creado en estado Pendiente.")
             self._pedido_items = []
             self._cargar_pedidos()
-            self._refrescar_tabla_pedido()
+            self._cerrar_modal()
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    def _cargar_pedido_en_panel(self, pedido_id: int):
-        """Muestra el detalle de un pedido seleccionado con opciones de acción."""
+    def _modal_pedido_detalle(self, pedido_id: int):
+        """Modal de detalle de un pedido con opciones de acción."""
         from modules.proveedores import obtener_pedido
         from modules.caja import formatear_pesos
 
-        self._limpiar_panel()
         pedido = obtener_pedido(pedido_id)
         if not pedido:
             return
 
-        # Encabezado
+        m = ModalForm(self, f"Pedido #{pedido['id']}", ancho=460)
+        self._modal = m
+        body = m.body
+
         estado_color = {
             "pendiente":  COLORS["warning"],
             "recibido":   COLORS["success"],
             "cancelado":  COLORS["danger"],
         }.get(pedido["estado"], COLORS["text_muted"])
 
-        tk.Label(self._panel, text=f"Pedido #{pedido['id']}",
-                 font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(16, 2))
-        tk.Label(self._panel,
-                 text=f"Proveedor: {pedido['proveedor_nombre']}",
+        tk.Label(body, text=f"Proveedor: {pedido['proveedor_nombre']}",
+                 font=FONT_SMALL, bg=COLORS["surface"],
+                 fg=COLORS["text_muted"]).pack(anchor="w", padx=16, pady=(10, 0))
+        tk.Label(body, text=f"Fecha: {pedido['fecha'][:16]}",
                  font=FONT_SMALL, bg=COLORS["surface"],
                  fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        tk.Label(self._panel,
-                 text=f"Fecha: {pedido['fecha'][:16]}",
-                 font=FONT_SMALL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
-        tk.Label(self._panel,
-                 text=f"Estado: {pedido['estado'].capitalize()}",
+        tk.Label(body, text=f"Estado: {pedido['estado'].capitalize()}",
                  font=FONT_BOLD, bg=COLORS["surface"],
                  fg=estado_color).pack(anchor="w", padx=16, pady=(2, 0))
 
         if pedido.get("notas"):
-            tk.Label(self._panel, text=f"Notas: {pedido['notas']}",
+            tk.Label(body, text=f"Notas: {pedido['notas']}",
                      font=FONT_SMALL, bg=COLORS["surface"],
                      fg=COLORS["text_muted"],
-                     wraplength=240, justify="left").pack(
+                     wraplength=400, justify="left").pack(
                          anchor="w", padx=16, pady=(2, 0))
 
-        tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(
             fill="x", padx=16, pady=10)
 
-        # Detalle de ítems
-        tk.Label(self._panel, text="Items del pedido", font=FONT_BOLD,
+        tk.Label(body, text="Items del pedido", font=FONT_BOLD,
                  bg=COLORS["surface"], fg=COLORS["text"]).pack(
                      anchor="w", padx=16, pady=(0, 6))
 
         for item in pedido["detalle"]:
-            fila = tk.Frame(self._panel, bg=COLORS["surface2"],
+            fila = tk.Frame(body, bg=COLORS["surface2"],
                             highlightbackground=COLORS["border"],
                             highlightthickness=1)
             fila.pack(fill="x", padx=16, pady=2, ipady=3)
@@ -615,24 +579,24 @@ class FrameProveedores(FrameBase):
                          font=FONT_SMALL, bg=COLORS["surface2"],
                          fg=COLORS["text_muted"]).pack(side="right", padx=8)
 
-        # Total
-        tk.Label(self._panel,
-                 text=f"Total: {formatear_pesos(pedido['total'] or 0)}",
+        tk.Label(body, text=f"Total: {formatear_pesos(pedido['total'] or 0)}",
                  font=FONT_BOLD, bg=COLORS["surface"],
-                 fg=COLORS["accent"]).pack(anchor="e", padx=16, pady=(8, 0))
+                 fg=COLORS["accent"]).pack(anchor="e", padx=16, pady=(8, 12))
 
-        # Acciones solo si es pendiente
+        # Acciones (footer) solo si es pendiente
         if pedido["estado"] == "pendiente" and auth.es_admin():
-            tk.Frame(self._panel, bg=COLORS["border"], height=1).pack(
-                fill="x", padx=16, pady=10)
             self._btn_primary(
-                self._panel, "✓ Marcar como Recibido",
-                lambda pid=pedido_id: self._recibir_pedido(pid)
-            ).pack(fill="x", padx=16, ipady=10)
+                m.footer, "✓ Recibir",
+                lambda pid=pedido_id: (self._cerrar_modal(), self._recibir_pedido(pid))
+            ).pack(side="right", ipady=6, ipadx=14)
             self._btn_danger(
-                self._panel, "✕ Cancelar pedido",
-                lambda pid=pedido_id: self._cancelar_pedido(pid)
-            ).pack(fill="x", padx=16, pady=(6, 16), ipady=6)
+                m.footer, "✕ Cancelar pedido",
+                lambda pid=pedido_id: (self._cerrar_modal(), self._cancelar_pedido(pid))
+            ).pack(side="right", padx=(0, 8), ipady=6, ipadx=10)
+        self._btn_secondary(m.footer, "Cerrar", m.cerrar).pack(
+            side="left", ipady=6, ipadx=14)
+
+        m.mostrar()
 
     def _recibir_pedido(self, pedido_id: int):
         """Abre el dialogo de pago y procesa la recepcion del pedido."""
@@ -693,11 +657,6 @@ class FrameProveedores(FrameBase):
                     self, ped["proveedor_id"], pedido_id=pedido_id,
                     total_sugerido=ped.get("total") or total_pagado)
             self._cargar_pedidos()
-            self._limpiar_panel()
-            tk.Label(self._panel,
-                     text="Pedido recibido.\nSelecciona otro pedido.",
-                     font=FONT_SMALL, bg=COLORS["surface"],
-                     fg=COLORS["text_muted"]).pack(padx=16, pady=24)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -709,9 +668,9 @@ class FrameProveedores(FrameBase):
             cancelar_pedido(pedido_id)
             messagebox.showinfo("Cancelado", "Pedido cancelado.")
             self._cargar_pedidos()
-            self._limpiar_panel()
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
 
 class DialogFacturaProveedor(tk.Toplevel):
     """Registra la factura de compra de un proveedor (ingreso de compras)."""

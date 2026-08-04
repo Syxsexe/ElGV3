@@ -18,6 +18,7 @@ from ui import (
     FrameClientes, FrameProveedores, FrameFiscal, FrameGastos,
     FrameAuditoria, FrameCreditos, FrameDocumentos,
     FrameConsultaPrecios, FrameLibros, FrameTorneos,
+    FramePreparaciones,
 )
 
 
@@ -272,6 +273,7 @@ class MainWindow(tk.Tk):
             ("Clientes",         self._mostrar_clientes),
             ("Cuentas",          self._mostrar_cuentas),
             ("Inventario",       self._mostrar_inventario),
+            ("Preparaciones",    self._mostrar_preparaciones),
             ("Proveedores",      self._mostrar_proveedores),
             ("Caja",             self._mostrar_caja),
             ("Créditos",         self._mostrar_creditos),
@@ -466,6 +468,10 @@ class MainWindow(tk.Tk):
         self._nav_click("Inventario")
         self._cambiar_frame(FrameInventario)
 
+    def _mostrar_preparaciones(self):
+        self._nav_click("Preparaciones")
+        self._cambiar_frame(FramePreparaciones)
+
     def _mostrar_proveedores(self):
         self._nav_click("Proveedores")
         self._cambiar_frame(FrameProveedores)
@@ -580,6 +586,11 @@ if __name__ == "__main__":
                   f"{res['insumos_actualizados']} actualizados")
             print(f"Categorías creadas: {res['categorias_creadas']}, "
                   f"ajustadas: {res['categorias_ajustadas']}")
+            if res.get("recetas_lineas"):
+                print(f"Recetas: {res['recetas_lineas']} líneas vinculadas")
+            if res.get("preparaciones"):
+                print(f"Preparaciones: {res['preparaciones']} "
+                      f"({res['recetas_prep']} líneas de producción)")
             if res["omitidos"]:
                 print(f"Omitidos ({len(res['omitidos'])}, sin precio_venta):")
                 for o in res["omitidos"]:
@@ -587,6 +598,28 @@ if __name__ == "__main__":
             sys.exit(0)
         except Exception as e:
             print(f"ERROR en importación: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if "--seed-cocina" in sys.argv:
+        from modules.seed_cocina import poblar_cocina
+        inicializar()   # asegura que la BD y las categorías base existan
+        try:
+            res = poblar_cocina()
+            print(f"Categorías creadas: {res['categorias_creadas']}")
+            print(f"Insumos: {res['insumos_nuevos']} nuevos, "
+                  f"{res['insumos_existentes']} ya existían")
+            print(f"Preparaciones: {res['preparaciones']} "
+                  f"({res['recetas_prep']} líneas de receta de producción)")
+            print(f"Platos: {res['platos_nuevos']} nuevos, "
+                  f"{res['platos_actualizados']} actualizados")
+            print(f"Líneas de receta: {res['recetas']}")
+            if res["errores"]:
+                print("Errores:")
+                for e in res["errores"]:
+                    print(f"   - {e}")
+            sys.exit(0 if not res["errores"] else 1)
+        except Exception as e:
+            print(f"ERROR poblando cocina: {e}", file=sys.stderr)
             sys.exit(1)
 
     inicializar()

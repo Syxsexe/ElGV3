@@ -361,6 +361,46 @@ def crear_tablas():
         )
     """)
 
+    # ── Preparaciones (producción de cocina) ──────────────────────────────────
+    # Una preparación es un insumo que se FABRICA a partir de otros insumos
+    # (crudos y/o otras preparaciones): rellenos, salsas, masa, adobo, etc.
+    # 'rendimiento' es cuánto produce un lote (en la unidad del insumo).
+    # Marca qué insumos son preparaciones y guarda el rendimiento por lote.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS preparaciones (
+            insumo_id    INTEGER PRIMARY KEY REFERENCES insumos(id) ON DELETE CASCADE,
+            rendimiento  REAL    NOT NULL DEFAULT 0
+        )
+    """)
+
+    # ── Receta de cada preparación (qué consume un lote) ──────────────────────
+    # preparacion_id → insumo que se produce; insumo_id → componente que consume.
+    # Al "preparar un lote" se descuenta cada componente y sube el stock de la
+    # preparación en 'rendimiento'. Permite anidar (una preparación como adobo
+    # puede ser componente de otra como el filete apanado).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS receta_preparacion (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            preparacion_id INTEGER NOT NULL REFERENCES insumos(id) ON DELETE CASCADE,
+            insumo_id      INTEGER NOT NULL REFERENCES insumos(id) ON DELETE CASCADE,
+            cantidad       REAL    NOT NULL CHECK(cantidad > 0),
+            UNIQUE(preparacion_id, insumo_id)
+        )
+    """)
+
+    # ── Historial de producción (lotes preparados) ────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS producciones (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            preparacion_id    INTEGER NOT NULL REFERENCES insumos(id),
+            num_lotes         REAL    NOT NULL CHECK(num_lotes > 0),
+            rendimiento_total REAL    NOT NULL DEFAULT 0,
+            usuario_id        INTEGER          REFERENCES usuarios(id),
+            fecha             TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            notas             TEXT
+        )
+    """)
+
     # Asegura columna cliente_id en ventas para versiones previas de la base de datos.
     columnas_ventas = [row[1] for row in conn.execute("PRAGMA table_info(ventas)").fetchall()]
     if "cliente_id" not in columnas_ventas:

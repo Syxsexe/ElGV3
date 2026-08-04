@@ -203,6 +203,8 @@ class FrameInventario(FrameBase):
         )
         if res.get("categorias_ajustadas"):
             resumen += f", ajustadas: {res['categorias_ajustadas']}"
+        if res.get("recetas_lineas"):
+            resumen += f"\nRecetas: {res['recetas_lineas']} líneas vinculadas"
         if res["omitidos"]:
             n = len(res["omitidos"])
             muestra = "\n".join(f"  • {o}" for o in res["omitidos"][:8])

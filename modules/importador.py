@@ -30,6 +30,12 @@ _CATEGORIA_TIPO = {
     "Bebidas": "tienda",
     "Comidas rápidas": "cocina",
     "Combos cocina": "cocina",
+    # Platos de cocina (fichas técnicas)
+    "Crepes salados": "cocina",
+    "Crepes dulces": "cocina",
+    "Sándwiches": "cocina",
+    "Hamburguesas": "cocina",
+    "Alitas": "cocina",
 }
 
 MARGEN_COSTO = 0.80  # precio_costo = precio_venta * 0.80 si viene vacío
@@ -96,6 +102,7 @@ def importar_inventario(ruta_xlsx: str) -> dict:
         "productos_nuevos": 0, "productos_actualizados": 0,
         "insumos_nuevos": 0, "insumos_actualizados": 0,
         "categorias_creadas": 0, "categorias_ajustadas": 0,
+        "recetas_lineas": 0, "preparaciones": 0, "recetas_prep": 0,
         "omitidos": [], "errores": [],
     }
 
@@ -184,6 +191,82 @@ def importar_inventario(ruta_xlsx: str) -> dict:
                         VALUES (?, ?, ?, ?)
                     """, (nombre, stock, unidad, sm))
                     res["insumos_nuevos"] += 1
+
+        # ── RECETAS ────────────────────────────────────────────────────────
+        # Hoja opcional: columnas producto, insumo, cantidad. Vincula un plato
+        # de cocina con sus insumos/preparaciones (para descontar al vender).
+        # La receta de cada producto listado se REEMPLAZA (idempotente).
+        if "RECETAS" in wb.sheetnames:
+            prod_por_nombre = {n: i for i, n in
+                               conn.execute("SELECT id, nombre FROM productos")}
+            insumo_por_nombre = {n: i for i, n in
+                                 conn.execute("SELECT id, nombre FROM insumos")}
+            recetas = {}   # producto_id -> [(insumo_id, cantidad)]
+            for fila in _leer_hoja(wb["RECETAS"]):
+                pnombre = (fila.get("producto") or "").strip()
+                inombre = (fila.get("insumo") or "").strip()
+                cant = _num(fila.get("cantidad"))
+                if not pnombre or not inombre or cant <= 0:
+                    continue
+                pid = prod_por_nombre.get(pnombre)
+                iid = insumo_por_nombre.get(inombre)
+                if not pid:
+                    res["errores"].append(f"receta: producto '{pnombre}' no existe")
+                    continue
+                if not iid:
+                    res["errores"].append(f"receta: insumo '{inombre}' no existe")
+                    continue
+                recetas.setdefault(pid, []).append((iid, cant))
+            for pid, lineas in recetas.items():
+                conn.execute("DELETE FROM receta_insumos WHERE producto_id = ?", (pid,))
+                conn.executemany(
+                    "INSERT INTO receta_insumos (producto_id, insumo_id, cantidad) "
+                    "VALUES (?, ?, ?)", [(pid, iid, c) for iid, c in lineas])
+                res["recetas_lineas"] += len(lineas)
+
+        # ── PREPARACIONES ──────────────────────────────────────────────────
+        # Hoja opcional: columnas preparacion, rendimiento, componente, cantidad.
+        # Marca un insumo como preparación (con su rendimiento por lote) y define
+        # su receta de producción. Un componente puede ser un crudo u otra
+        # preparación (anidado). La receta de cada preparación se REEMPLAZA.
+        if "PREPARACIONES" in wb.sheetnames:
+            insumo_por_nombre = {n: i for i, n in
+                                 conn.execute("SELECT id, nombre FROM insumos")}
+            rendimientos = {}   # preparacion_id -> rendimiento
+            preps = {}          # preparacion_id -> [(insumo_id, cantidad)]
+            for fila in _leer_hoja(wb["PREPARACIONES"]):
+                pnombre = (fila.get("preparacion") or "").strip()
+                cnombre = (fila.get("componente") or "").strip()
+                cant = _num(fila.get("cantidad"))
+                rend = _num(fila.get("rendimiento"))
+                if not pnombre:
+                    continue
+                pid = insumo_por_nombre.get(pnombre)
+                if not pid:
+                    res["errores"].append(f"preparación: '{pnombre}' no existe como insumo")
+                    continue
+                if rend > 0:
+                    rendimientos[pid] = rend
+                if not cnombre or cant <= 0:
+                    continue
+                cid = insumo_por_nombre.get(cnombre)
+                if not cid:
+                    res["errores"].append(f"preparación '{pnombre}': componente '{cnombre}' no existe")
+                    continue
+                preps.setdefault(pid, []).append((cid, cant))
+            for pid in set(rendimientos) | set(preps):
+                rend = rendimientos.get(pid, 0)
+                conn.execute("""
+                    INSERT INTO preparaciones (insumo_id, rendimiento) VALUES (?, ?)
+                    ON CONFLICT(insumo_id) DO UPDATE SET rendimiento = excluded.rendimiento
+                """, (pid, rend))
+                lineas = preps.get(pid, [])
+                conn.execute("DELETE FROM receta_preparacion WHERE preparacion_id = ?", (pid,))
+                conn.executemany(
+                    "INSERT INTO receta_preparacion (preparacion_id, insumo_id, cantidad) "
+                    "VALUES (?, ?, ?)", [(pid, cid, c) for cid, c in lineas])
+                res["preparaciones"] += 1
+                res["recetas_prep"] += len(lineas)
 
         conn.commit()
         res["categorias_creadas"] = len(set(cat_cache) - cat_iniciales)

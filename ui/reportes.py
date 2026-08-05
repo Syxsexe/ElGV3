@@ -1,11 +1,10 @@
 """
 ui/reportes.py — El G POS
 Panel de reportes con pestañas: Ventas · Productos · Inventario · Caja.
-Solo accesible para administradores.
+Disponible para admin y vendedor (solo lectura).
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-import auth
 from ui.base import (
     FrameBase, COLORS,
     FONT_BOLD, FONT_SMALL, FONT_LABEL, FONT_KPI,
@@ -90,16 +89,6 @@ class FrameReportes(FrameBase):
     # ── Consulta ─────────────────────────────────────────────────────────────
 
     def _consultar(self):
-        if not auth.es_admin():
-            for w in self._kpi_frame.winfo_children():
-                w.destroy()
-            tk.Label(self._kpi_frame,
-                     text="⚠  Los reportes están disponibles solo para administradores.",
-                     font=FONT_LABEL, bg=COLORS["bg"], fg=COLORS["warning"]).pack(anchor="w")
-            for w in self._tab_outer.winfo_children():
-                w.destroy()
-            return
-
         ini = self.entry_ini.get().strip()
         fin = self.entry_fin.get().strip()
         self._render_kpis(ini, fin)
@@ -108,8 +97,6 @@ class FrameReportes(FrameBase):
     def _cambiar_tab(self):
         for w in self._tab_outer.winfo_children():
             w.destroy()
-        if not auth.es_admin():
-            return
         ini = self.entry_ini.get().strip()
         fin = self.entry_fin.get().strip()
         tab = self._tab_actual.get()

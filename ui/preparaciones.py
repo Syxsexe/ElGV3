@@ -1,11 +1,11 @@
 """
 ui/preparaciones.py — El G POS
-Producción de cocina: "Preparé un lote".
+Preparaciones de cocina como recetas de COSTO.
 
-Lista las preparaciones (rellenos, salsas, masa, adobo…) con su stock y
-rendimiento por lote. Al preparar N lotes se descuentan los componentes (crudos
-y/o otras preparaciones) y sube el stock de la preparación. Así el inventario de
-crudos queda al día y las preparaciones no hay que reponerlas a mano.
+Lista las preparaciones (rellenos, salsas, masa, adobo…) con su rendimiento por
+lote y su costo (por lote y por unidad), calculado a partir de los insumos que
+las componen. No se lleva stock ni producción: los insumos son ilimitados y lo
+que importa es el costo, que sube en cascada hasta el costo de cada plato.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -29,7 +29,7 @@ def _fmt(n) -> str:
 class FramePreparaciones(FrameBase):
     def __init__(self, parent):
         super().__init__(parent, "Preparaciones",
-                         "Producción de cocina: prepara lotes y descuenta los insumos")
+                         "Recetas de cocina y su costo (a partir de los insumos)")
         self._modal = None
         self._preps = []
         self._build()
@@ -39,13 +39,11 @@ class FramePreparaciones(FrameBase):
     def _build(self):
         acciones = tk.Frame(self, bg=COLORS["bg"])
         acciones.pack(fill="x", padx=32, pady=(0, 8))
-        self._btn_primary(acciones, "🍳 Preparé un lote", self._preparar_sel).pack(
-            side="right", padx=(8, 0), ipady=4, ipadx=12)
         if auth.es_admin():
-            self._btn_secondary(acciones, "✎ Editar receta", self._editar_sel).pack(
+            self._btn_primary(acciones, "+ Nueva preparación",
+                              lambda: self._modal_prep(None)).pack(
                 side="right", padx=(0, 8), ipady=4, ipadx=12)
-            self._btn_secondary(acciones, "+ Nueva preparación",
-                                lambda: self._modal_prep(None)).pack(
+            self._btn_secondary(acciones, "✎ Editar receta", self._editar_sel).pack(
                 side="right", padx=(0, 8), ipady=4, ipadx=12)
         self._btn_secondary(acciones, "↻ Actualizar", self._cargar).pack(
             side="right", ipady=4, ipadx=12)
@@ -53,38 +51,45 @@ class FramePreparaciones(FrameBase):
         main = tk.Frame(self, bg=COLORS["bg"])
         main.pack(fill="both", expand=True, padx=32, pady=(0, 24))
 
-        tk.Label(main, text="Doble clic en una preparación para preparar un lote. "
-                            "Las filas en rojo están por debajo del mínimo.",
-                 font=FONT_SMALL, bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(
-                     anchor="w", pady=(0, 6))
+        tk.Label(main, text="Las preparaciones (adobo, salsas, rellenos, masa) son recetas "
+                            "que aportan costo. El costo por lote y por unidad sale de los "
+                            "insumos que las componen.",
+                 font=FONT_SMALL, bg=COLORS["bg"], fg=COLORS["text_muted"],
+                 wraplength=900, justify="left").pack(anchor="w", pady=(0, 6))
 
         tabla_wrap = tk.Frame(main, bg=COLORS["bg"])
         tabla_wrap.pack(fill="both", expand=True)
-        cols = ("nombre", "stock", "unidad", "rendimiento", "minimo", "comps")
+        cols = ("nombre", "unidad", "rendimiento", "costo_lote", "costo_unidad", "comps")
         self.tree = self._tabla(tabla_wrap, cols, alto=14)
-        textos = {"nombre": "Preparación", "stock": "Stock actual", "unidad": "Unidad",
-                  "rendimiento": "Rinde x lote", "minimo": "Mínimo", "comps": "Ingredientes"}
-        anchos = {"nombre": 260, "stock": 120, "unidad": 80, "rendimiento": 110,
-                  "minimo": 90, "comps": 100}
+        textos = {"nombre": "Preparación", "unidad": "Unidad", "rendimiento": "Rinde x lote",
+                  "costo_lote": "Costo x lote", "costo_unidad": "Costo x unidad",
+                  "comps": "Ingredientes"}
+        anchos = {"nombre": 240, "unidad": 80, "rendimiento": 110,
+                  "costo_lote": 120, "costo_unidad": 130, "comps": 100}
         for c in cols:
             self.tree.heading(c, text=textos[c])
             anchor = "w" if c == "nombre" else ("center" if c in ("unidad", "comps") else "e")
             self.tree.column(c, width=anchos[c], anchor=anchor)
-        self.tree.tag_configure("bajo", foreground=COLORS["danger"])
-        self.tree.bind("<Double-1>", lambda e: self._preparar_sel())
+        if auth.es_admin():
+            self.tree.bind("<Double-1>", lambda e: self._editar_sel())
 
         self._cargar()
 
     def _cargar(self):
         from modules.preparaciones import listar_preparaciones
+        from modules.inventario import costo_insumo
+        from modules.caja import formatear_pesos
         self._preps = listar_preparaciones()
         self.tree.delete(*self.tree.get_children())
         for p in self._preps:
-            bajo = (p["stock"] or 0) <= (p["stock_minimo"] or 0) and (p["stock_minimo"] or 0) > 0
+            costo_unit = costo_insumo(p["id"])
+            costo_lote = costo_unit * (p["rendimiento"] or 0)
+            costo_unit_txt = f"{formatear_pesos(costo_unit)} /{p['unidad']}" if costo_unit else "—"
+            costo_lote_txt = formatear_pesos(costo_lote) if costo_lote else "—"
             self.tree.insert("", "end", iid=str(p["id"]), values=(
-                p["nombre"], _fmt(p["stock"]), p["unidad"], _fmt(p["rendimiento"]),
-                _fmt(p["stock_minimo"]), p["num_componentes"],
-            ), tags=("bajo",) if bajo else ())
+                p["nombre"], p["unidad"], _fmt(p["rendimiento"]),
+                costo_lote_txt, costo_unit_txt, p["num_componentes"],
+            ))
 
     def _cerrar_modal(self):
         if self._modal is not None:
@@ -161,12 +166,6 @@ class FramePreparaciones(FrameBase):
         self._pr_rend.pack(ipady=3)
         if editar:
             self._pr_rend.insert(0, _fmt(prep["rendimiento"]))
-        colm = tk.Frame(fila, bg=COLORS["surface"]); colm.pack(side="left", padx=(16, 0))
-        tk.Label(colm, text="Stock mínimo", font=FONT_SMALL, bg=COLORS["surface"],
-                 fg=COLORS["text_muted"]).pack(anchor="w")
-        self._pr_min = self._input(colm, width=10)
-        self._pr_min.pack(ipady=3)
-        self._pr_min.insert(0, _fmt(prep["stock_minimo"]) if editar else "0")
 
         tk.Label(body, text="Rinde = cuánto produce UN lote en esa unidad "
                             "(p. ej. un lote de masa rinde 1220 g).",
@@ -298,16 +297,12 @@ class FramePreparaciones(FrameBase):
             messagebox.showwarning("Sin receta",
                                    "Agrega al menos un ingrediente.", parent=self._modal)
             return
-        try:
-            minimo = float((self._pr_min.get() or "0").strip().replace(",", "."))
-        except ValueError:
-            minimo = 0
         unidad = self._pr_unidad.get() or "g"
 
         try:
             if self._pr_edit_id is not None:
                 prep_id = self._pr_edit_id
-                editar_insumo(prep_id, nombre=nombre, unidad=unidad, stock_minimo=minimo)
+                editar_insumo(prep_id, nombre=nombre, unidad=unidad)
             else:
                 # Nueva: si ya existe un insumo con ese nombre, se reutiliza
                 # (se convierte en preparación); si no, se crea.
@@ -315,9 +310,9 @@ class FramePreparaciones(FrameBase):
                                   if i["nombre"].lower() == nombre.lower()), None)
                 if existente:
                     prep_id = existente["id"]
-                    editar_insumo(prep_id, unidad=unidad, stock_minimo=minimo)
+                    editar_insumo(prep_id, unidad=unidad)
                 else:
-                    prep_id = crear_insumo(nombre, stock=0, unidad=unidad, stock_minimo=minimo)
+                    prep_id = crear_insumo(nombre, unidad=unidad)
             guardar_receta_prep(
                 prep_id, rend,
                 [{"insumo_id": l["insumo_id"], "cantidad": l["cantidad"]}
@@ -330,139 +325,7 @@ class FramePreparaciones(FrameBase):
             "Preparación guardada",
             f"'{nombre}' quedó lista.\nRinde {_fmt(rend)} {unidad} por lote, "
             f"{len(self._pr_lineas)} ingrediente(s).\n\n"
-            "Usa '🍳 Preparé un lote' para producirla y cargar su stock.",
-            parent=self._modal)
-        self._cerrar_modal()
-        self._cargar()
-
-    # ══════════════════════════════════════════════════════════
-    # MODAL — PREPARAR UN LOTE
-    # ══════════════════════════════════════════════════════════
-
-    def _preparar_sel(self):
-        sel = self.tree.focus()
-        if not sel:
-            messagebox.showinfo("Selecciona una preparación",
-                                "Elige una preparación de la lista para preparar un lote.")
-            return
-        self._abrir_modal(int(sel))
-
-    def _abrir_modal(self, prep_id):
-        from modules.preparaciones import obtener_receta_prep
-        prep = obtener_receta_prep(prep_id)
-        if not prep:
-            return
-        if not prep["componentes"] or (prep["rendimiento"] or 0) <= 0:
-            messagebox.showwarning(
-                "Sin receta",
-                f"'{prep['nombre']}' no tiene receta o rendimiento definido.")
-            return
-
-        self._prep = prep
-        m = ModalForm(self, f"Preparar — {prep['nombre']}", ancho=460)
-        self._modal = m
-        body = m.body
-
-        # ── Encabezado con rendimiento ─────────────────────────────────────
-        top = tk.Frame(body, bg=COLORS["surface"])
-        top.pack(fill="x", padx=16, pady=(10, 4))
-        tk.Label(top, text="Lotes a preparar", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
-        self._e_lotes = self._input(top, width=8)
-        self._e_lotes.insert(0, "1")
-        self._e_lotes.pack(side="left", padx=(8, 8), ipady=4)
-        self._e_lotes.bind("<KeyRelease>", lambda e: self._refrescar_preview())
-        tk.Label(top, text=f"× {_fmt(prep['rendimiento'])} {prep['unidad']} c/u",
-                 font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text_dim"]).pack(side="left")
-
-        info = tk.Frame(body, bg=COLORS["surface"])
-        info.pack(fill="x", padx=16, pady=(0, 6))
-        tk.Label(info, text=f"Stock actual: {_fmt(prep['stock'])} {prep['unidad']}",
-                 font=FONT_SMALL, bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side="left")
-        self._lbl_producido = tk.Label(info, text="", font=FONT_BOLD,
-                                       bg=COLORS["surface"], fg=COLORS["success"])
-        self._lbl_producido.pack(side="right")
-
-        tk.Frame(body, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=8)
-        tk.Label(body, text="Se descontará de tus insumos:", font=FONT_BOLD,
-                 bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor="w", padx=16, pady=(0, 6))
-
-        self._preview = tk.Frame(body, bg=COLORS["surface"])
-        self._preview.pack(fill="x", padx=16, pady=(0, 10))
-
-        self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(side="left", ipady=6, ipadx=14)
-        self._btn_primary(m.footer, "Confirmar producción", self._confirmar).pack(
-            side="right", ipady=6, ipadx=16)
-
-        self._refrescar_preview()
-        m.mostrar()
-
-    def _leer_lotes(self) -> float:
-        txt = (self._e_lotes.get() or "").strip().replace(",", ".")
-        try:
-            return float(txt)
-        except ValueError:
-            return 0.0
-
-    def _refrescar_preview(self):
-        for w in self._preview.winfo_children():
-            w.destroy()
-        lotes = self._leer_lotes()
-        rend_total = (self._prep["rendimiento"] or 0) * max(lotes, 0)
-        self._lbl_producido.config(
-            text=f"Producirá +{_fmt(rend_total)} {self._prep['unidad']}")
-
-        for c in self._prep["componentes"]:
-            consumido = c["cantidad"] * lotes
-            antes = c["stock"] or 0
-            insuf = consumido > antes and lotes > 0
-            fila = tk.Frame(self._preview, bg=COLORS["surface2"],
-                            highlightbackground=COLORS["border"], highlightthickness=1)
-            fila.pack(fill="x", pady=2, ipady=3)
-            etq = c["nombre"] + ("  ·  preparación" if c["es_prep"] else "")
-            tk.Label(fila, text=etq, font=FONT_SMALL, bg=COLORS["surface2"],
-                     fg=COLORS["text"], anchor="w").pack(side="left", padx=(8, 0),
-                                                         fill="x", expand=True)
-            tk.Label(fila, text=f"−{_fmt(consumido)} {c['unidad']}", font=FONT_SMALL,
-                     bg=COLORS["surface2"],
-                     fg=COLORS["danger"] if insuf else COLORS["text"]).pack(side="left", padx=6)
-            tk.Label(fila, text=f"(quedan {_fmt(antes - consumido)})", font=FONT_SMALL,
-                     bg=COLORS["surface2"],
-                     fg=COLORS["danger"] if insuf else COLORS["text_dim"]).pack(side="right", padx=8)
-
-    def _confirmar(self):
-        from modules.preparaciones import preparar_lote
-        lotes = self._leer_lotes()
-        if lotes <= 0:
-            messagebox.showwarning("Lotes inválidos",
-                                   "Ingresa cuántos lotes preparaste (mayor que 0).",
-                                   parent=self._modal)
-            return
-
-        # Advertir (no bloquear) si algún componente no alcanza.
-        faltan = [c["nombre"] for c in self._prep["componentes"]
-                  if c["cantidad"] * lotes > (c["stock"] or 0)]
-        if faltan:
-            ok = messagebox.askyesno(
-                "Insumos insuficientes",
-                "Según el sistema no alcanza el stock de:\n  · " + "\n  · ".join(faltan) +
-                "\n\n¿Registrar la producción de todas formas? "
-                "(el stock de esos insumos quedará en negativo)",
-                parent=self._modal)
-            if not ok:
-                return
-
-        try:
-            res = preparar_lote(self._prep["id"], lotes)
-        except Exception as e:
-            messagebox.showerror("Error", str(e), parent=self._modal)
-            return
-
-        messagebox.showinfo(
-            "Producción registrada",
-            f"Preparaste {_fmt(lotes)} lote(s) de '{res['preparacion']}'.\n\n"
-            f"Stock nuevo: {_fmt(res['stock_final'])} {res['unidad']}\n"
-            f"Se descontaron {len(res['componentes'])} insumo(s).",
+            "Su costo se calcula solo a partir de los insumos.",
             parent=self._modal)
         self._cerrar_modal()
         self._cargar()

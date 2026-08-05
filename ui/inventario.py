@@ -45,11 +45,10 @@ class FrameInventario(FrameBase):
             "activo":       "Estado",
         }
         self._cols_insumos = {
-            "iid":       "#",
-            "nombre":    "Nombre",
-            "stock":     "Stock",
-            "unidad":    "Unidad",
-            "stock_min": "Stock Mín",
+            "iid":    "#",
+            "nombre": "Nombre",
+            "unidad": "Unidad",
+            "costo":  "Costo/unidad",
         }
 
         cont = tk.Frame(self, bg=COLORS["bg"])
@@ -233,7 +232,7 @@ class FrameInventario(FrameBase):
 
     def _configurar_columnas_insumos(self):
         self.tree["columns"] = list(self._cols_insumos.keys())
-        anchos = {"iid": 35, "nombre": 220, "stock": 80, "unidad": 100, "stock_min": 80}
+        anchos = {"iid": 35, "nombre": 260, "unidad": 120, "costo": 130}
         for col_id, ancho in anchos.items():
             anchor = "w" if col_id == "nombre" else "center"
             self.tree.column(col_id, width=ancho, anchor=anchor)
@@ -299,17 +298,17 @@ class FrameInventario(FrameBase):
 
     def _cargar_insumos(self, filtro=""):
         from modules.inventario import listar_insumos
+        from modules.caja import formatear_pesos
         self.tree.delete(*self.tree.get_children())
         for i in listar_insumos(solo_activos=False):
             if filtro and filtro not in f"{i['nombre']} {i['unidad']}".lower():
                 continue
-            stock  = int(i["stock"])  if i["stock"]  == int(i["stock"])  else round(i["stock"], 2)
-            minimo = int(i["stock_minimo"]) if i["stock_minimo"] == int(i["stock_minimo"]) else round(i["stock_minimo"], 2)
+            costo = i.get("costo_unitario", 0) or 0
+            costo_txt = f"{formatear_pesos(costo)} /{i['unidad']}" if costo else "—"
             self.tree.insert("", "end", iid=f"i{i['id']}", values=(
                 i["id"], i["nombre"],
-                f"{stock} {i['unidad']}",
                 i["unidad"],
-                f"{minimo} {i['unidad']}",
+                costo_txt,
             ))
 
     def _cargar_combos(self, filtro=""):
@@ -503,7 +502,7 @@ class FrameInventario(FrameBase):
 
         self._lbl_ayuda_unidad = tk.Label(
             body,
-            text="Stock en la unidad base.\nEj: 3 kg de carne → 3000 en gramos",
+            text="Unidad base del insumo (en la que se mide la receta).",
             font=("Segoe UI", 8), bg=COLORS["surface"],
             fg=COLORS["text_dim"], justify="left",
         )
@@ -514,21 +513,20 @@ class FrameInventario(FrameBase):
         self._i_nombre = self._input(body)
         self._i_nombre.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
 
-        self._lbl_stock_i = tk.Label(body, text="Stock actual (g)",
+        self._lbl_costo_i = tk.Label(body, text="Costo por unidad ($/g)",
                                      font=FONT_SMALL, bg=COLORS["surface"],
                                      fg=COLORS["text_muted"])
-        self._lbl_stock_i.pack(anchor="w", padx=16)
-        self._i_stock = self._input(body)
-        self._i_stock.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
-        aplicar_validacion(self._i_stock, "decimal")
+        self._lbl_costo_i.pack(anchor="w", padx=16)
+        self._i_costo = self._input(body)
+        self._i_costo.pack(fill="x", padx=16, pady=(2, 4), ipady=5)
+        aplicar_validacion(self._i_costo, "decimal")
 
-        self._lbl_minimo_i = tk.Label(body, text="Stock mínimo (g)",
-                                      font=FONT_SMALL, bg=COLORS["surface"],
-                                      fg=COLORS["text_muted"])
-        self._lbl_minimo_i.pack(anchor="w", padx=16)
-        self._i_minimo = self._input(body)
-        self._i_minimo.pack(fill="x", padx=16, pady=(2, 12), ipady=5)
-        aplicar_validacion(self._i_minimo, "decimal")
+        tk.Label(body,
+                 text="Este costo define el costo de los platos. Normalmente se "
+                      "actualiza solo al recibir compras del proveedor; aquí puedes "
+                      "ajustarlo a mano si hace falta.",
+                 font=("Segoe UI", 8), bg=COLORS["surface"], fg=COLORS["text_dim"],
+                 justify="left", wraplength=390).pack(anchor="w", padx=16, pady=(0, 12))
 
         if auth.es_admin():
             self._btn_primary(m.footer, "Guardar",
@@ -549,15 +547,7 @@ class FrameInventario(FrameBase):
     def _actualizar_labels_stock(self):
         display = self._i_unidad_var.get()
         codigo  = self._unidades_map.get(display, "g")
-        self._lbl_stock_i.config(text=f"Stock actual ({codigo})")
-        self._lbl_minimo_i.config(text=f"Stock mínimo ({codigo})")
-        usa_decimal = codigo in ("g", "kg", "ml", "l")
-        if usa_decimal:
-            self._lbl_ayuda_unidad.config(
-                text=f"Ingresa el valor en {codigo}."
-                     + ("\nEj: 3 kg de carne = 3000 g" if codigo == "g" else ""))
-        else:
-            self._lbl_ayuda_unidad.config(text=f"Ingresa la cantidad en {codigo}.")
+        self._lbl_costo_i.config(text=f"Costo por unidad ($/{codigo})")
 
     def _cargar_insumo_en_form(self, insumo_id: int):
         from modules.inventario import obtener_insumo
@@ -569,18 +559,17 @@ class FrameInventario(FrameBase):
         self._actualizar_labels_stock()
         self._i_nombre.delete(0, "end")
         self._i_nombre.insert(0, i["nombre"])
-        for entry, valor in [(self._i_stock, i["stock"]), (self._i_minimo, i["stock_minimo"])]:
-            entry.delete(0, "end")
-            v = int(valor) if valor == int(valor) else valor
-            entry.insert(0, str(v))
+        costo = i.get("costo_unitario", 0) or 0
+        self._i_costo.delete(0, "end")
+        v = int(costo) if costo == int(costo) else costo
+        self._i_costo.insert(0, str(v))
 
     def _guardar_insumo(self):
         from modules.inventario import crear_insumo, editar_insumo
         from modules.validaciones import leer_decimal, leer_texto
 
         nombre  = leer_texto(self._i_nombre)
-        stock   = leer_decimal(self._i_stock)
-        minimo  = leer_decimal(self._i_minimo)
+        costo   = leer_decimal(self._i_costo)
         display = self._i_unidad_var.get()
         unidad  = self._unidades_map.get(display, "g")
 
@@ -589,13 +578,12 @@ class FrameInventario(FrameBase):
             return
         try:
             if self._modo == "nuevo":
-                iid = crear_insumo(nombre, stock, unidad, minimo)
-                messagebox.showinfo("Creado", f"Insumo creado (ID {iid}).\nStock: {stock} {unidad}")
+                iid = crear_insumo(nombre, unidad=unidad, costo_unitario=costo)
+                messagebox.showinfo("Creado", f"Insumo creado (ID {iid}).")
             else:
                 editar_insumo(
                     self._insumo_sel,
-                    nombre=nombre, stock=stock,
-                    unidad=unidad, stock_minimo=minimo,
+                    nombre=nombre, unidad=unidad, costo_unitario=costo,
                 )
                 messagebox.showinfo("Guardado", "Insumo actualizado.")
             self._cargar_insumos()

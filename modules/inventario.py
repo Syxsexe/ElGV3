@@ -308,15 +308,20 @@ def crear_insumo(
     nombre: str,
     stock: float = 0,
     unidad: str = "unidad",
-    stock_minimo: float = 0
+    stock_minimo: float = 0,
+    costo_unitario: float = 0
 ) -> int:
-    """Crea un insumo de cocina. Retorna el ID generado."""
+    """
+    Crea un insumo de cocina. Retorna el ID generado.
+    `costo_unitario` es el costo por unidad (g/ml/unidad); alimenta el costo
+    de los platos. Normalmente se actualiza al recibir compras del proveedor.
+    """
     conn = get_connection()
     try:
         cur = conn.execute("""
-            INSERT INTO insumos (nombre, stock, unidad, stock_minimo)
-            VALUES (?, ?, ?, ?)
-        """, (nombre.strip(), stock, unidad, stock_minimo))
+            INSERT INTO insumos (nombre, stock, unidad, stock_minimo, costo_unitario)
+            VALUES (?, ?, ?, ?, ?)
+        """, (nombre.strip(), stock, unidad, stock_minimo, costo_unitario))
         conn.commit()
         return cur.lastrowid
     finally:
@@ -325,8 +330,12 @@ def crear_insumo(
 
 @requiere_admin
 def editar_insumo(insumo_id: int, **campos) -> bool:
-    """Edita campos de un insumo. Campos: nombre, stock, unidad, stock_minimo, activo."""
-    permitidos = {"nombre", "stock", "unidad", "stock_minimo", "activo"}
+    """
+    Edita campos de un insumo. Campos: nombre, stock, unidad, stock_minimo,
+    activo, costo_unitario. Si cambia el costo, recalcula el costo de los platos
+    de cocina (el costo del insumo se propaga a las recetas).
+    """
+    permitidos = {"nombre", "stock", "unidad", "stock_minimo", "activo", "costo_unitario"}
     campos_validos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos_validos:
         return False
@@ -337,6 +346,8 @@ def editar_insumo(insumo_id: int, **campos) -> bool:
     conn = get_connection()
     try:
         conn.execute(f"UPDATE insumos SET {set_clause} WHERE id = ?", valores)
+        if "costo_unitario" in campos_validos:
+            recalcular_costos_cocina(conn=conn)
         conn.commit()
         return True
     finally:
@@ -413,6 +424,8 @@ def guardar_receta(producto_id: int, insumos: list[dict]) -> bool:
             INSERT INTO receta_insumos (producto_id, insumo_id, cantidad)
             VALUES (?, ?, ?)
         """, [(producto_id, i["insumo_id"], i["cantidad"]) for i in insumos])
+        # El costo del plato depende de su receta → recalcular en vivo.
+        recalcular_costo_plato(producto_id, conn=conn)
         conn.commit()
         return True
     except Exception:
@@ -424,30 +437,130 @@ def guardar_receta(producto_id: int, insumos: list[dict]) -> bool:
 
 def descontar_insumos_por_venta(producto_id: int, cantidad_vendida: float, conn=None) -> bool:
     """
-    Descuenta del stock de insumos según la receta del producto y
-    la cantidad vendida. Se llama desde el módulo de ventas.
-    Acepta conexión externa para ejecutarse dentro de una transacción.
-    """
-    receta = obtener_receta(producto_id)
-    if not receta:
-        return True  # producto sin receta (tienda), no hay nada que descontar
+    NO-OP desde el cambio a modelo de COSTO (no de stock).
 
+    Los insumos de cocina se manejan como ilimitados: su stock no se descuenta al
+    vender. Lo que importa es el COSTO (ver `costo_plato`). Esta función se conserva
+    con su firma para no romper llamadas existentes (cuentas, ventas), pero ya no
+    modifica ningún stock. Los productos de tienda siguen descontando por
+    `actualizar_stock`, que sí es inventario real.
+    """
+    return True
+
+
+# ════════════════════════════════════════════════════════════
+# COSTOS — el valor de los insumos determina el costo del plato
+# ════════════════════════════════════════════════════════════
+
+def costo_insumo(insumo_id: int, conn=None, _visitados=None) -> float:
+    """
+    Costo por UNIDAD de un insumo.
+
+    • Insumo crudo  → su `costo_unitario` (fijado al comprarle al proveedor).
+    • Preparación   → costo del lote ÷ rendimiento, donde el costo del lote es la
+                      suma de (cantidad × costo_insumo) de sus componentes.
+                      Es recursivo: una preparación puede usar otra.
+
+    Protegido contra ciclos con `_visitados`.
+    """
+    cerrar = conn is None
+    if cerrar:
+        conn = get_connection()
+    if _visitados is None:
+        _visitados = set()
+    try:
+        if insumo_id in _visitados:
+            return 0.0  # ciclo: corta para no recursar infinito
+        _visitados = _visitados | {insumo_id}
+
+        prep = conn.execute(
+            "SELECT rendimiento FROM preparaciones WHERE insumo_id = ?",
+            (insumo_id,)
+        ).fetchone()
+
+        if prep:
+            rendimiento = prep["rendimiento"] or 0
+            if rendimiento <= 0:
+                return 0.0
+            componentes = conn.execute(
+                "SELECT insumo_id, cantidad FROM receta_preparacion WHERE preparacion_id = ?",
+                (insumo_id,)
+            ).fetchall()
+            costo_lote = sum(
+                c["cantidad"] * costo_insumo(c["insumo_id"], conn=conn, _visitados=_visitados)
+                for c in componentes
+            )
+            return costo_lote / rendimiento
+
+        fila = conn.execute(
+            "SELECT costo_unitario FROM insumos WHERE id = ?", (insumo_id,)
+        ).fetchone()
+        return float(fila["costo_unitario"]) if fila else 0.0
+    finally:
+        if cerrar:
+            conn.close()
+
+
+def costo_plato(producto_id: int, conn=None) -> float:
+    """
+    Costo total de un plato = suma de (cantidad de receta × costo del insumo),
+    calculado EN VIVO desde los costos actuales de los insumos/preparaciones.
+    """
     cerrar = conn is None
     if cerrar:
         conn = get_connection()
     try:
-        for item in receta:
-            conn.execute(
-                "UPDATE insumos SET stock = stock - ? WHERE id = ?",
-                (item["cantidad"] * cantidad_vendida, item["insumo_id"])
-            )
+        receta = conn.execute(
+            "SELECT insumo_id, cantidad FROM receta_insumos WHERE producto_id = ?",
+            (producto_id,)
+        ).fetchall()
+        return round(sum(
+            r["cantidad"] * costo_insumo(r["insumo_id"], conn=conn)
+            for r in receta
+        ), 2)
+    finally:
+        if cerrar:
+            conn.close()
+
+
+def recalcular_costo_plato(producto_id: int, conn=None) -> float:
+    """Recalcula el costo en vivo de un plato y lo cachea en productos.precio_costo."""
+    cerrar = conn is None
+    if cerrar:
+        conn = get_connection()
+    try:
+        costo = costo_plato(producto_id, conn=conn)
+        conn.execute(
+            "UPDATE productos SET precio_costo = ? WHERE id = ?",
+            (costo, producto_id)
+        )
         if cerrar:
             conn.commit()
-        return True
-    except Exception:
+        return costo
+    finally:
         if cerrar:
-            conn.rollback()
-        return False
+            conn.close()
+
+
+def recalcular_costos_cocina(conn=None) -> int:
+    """
+    Recalcula el precio_costo de TODOS los productos de cocina (los que tienen
+    receta de insumos). Se llama tras cambiar el costo de un insumo o una
+    preparación, ya que puede afectar a varios platos a la vez.
+    Retorna cuántos platos se actualizaron.
+    """
+    cerrar = conn is None
+    if cerrar:
+        conn = get_connection()
+    try:
+        ids = [r["producto_id"] for r in conn.execute(
+            "SELECT DISTINCT producto_id FROM receta_insumos"
+        ).fetchall()]
+        for pid in ids:
+            recalcular_costo_plato(pid, conn=conn)
+        if cerrar:
+            conn.commit()
+        return len(ids)
     finally:
         if cerrar:
             conn.close()

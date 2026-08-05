@@ -406,6 +406,12 @@ def crear_tablas():
     if "cliente_id" not in columnas_ventas:
         conn.execute("ALTER TABLE ventas ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)")
 
+    # Costo por unidad del insumo (modelo de costo, no de stock). El valor de los
+    # insumos determina el costo de los platos; se actualiza al recibir compras.
+    columnas_insumos = [row[1] for row in conn.execute("PRAGMA table_info(insumos)").fetchall()]
+    if "costo_unitario" not in columnas_insumos:
+        conn.execute("ALTER TABLE insumos ADD COLUMN costo_unitario REAL NOT NULL DEFAULT 0")
+
     # Columnas fiscales para clientes (backward compatibility)
     columnas_clientes = [row[1] for row in conn.execute("PRAGMA table_info(clientes)").fetchall()]
     fiscal_cols = {

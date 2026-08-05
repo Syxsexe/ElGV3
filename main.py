@@ -281,11 +281,11 @@ class MainWindow(tk.Tk):
             ("Torneos",          self._mostrar_torneos),
             ("Documentos",       self._mostrar_documentos),
             ("Doc. Fiscales",    self._mostrar_fiscal),
+            ("Reportes",         self._mostrar_reportes),
+            ("Libros",           self._mostrar_libros),
         ]
         if sesion["rol"] == "admin":
             nav_items += [
-                ("Reportes",   self._mostrar_reportes),
-                ("Libros",     self._mostrar_libros),
                 ("Usuarios",   self._mostrar_usuarios),
                 ("Auditoría",  self._mostrar_auditoria),
             ]

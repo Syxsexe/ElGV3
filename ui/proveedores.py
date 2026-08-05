@@ -8,7 +8,6 @@ de baja resolución (1366x768): la tabla ocupa todo el ancho y se crea/edita con
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-import auth
 from ui.base import FrameBase, COLORS, FONT_LABEL, FONT_BOLD, FONT_SMALL, FONT_KPI
 from ui.modal import ModalForm
 
@@ -37,9 +36,8 @@ class FrameProveedores(FrameBase):
                 command=self._cambiar_tab, padx=14, pady=6,
             ).pack(side="left", padx=(0, 4))
 
-        if auth.es_admin():
-            self._btn_primary(tab_frame, "+ Nuevo", self._nuevo).pack(
-                side="right", padx=(0, 8), ipady=4, ipadx=12)
+        self._btn_primary(tab_frame, "+ Nuevo", self._nuevo).pack(
+            side="right", padx=(0, 8), ipady=4, ipadx=12)
         self._btn_secondary(tab_frame, "✎ Editar / Ver", self._editar).pack(
             side="right", padx=(0, 8), ipady=4, ipadx=12)
 
@@ -170,14 +168,13 @@ class FrameProveedores(FrameBase):
             e.pack(fill="x", padx=16, pady=(2, 0), ipady=5)
             setattr(self, attr, e)
 
-        if auth.es_admin():
-            self._btn_primary(m.footer, "Guardar",
-                              self._guardar_proveedor).pack(
-                                  side="right", ipady=6, ipadx=16)
-            if editar:
-                self._btn_danger(m.footer, "Activar / Desactivar",
-                                 self._desactivar_proveedor).pack(
-                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        self._btn_primary(m.footer, "Guardar",
+                          self._guardar_proveedor).pack(
+                              side="right", ipady=6, ipadx=16)
+        if editar:
+            self._btn_danger(m.footer, "Activar / Desactivar",
+                             self._desactivar_proveedor).pack(
+                                 side="right", padx=(0, 8), ipady=6, ipadx=10)
         self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
             side="left", ipady=6, ipadx=14)
 
@@ -340,13 +337,19 @@ class FrameProveedores(FrameBase):
         self._entry_cant_item.grid(row=0, column=1, padx=(6, 0), ipady=4)
         aplicar_validacion(self._entry_cant_item, "decimal")
 
-        tk.Label(grid, text="Precio unit ($):", font=FONT_SMALL,
-                 bg=COLORS["surface"], fg=COLORS["text_muted"]).grid(
-                     row=1, column=0, sticky="w", pady=2)
+        self._lbl_precio_item = tk.Label(grid, text="Precio unit ($):", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"])
+        self._lbl_precio_item.grid(row=1, column=0, sticky="w", pady=2)
         self._entry_precio_item = self._input(grid, width=8)
         self._entry_precio_item.insert(0, "0")
         self._entry_precio_item.grid(row=1, column=1, padx=(6, 0), ipady=4)
         aplicar_validacion(self._entry_precio_item, "monto")
+
+        # Pista: para insumos se ingresa el total pagado por la presentación.
+        self._lbl_hint_precio = tk.Label(
+            body, text="", font=("Segoe UI", 8), bg=COLORS["surface"],
+            fg=COLORS["text_dim"], anchor="w", wraplength=380, justify="left")
+        self._lbl_hint_precio.pack(anchor="w", padx=16, pady=(0, 4))
 
         self._btn_primary(body, "+ Agregar al pedido",
                           self._agregar_item_pedido).pack(fill="x", padx=16, ipady=6)
@@ -378,10 +381,9 @@ class FrameProveedores(FrameBase):
                                    highlightbackground=COLORS["border"])
         self._txt_notas.pack(fill="x", padx=16, pady=(2, 12))
 
-        if auth.es_admin():
-            self._btn_primary(m.footer, "Crear pedido",
-                              self._crear_pedido).pack(
-                                  side="right", ipady=6, ipadx=16)
+        self._btn_primary(m.footer, "Crear pedido",
+                          self._crear_pedido).pack(
+                              side="right", ipady=6, ipadx=16)
         self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
             side="left", ipady=6, ipadx=14)
 
@@ -395,6 +397,18 @@ class FrameProveedores(FrameBase):
         texto = self._entry_buscar_item.get().strip().lower()
         self._lst_items_pedido.delete(0, "end")
         self._items_pedido_data = []
+
+        # Etiqueta del precio según el tipo (por presentación para insumos).
+        if hasattr(self, "_lbl_precio_item"):
+            if self._tipo_item.get() == "insumo":
+                self._lbl_precio_item.config(text="Total pagado ($):")
+                self._lbl_hint_precio.config(
+                    text="Insumo de cocina: ingresa cuánto compraste (cantidad) y el "
+                         "total pagado. El costo por unidad se calcula solo y define "
+                         "el costo de los platos.")
+            else:
+                self._lbl_precio_item.config(text="Precio unit ($):")
+                self._lbl_hint_precio.config(text="")
 
         if self._tipo_item.get() == "producto":
             items = listar_productos(tipo="tienda")
@@ -427,19 +441,27 @@ class FrameProveedores(FrameBase):
             messagebox.showwarning("Cantidad invalida", "La cantidad debe ser mayor a 0.")
             return
 
+        # Para insumos el precio ingresado es el TOTAL pagado por la presentación:
+        # el costo por unidad = total ÷ cantidad. Para productos es precio unitario.
+        es_insumo = "insumo_id" in item_data
+        if es_insumo:
+            precio_unit = round(precio / cantidad, 4) if cantidad else 0
+        else:
+            precio_unit = precio
+
         # Si ya existe, actualiza
         clave = "producto_id" if "producto_id" in item_data else "insumo_id"
         for linea in self._pedido_items:
             if linea.get(clave) == item_data.get(clave):
                 linea["cantidad"]   = cantidad
-                linea["precio_unit"] = precio
+                linea["precio_unit"] = precio_unit
                 self._refrescar_tabla_pedido()
                 return
 
         self._pedido_items.append({
             **item_data,
             "cantidad":    cantidad,
-            "precio_unit": precio,
+            "precio_unit": precio_unit,
         })
         self._entry_cant_item.delete(0, "end")
         self._entry_cant_item.insert(0, "1")
@@ -474,9 +496,10 @@ class FrameProveedores(FrameBase):
                          text=f"x{linea['cantidad']}{' '+unidad if unidad else ''}",
                          font=FONT_SMALL, bg=COLORS["surface2"],
                          fg=COLORS["accent"]).pack(side="left", padx=4)
-                if linea["precio_unit"] > 0:
+                subtotal_linea = linea["cantidad"] * linea["precio_unit"]
+                if subtotal_linea > 0:
                     tk.Label(fila,
-                             text=formatear_pesos(linea["precio_unit"]),
+                             text=formatear_pesos(subtotal_linea),
                              font=FONT_SMALL, bg=COLORS["surface2"],
                              fg=COLORS["text_muted"]).pack(side="left", padx=4)
                 tk.Button(
@@ -584,7 +607,7 @@ class FrameProveedores(FrameBase):
                  fg=COLORS["accent"]).pack(anchor="e", padx=16, pady=(8, 12))
 
         # Acciones (footer) solo si es pendiente
-        if pedido["estado"] == "pendiente" and auth.es_admin():
+        if pedido["estado"] == "pendiente":
             self._btn_primary(
                 m.footer, "✓ Recibir",
                 lambda pid=pedido_id: (self._cerrar_modal(), self._recibir_pedido(pid))

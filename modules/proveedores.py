@@ -6,7 +6,7 @@ de productos (tienda) o insumos (cocina).
 """
 
 from database import get_connection
-from auth import requiere_admin, get_usuario_id
+from auth import get_usuario_id
 
 
 def migrar_egresos():
@@ -67,7 +67,6 @@ def obtener_proveedor(proveedor_id: int) -> dict | None:
     return dict(fila) if fila else None
 
 
-@requiere_admin
 def crear_proveedor(nombre: str, contacto: str = None,
                     telefono: str = None, email: str = None) -> int:
     """Crea un proveedor. Retorna el ID generado."""
@@ -83,7 +82,6 @@ def crear_proveedor(nombre: str, contacto: str = None,
         conn.close()
 
 
-@requiere_admin
 def editar_proveedor(proveedor_id: int, **campos) -> bool:
     permitidos = {"nombre", "contacto", "telefono", "email", "activo"}
     campos_validos = {k: v for k, v in campos.items() if k in permitidos}
@@ -167,7 +165,6 @@ def obtener_pedido(pedido_id: int) -> dict | None:
     }
 
 
-@requiere_admin
 def crear_pedido(proveedor_id: int, items: list[dict],
                  notas: str = None) -> int:
     """
@@ -214,7 +211,6 @@ def crear_pedido(proveedor_id: int, items: list[dict],
         conn.close()
 
 
-@requiere_admin
 def recibir_pedido(pedido_id: int, pagos: list[dict] = None,
                    sesion_id: int = None) -> dict:
     """
@@ -232,16 +228,17 @@ def recibir_pedido(pedido_id: int, pagos: list[dict] = None,
     if pedido["estado"] != "pendiente":
         raise ValueError(f"El pedido ya está en estado '{pedido['estado']}'.")
 
-    from modules.inventario import actualizar_stock, actualizar_stock_insumo
+    from modules.inventario import actualizar_stock, recalcular_costos_cocina
 
     conn = get_connection()
     try:
         actualizados = []
+        costo_insumo_cambio = False
         for item in pedido["detalle"]:
             precio_unit = item.get("precio_unit", 0) or 0
 
             if item["producto_id"]:
-                # Sumar stock
+                # Producto de tienda: inventario real → sumar stock
                 actualizar_stock(item["producto_id"], item["cantidad"], conn=conn)
                 # Actualizar precio de costo si se ingresó uno
                 if precio_unit > 0:
@@ -256,15 +253,25 @@ def recibir_pedido(pedido_id: int, pagos: list[dict] = None,
                     "nuevo_costo": precio_unit if precio_unit > 0 else None,
                 })
             elif item["insumo_id"]:
-                # Sumar stock
-                actualizar_stock_insumo(item["insumo_id"], item["cantidad"], conn=conn)
-                # Los insumos no tienen precio_costo en DB por ahora — skip
+                # Insumo de cocina: modelo de COSTO (no de stock). Recibir la compra
+                # actualiza el costo por unidad = precio_unit (ya viene por-unidad
+                # desde la presentación: total pagado ÷ cantidad comprada).
+                if precio_unit > 0:
+                    conn.execute(
+                        "UPDATE insumos SET costo_unitario = ? WHERE id = ?",
+                        (precio_unit, item["insumo_id"])
+                    )
+                    costo_insumo_cambio = True
                 actualizados.append({
                     "nombre":   item["item_nombre"],
                     "tipo":     "insumo",
                     "cantidad": item["cantidad"],
-                    "nuevo_costo": None,
+                    "nuevo_costo": precio_unit if precio_unit > 0 else None,
                 })
+
+        # Si cambió el costo de algún insumo, propagar a los platos que lo usan.
+        if costo_insumo_cambio:
+            recalcular_costos_cocina(conn=conn)
 
         conn.execute("""
             UPDATE pedidos
@@ -320,7 +327,6 @@ def recibir_pedido(pedido_id: int, pagos: list[dict] = None,
         conn.close()
 
 
-@requiere_admin
 def cancelar_pedido(pedido_id: int) -> bool:
     """Cancela un pedido pendiente sin modificar el stock."""
     conn = get_connection()

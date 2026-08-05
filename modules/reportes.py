@@ -4,14 +4,12 @@ KPIs, reportes de ventas, inventario y caja. Solo accesible para admin.
 """
 
 from database import get_connection
-from auth import requiere_admin
 
 
 # ════════════════════════════════════════════════════════════
 # VENTAS
 # ════════════════════════════════════════════════════════════
 
-@requiere_admin
 def reporte_ventas_por_periodo(
     fecha_inicio: str,
     fecha_fin: str,
@@ -93,7 +91,6 @@ def reporte_ventas_por_periodo(
     }
 
 
-@requiere_admin
 def productos_mas_vendidos(
     fecha_inicio: str = None,
     fecha_fin: str    = None,
@@ -142,7 +139,6 @@ def productos_mas_vendidos(
     return [dict(f) for f in filas]
 
 
-@requiere_admin
 def combos_mas_vendidos(
     fecha_inicio: str = None,
     fecha_fin: str    = None,
@@ -180,7 +176,6 @@ def combos_mas_vendidos(
     return [dict(f) for f in filas]
 
 
-@requiere_admin
 def ventas_por_hora(fecha: str = None) -> list:
     """
     Distribución de ventas por hora del día.
@@ -210,7 +205,6 @@ def ventas_por_hora(fecha: str = None) -> list:
 # INVENTARIO
 # ════════════════════════════════════════════════════════════
 
-@requiere_admin
 def reporte_inventario(tipo: str = None) -> dict:
     """
     Estado actual del inventario.
@@ -271,7 +265,6 @@ def reporte_inventario(tipo: str = None) -> dict:
     }
 
 
-@requiere_admin
 def reporte_insumos() -> dict:
     """Estado actual de insumos de cocina con alertas de stock bajo."""
     conn = get_connection()
@@ -307,7 +300,6 @@ def reporte_insumos() -> dict:
 # CAJA
 # ════════════════════════════════════════════════════════════
 
-@requiere_admin
 def reporte_caja_por_periodo(
     fecha_inicio: str,
     fecha_fin: str
@@ -355,7 +347,6 @@ def reporte_caja_por_periodo(
 # KPIs GENERALES
 # ════════════════════════════════════════════════════════════
 
-@requiere_admin
 def kpis_generales(fecha_inicio: str, fecha_fin: str) -> dict:
     """
     Panel de indicadores clave para el período indicado.
@@ -458,7 +449,6 @@ def kpis_generales(fecha_inicio: str, fecha_fin: str) -> dict:
 # EXPORTAR A EXCEL
 # ════════════════════════════════════════════════════════════
 
-@requiere_admin
 def exportar_ventas_excel(
     fecha_inicio: str,
     fecha_fin: str,
@@ -696,7 +686,6 @@ def exportar_ventas_excel(
 
 
 # Alias para compatibilidad con código anterior
-@requiere_admin
 def exportar_ventas_csv(fecha_inicio: str, fecha_fin: str,
                          ruta: str = "ventas_export.csv") -> str:
     """Alias — redirige a exportar_ventas_excel cambiando la extensión."""

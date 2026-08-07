@@ -631,6 +631,52 @@ if __name__ == "__main__":
             print(f"ERROR migrando usuarios: {e}", file=sys.stderr)
             sys.exit(1)
 
+    # Migrar clientes de una BD vieja: ElGV3.exe --migrar-clientes "vieja.db" [--sin-saldos]
+    if "--migrar-clientes" in sys.argv:
+        from modules.migracion_clientes import migrar_clientes_desde
+        i = sys.argv.index("--migrar-clientes")
+        if len(sys.argv) <= i + 1:
+            print('ERROR: falta la ruta. Uso: ElGV3.exe --migrar-clientes "vieja.db" '
+                  '[--sin-saldos]', file=sys.stderr)
+            sys.exit(1)
+        ruta_vieja    = sys.argv[i + 1]
+        migrar_saldos = "--sin-saldos" not in sys.argv
+
+        def _reportar(titulo, cuerpo, es_error=False):
+            """Imprime en consola y, en el build sin consola, muestra una ventana."""
+            print(cuerpo, file=sys.stderr if es_error else sys.stdout)
+            from paths import esta_empaquetado
+            if esta_empaquetado():
+                try:
+                    import tkinter as tk
+                    from tkinter import messagebox
+                    raiz = tk.Tk(); raiz.withdraw()
+                    (messagebox.showerror if es_error else messagebox.showinfo)(titulo, cuerpo)
+                    raiz.destroy()
+                except Exception:
+                    pass
+
+        inicializar()   # asegura que la BD nueva y sus tablas existan
+        try:
+            res = migrar_clientes_desde(ruta_vieja, migrar_saldos=migrar_saldos)
+            lineas = [f"Clientes agregados: {len(res['agregados'])}"]
+            if res["fusionados"]:
+                lineas.append(f"Homónimos fusionados (misma persona): {len(res['fusionados'])}")
+            if res["con_saldo"]:
+                lineas.append(f"Con fiado migrado: {len(res['con_saldo'])} "
+                              f"cliente(s), total ${res['total_saldo']:,.0f}")
+            if res["omitidos"]:
+                lineas.append(f"Omitidos: {len(res['omitidos'])} "
+                              f"(mesas / duplicados ya existentes)")
+            if res["errores"]:
+                lineas.append("Errores:")
+                lineas += [f"   - {e}" for e in res["errores"]]
+            _reportar("Migración de clientes", "\n".join(lineas))
+            sys.exit(0)
+        except Exception as e:
+            _reportar("Error migrando clientes", f"ERROR: {e}", es_error=True)
+            sys.exit(1)
+
     if "--seed-cocina" in sys.argv:
         from modules.seed_cocina import poblar_cocina
         inicializar()   # asegura que la BD y las categorías base existan

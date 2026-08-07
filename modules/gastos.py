@@ -63,19 +63,9 @@ def registrar_gasto(
 
         egreso_id = cur.lastrowid
 
-        # Descontar de totales de caja si hay sesión abierta
-        if sesion_id:
-            from modules.caja import METODOS_DIGITALES
-            if metodo_pago in METODOS_DIGITALES:
-                conn.execute(
-                    "UPDATE sesiones_caja SET total_digital = total_digital - ? WHERE id = ?",
-                    (total, sesion_id)
-                )
-            else:
-                conn.execute(
-                    "UPDATE sesiones_caja SET total_efectivo = total_efectivo - ? WHERE id = ?",
-                    (total, sesion_id)
-                )
+        # Los totales del turno quedan BRUTOS (solo ventas). El gasto se
+        # descuenta al cierre leyendo la tabla `egresos` (fuente única),
+        # evitando el doble descuento que había antes.
 
         conn.commit()
     finally:

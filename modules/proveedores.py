@@ -179,6 +179,11 @@ def crear_pedido(proveedor_id: int, items: list[dict],
     if not items:
         raise ValueError("El pedido debe tener al menos un ítem.")
 
+    # El precio es obligatorio: de ahí sale el costo que se actualiza al recibir.
+    if any((i.get("precio_unit") or 0) <= 0 for i in items):
+        raise ValueError("Cada ítem del pedido debe tener un precio mayor que 0: "
+                         "el costo del producto/insumo se toma de ahí al recibir.")
+
     total = sum(i.get("cantidad", 0) * i.get("precio_unit", 0) for i in items)
 
     conn = get_connection()
@@ -227,6 +232,15 @@ def recibir_pedido(pedido_id: int, pagos: list[dict] = None,
         raise ValueError("Pedido no encontrado.")
     if pedido["estado"] != "pendiente":
         raise ValueError(f"El pedido ya está en estado '{pedido['estado']}'.")
+
+    # No recibir si alguna línea no tiene precio: el costo no se podría actualizar.
+    sin_precio = [d["item_nombre"] for d in pedido["detalle"]
+                  if (d.get("precio_unit") or 0) <= 0]
+    if sin_precio:
+        raise ValueError(
+            "No se puede recibir: estos ítems no tienen precio (costo $0):\n  · "
+            + "\n  · ".join(sin_precio)
+            + "\n\nCancela el pedido y créalo de nuevo con precios.")
 
     from modules.inventario import actualizar_stock, recalcular_costos_cocina
 
@@ -306,13 +320,9 @@ def recibir_pedido(pedido_id: int, pagos: list[dict] = None,
                     VALUES (?, ?, ?)
                 """, (egreso_id, pago["metodo"], pago["monto"]))
 
-            # Descontar de la sesión de caja activa
-            if sesion_id:
-                conn.execute("""
-                    UPDATE sesiones_caja
-                    SET total_ventas = total_ventas - ?
-                    WHERE id = ?
-                """, (total_pagado, sesion_id))
+            # El pago del pedido queda registrado como egreso (arriba). No se
+            # toca `total_ventas`: los totales del turno son ventas brutas y el
+            # egreso se descuenta al cierre desde la tabla `egresos`.
 
         conn.commit()
         return {

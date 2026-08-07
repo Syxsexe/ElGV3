@@ -600,6 +600,37 @@ if __name__ == "__main__":
             print(f"ERROR en importación: {e}", file=sys.stderr)
             sys.exit(1)
 
+    # Migrar usuarios de una BD vieja: ElGV3.exe --migrar-usuarios "vieja.db" [--sobrescribir]
+    if "--migrar-usuarios" in sys.argv:
+        from modules.migracion_usuarios import migrar_usuarios_desde
+        i = sys.argv.index("--migrar-usuarios")
+        if len(sys.argv) <= i + 1:
+            print('ERROR: falta la ruta. Uso: ElGV3.exe --migrar-usuarios "vieja.db" '
+                  '[--sobrescribir]', file=sys.stderr)
+            sys.exit(1)
+        ruta_vieja   = sys.argv[i + 1]
+        sobrescribir = "--sobrescribir" in sys.argv
+        inicializar()   # asegura que la BD nueva y sus tablas existan
+        try:
+            res = migrar_usuarios_desde(ruta_vieja, sobrescribir=sobrescribir)
+            print(f"Usuarios agregados: {len(res['agregados'])}"
+                  + (f" ({', '.join(res['agregados'])})" if res['agregados'] else ""))
+            if res["actualizados"]:
+                print(f"Actualizados: {len(res['actualizados'])} "
+                      f"({', '.join(res['actualizados'])})")
+            if res["omitidos"]:
+                print(f"Omitidos ({len(res['omitidos'])}):")
+                for u, motivo in res["omitidos"]:
+                    print(f"   - {u}: {motivo}")
+            if res["errores"]:
+                print("Errores:")
+                for e in res["errores"]:
+                    print(f"   - {e}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"ERROR migrando usuarios: {e}", file=sys.stderr)
+            sys.exit(1)
+
     if "--seed-cocina" in sys.argv:
         from modules.seed_cocina import poblar_cocina
         inicializar()   # asegura que la BD y las categorías base existan

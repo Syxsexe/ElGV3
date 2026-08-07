@@ -9,10 +9,6 @@ from modules.clientes import obtener_cliente
 from modules.inventario import (
     obtener_producto,
     actualizar_stock,
-    actualizar_stock_insumo,
-    descontar_insumos_por_venta,
-    obtener_receta,
-    obtener_insumo,
 )
 from datetime import datetime
 
@@ -75,23 +71,13 @@ class Carrito:
         if not producto["activo"]:
             raise ValueError(f"El producto '{producto['nombre']}' no está activo.")
 
-        # Tienda: valida stock directo. Cocina: valida insumos disponibles.
+        # Tienda: valida stock físico. Cocina: insumos ilimitados, no se valida.
         if producto["categoria_tipo"] == "tienda":
             if producto["stock"] < cantidad:
                 raise ValueError(
                     f"Stock insuficiente para '{producto['nombre']}'. "
                     f"Disponible: {producto['stock']}"
                 )
-        else:
-            receta = obtener_receta(producto_id)
-            for r in receta:
-                insumo = obtener_insumo(r["insumo_id"])
-                if insumo and insumo["stock"] < r["cantidad"] * cantidad:
-                    raise ValueError(
-                        f"Insumo insuficiente: '{insumo['nombre']}'. "
-                        f"Disponible: {insumo['stock']} {insumo['unidad']}, "
-                        f"requerido: {r['cantidad'] * cantidad}"
-                    )
 
         # ¿Ya está en el carrito?
         for item in self._items:
@@ -135,21 +121,13 @@ class Carrito:
 
         for cp in combo_prods:
             needed = cp["cantidad"] * cantidad
+            # Solo tienda valida stock; cocina usa insumos ilimitados.
             if cp["categoria_tipo"] == "tienda":
                 if cp["stock"] < needed:
                     raise ValueError(
                         f"Stock insuficiente para '{cp['nombre']}' en el combo. "
                         f"Disponible: {cp['stock']}"
                     )
-            else:
-                receta = obtener_receta(cp["producto_id"])
-                for r in receta:
-                    insumo = obtener_insumo(r["insumo_id"])
-                    if insumo and insumo["stock"] < r["cantidad"] * needed:
-                        raise ValueError(
-                            f"Insumo insuficiente: '{insumo['nombre']}'. "
-                            f"Disponible: {insumo['stock']} {insumo['unidad']}"
-                        )
 
         for item in self._items:
             if item["tipo"] == "combo" and item["id"] == combo_id:
@@ -301,7 +279,10 @@ def registrar_venta(
                 item["subtotal"],
             ))
 
-            # Re-validar y descontar stock dentro de la transacción
+            # Re-validar y descontar stock dentro de la transacción.
+            # Solo los productos de TIENDA manejan stock físico; los de cocina
+            # usan insumos ilimitados (el costo sale de la receta, no del stock),
+            # así que no se valida ni descuenta nada para ellos.
             if item["tipo"] == "producto":
                 producto = obtener_producto(item["id"])
                 if producto["categoria_tipo"] == "tienda":
@@ -314,20 +295,6 @@ def registrar_venta(
                             f"Disponible: {fila['stock']}"
                         )
                     actualizar_stock(item["id"], -item["cantidad"], conn=conn)
-                else:
-                    receta = obtener_receta(item["id"])
-                    for r in receta:
-                        fila = conn.execute(
-                            "SELECT stock, nombre FROM insumos WHERE id = ?",
-                            (r["insumo_id"],)
-                        ).fetchone()
-                        needed = r["cantidad"] * item["cantidad"]
-                        if fila["stock"] < needed:
-                            raise ValueError(
-                                f"Insumo insuficiente: '{fila['nombre']}'. "
-                                f"Disponible: {fila['stock']}, necesario: {needed}"
-                            )
-                    descontar_insumos_por_venta(item["id"], item["cantidad"], conn=conn)
 
             elif item["tipo"] == "combo":
                 combo_prods = _obtener_productos_combo(item["id"], conn)
@@ -346,24 +313,6 @@ def registrar_venta(
                         actualizar_stock(
                             cp["producto_id"],
                             -(cp["cantidad"] * item["cantidad"]),
-                            conn=conn
-                        )
-                    else:
-                        receta = obtener_receta(cp["producto_id"])
-                        for r in receta:
-                            fila = conn.execute(
-                                "SELECT stock, nombre FROM insumos WHERE id = ?",
-                                (r["insumo_id"],)
-                            ).fetchone()
-                            needed = r["cantidad"] * cp["cantidad"] * item["cantidad"]
-                            if fila["stock"] < needed:
-                                raise ValueError(
-                                    f"Insumo insuficiente: '{fila['nombre']}'. "
-                                    f"Disponible: {fila['stock']}"
-                                )
-                        descontar_insumos_por_venta(
-                            cp["producto_id"],
-                            cp["cantidad"] * item["cantidad"],
                             conn=conn
                         )
 
@@ -600,7 +549,9 @@ def resumen_del_dia() -> dict:
 @requiere_admin
 def anular_venta(venta_id: int) -> bool:
     """
-    Elimina una venta y revierte el stock de productos e insumos. Solo admin.
+    Elimina una venta y revierte el stock de productos de tienda. Solo admin.
+    Los productos de cocina usan insumos ilimitados, así que no hay stock que
+    revertir para ellos.
     """
     conn = get_connection()
     try:
@@ -613,30 +564,16 @@ def anular_venta(venta_id: int) -> bool:
 
             if item["producto_id"]:
                 producto = obtener_producto(item["producto_id"])
-                if producto:
-                    if producto["categoria_tipo"] == "tienda":
-                        actualizar_stock(item["producto_id"], cantidad, conn=conn)
-                    else:
-                        for r in obtener_receta(item["producto_id"]):
-                            actualizar_stock_insumo(
-                                r["insumo_id"], r["cantidad"] * cantidad, conn=conn
-                            )
+                if producto and producto["categoria_tipo"] == "tienda":
+                    actualizar_stock(item["producto_id"], cantidad, conn=conn)
 
             elif item["combo_id"]:
                 for cp in _obtener_productos_combo(item["combo_id"], conn):
                     producto = obtener_producto(cp["producto_id"])
-                    if producto:
-                        if producto["categoria_tipo"] == "tienda":
-                            actualizar_stock(
-                                cp["producto_id"], cp["cantidad"] * cantidad, conn=conn
-                            )
-                        else:
-                            for r in obtener_receta(cp["producto_id"]):
-                                actualizar_stock_insumo(
-                                    r["insumo_id"],
-                                    r["cantidad"] * cp["cantidad"] * cantidad,
-                                    conn=conn
-                                )
+                    if producto and producto["categoria_tipo"] == "tienda":
+                        actualizar_stock(
+                            cp["producto_id"], cp["cantidad"] * cantidad, conn=conn
+                        )
 
         conn.execute("DELETE FROM ventas WHERE id = ?", (venta_id,))
         conn.commit()

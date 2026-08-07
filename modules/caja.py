@@ -36,6 +36,33 @@ def migrar_dos_cajas():
 # SESIÓN DE CAJA
 # ════════════════════════════════════════════════════════════
 
+def egresos_sesion(sesion_id: int, conn=None) -> tuple:
+    """
+    Retorna (egresos_efectivo, egresos_digital) de una sesión.
+    Los egresos (gastos generales + pagos de pedidos) viven SOLO en la tabla
+    `egresos`; esta es la única fuente de verdad para descontarlos al cierre.
+    """
+    propia = conn is None
+    if propia:
+        conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN metodo_pago = 'efectivo'
+                                 THEN total ELSE 0 END), 0) AS ef,
+                COALESCE(SUM(CASE WHEN metodo_pago != 'efectivo'
+                                 THEN total ELSE 0 END), 0) AS dig
+            FROM egresos WHERE sesion_id = ?
+        """, (sesion_id,)).fetchone()
+        return (row["ef"] or 0, row["dig"] or 0)
+    except Exception:
+        # La tabla egresos aún no existe (ningún egreso registrado nunca).
+        return (0, 0)
+    finally:
+        if propia:
+            conn.close()
+
+
 def hay_sesion_abierta() -> bool:
     """True si existe una sesión de caja sin cerrar."""
     conn = get_connection()
@@ -134,9 +161,13 @@ def cerrar_caja(
     total_efectivo       = sesion.get("total_efectivo",     0) or 0
     total_digital        = sesion.get("total_digital",      0) or 0
     monto_base_digital   = sesion.get("monto_base_digital", 0) or 0
-    esperado_ef          = sesion["monto_base"] + total_efectivo
+
+    # Egresos del turno (gastos + pedidos), única fuente de verdad.
+    egresos_ef, egresos_dig = egresos_sesion(sesion["id"])
+
+    esperado_ef          = round(sesion["monto_base"] + total_efectivo - egresos_ef, 2)
     diferencia_ef        = round(monto_contado - esperado_ef, 2)
-    esperado_digital     = monto_base_digital + total_digital
+    esperado_digital     = round(monto_base_digital + total_digital - egresos_dig, 2)
 
     # El campo "digital" viene del entry_contado_digital de la UI
     monto_contado_digital = float(denominaciones.get("digital", esperado_digital))
@@ -176,6 +207,8 @@ def cerrar_caja(
         "total_digital":          total_digital,
         "esperado_efectivo":      esperado_ef,
         "esperado_digital":       esperado_digital,
+        "egresos_efectivo":       egresos_ef,
+        "egresos_digital":        egresos_dig,
         "monto_contado":          monto_contado,
         "monto_contado_digital":  monto_contado_digital,
         "diferencia":             diferencia_ef,
@@ -367,7 +400,7 @@ if __name__ == "__main__":
     resumen = cerrar_caja(denominaciones_contadas, notas="Cierre turno mañana")
     print(f"  Monto base:     {formatear_pesos(resumen['monto_base'])}")
     print(f"  Total ventas:   {formatear_pesos(resumen['total_ventas'])}")
-    print(f"  Monto esperado: {formatear_pesos(resumen['monto_esperado'])}")
+    print(f"  Esperado efec.: {formatear_pesos(resumen['esperado_efectivo'])}")
     print(f"  Monto contado:  {formatear_pesos(resumen['monto_contado'])}")
     print(f"  Diferencia:     {formatear_pesos(resumen['diferencia'])}")
 

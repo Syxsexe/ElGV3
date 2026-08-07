@@ -187,7 +187,8 @@ def generar_pdf_cierre(resumen: dict, ruta: str = None) -> str:
     esperado_ef = resumen.get("esperado_efectivo", 0)
     contado_ef  = resumen.get("monto_contado", 0)
     dif_ef      = resumen.get("diferencia", 0)
-    gastos_ef   = base_ef + total_ef - esperado_ef  # todos los egresos efectivo
+    # Egresos reales del turno (gastos + pedidos) en efectivo.
+    gastos_ef   = resumen.get("egresos_efectivo", base_ef + total_ef - esperado_ef)
 
     filas_ef = [
         ["Monto inicial:",      formatear_pesos(base_ef)],
@@ -238,7 +239,8 @@ def generar_pdf_cierre(resumen: dict, ruta: str = None) -> str:
     esperado_dig = resumen.get("esperado_digital", 0)
     contado_dig  = resumen.get("monto_contado_digital", 0)
     dif_dig      = resumen.get("diferencia_digital", 0)
-    gastos_dig   = base_dig + total_dig - esperado_dig  # todos los egresos digitales
+    # Egresos reales del turno (gastos + pedidos) en digital.
+    gastos_dig   = resumen.get("egresos_digital", base_dig + total_dig - esperado_dig)
 
     filas_dig = [
         ["Saldo inicial digital:", formatear_pesos(base_dig)],

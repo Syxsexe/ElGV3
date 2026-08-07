@@ -440,6 +440,14 @@ class FrameProveedores(FrameBase):
         if cantidad <= 0:
             messagebox.showwarning("Cantidad invalida", "La cantidad debe ser mayor a 0.")
             return
+        if precio <= 0:
+            es_ins = "insumo_id" in item_data
+            messagebox.showwarning(
+                "Falta el precio",
+                ("Ingresa el total pagado por la presentación: "
+                 if es_ins else "Ingresa el precio unitario: ")
+                + "de ahí se toma el costo que se actualiza al recibir.")
+            return
 
         # Para insumos el precio ingresado es el TOTAL pagado por la presentación:
         # el costo por unidad = total ÷ cantidad. Para productos es precio unitario.
@@ -630,22 +638,24 @@ class FrameProveedores(FrameBase):
         if not pedido:
             return
 
-        total = pedido.get("total") or 0
+        # Validar precios: sin precio no se puede actualizar el costo → no recibir.
+        sin_precio = [d["item_nombre"] for d in pedido["detalle"]
+                      if (d.get("precio_unit") or 0) <= 0]
+        if sin_precio:
+            messagebox.showwarning(
+                "Pedido sin precios",
+                "Estos ítems no tienen precio (costo $0), así que no se puede "
+                "actualizar su costo al recibir:\n  · " + "\n  · ".join(sin_precio) +
+                "\n\nEste pedido no se puede recibir. Cancélalo y créalo de nuevo "
+                "con precios.")
+            return
 
-        if total > 0:
-            abrir_dialogo_pago(
-                self, total,
-                lambda pagos, pid=pedido_id: self._procesar_recepcion(pid, pagos),
-                titulo=f"Pagar pedido #{pedido_id}"
-            )
-        else:
-            if messagebox.askyesno(
-                "Confirmar recepcion",
-                "El pedido no tiene total registrado.\n"
-                "Se actualizara el stock sin descontar de caja.\n\n"
-                "Deseas continuar?"
-            ):
-                self._procesar_recepcion(pedido_id, pagos=None)
+        total = pedido.get("total") or 0
+        abrir_dialogo_pago(
+            self, total,
+            lambda pagos, pid=pedido_id: self._procesar_recepcion(pid, pagos),
+            titulo=f"Pagar pedido #{pedido_id}"
+        )
 
     def _procesar_recepcion(self, pedido_id: int, pagos):
         from modules.proveedores import recibir_pedido

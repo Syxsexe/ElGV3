@@ -99,11 +99,12 @@ def generar_ticket_venta(venta_id: int) -> str:
 
     detalle = conn.execute("""
         SELECT
-            COALESCE(p.nombre, cb.nombre) AS nombre,
+            COALESCE(p.nombre, cb.nombre, ins.nombre || ' (adicional)') AS nombre,
             dv.cantidad, dv.precio_unit, dv.subtotal
         FROM detalle_venta dv
-        LEFT JOIN productos p  ON dv.producto_id = p.id
-        LEFT JOIN combos    cb ON dv.combo_id    = cb.id
+        LEFT JOIN productos p   ON dv.producto_id = p.id
+        LEFT JOIN combos    cb  ON dv.combo_id    = cb.id
+        LEFT JOIN insumos   ins ON dv.insumo_id   = ins.id
         WHERE dv.venta_id = ?
     """, (venta_id,)).fetchall()
 

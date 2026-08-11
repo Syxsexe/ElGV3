@@ -4,8 +4,37 @@ Cuentas abiertas por cliente/mesa.
 Flujo: abrir cuenta → agregar ítems → ver resumen → cobrar y cerrar.
 """
 
+import re
+
 from database import get_connection
 from auth import get_usuario_id
+
+
+def siguiente_mesa() -> str:
+    """
+    Devuelve el número de mesa/puesto libre más bajo (como texto), recorriendo
+    las cuentas abiertas. Si hay huecos (ej. 1 y 3 ocupadas), asigna el 2.
+    La lista de cuentas abiertas nunca es grande, así que recorrerla es trivial.
+    """
+    conn = get_connection()
+    try:
+        filas = conn.execute(
+            "SELECT mesa FROM cuentas WHERE estado = 'abierta'"
+        ).fetchall()
+    except Exception:
+        return "1"
+    finally:
+        conn.close()
+
+    ocupados = set()
+    for f in filas:
+        m = re.search(r"\d+", f["mesa"] or "")
+        if m:
+            ocupados.add(int(m.group()))
+    n = 1
+    while n in ocupados:
+        n += 1
+    return str(n)
 
 
 # ════════════════════════════════════════════════════════════
@@ -52,6 +81,11 @@ def migrar():
             agregado_en TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
         )
     """)
+    # insumo_id para líneas de "adicional" (insumo vendido como extra).
+    cols_items = {r[1] for r in conn.execute("PRAGMA table_info(cuenta_items)")}
+    if "insumo_id" not in cols_items:
+        conn.execute(
+            "ALTER TABLE cuenta_items ADD COLUMN insumo_id INTEGER REFERENCES insumos(id)")
     conn.commit()
     conn.close()
 
@@ -177,10 +211,11 @@ def agregar_item(
     cuenta_id: int,
     producto_id: int = None,
     combo_id: int    = None,
-    cantidad: float  = 1
+    cantidad: float  = 1,
+    insumo_id: int   = None,
 ) -> dict:
     """
-    Agrega un producto o combo a la cuenta.
+    Agrega un producto, combo o adicional (insumo) a la cuenta.
     Retorna el ítem insertado.
     No descuenta stock aquí — eso ocurre al cobrar.
     """
@@ -214,16 +249,30 @@ def agregar_item(
             precio_unit = combo["precio"]
             producto_id = None
 
+        elif insumo_id:
+            ins = conn.execute(
+                "SELECT nombre, precio_adicional FROM insumos "
+                "WHERE id = ? AND activo = 1", (insumo_id,)
+            ).fetchone()
+            if not ins:
+                raise ValueError("Insumo no encontrado o inactivo.")
+            if (ins["precio_adicional"] or 0) <= 0:
+                raise ValueError("Este insumo no está habilitado como adicional.")
+            nombre     = f"{ins['nombre']} (adicional)"
+            precio_unit = ins["precio_adicional"]
+
         else:
-            raise ValueError("Debes indicar producto_id o combo_id.")
+            raise ValueError("Debes indicar producto_id, combo_id o insumo_id.")
 
         subtotal = precio_unit * cantidad
 
         cur = conn.execute("""
             INSERT INTO cuenta_items
-                (cuenta_id, producto_id, combo_id, nombre, cantidad, precio_unit, subtotal)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (cuenta_id, producto_id, combo_id, nombre, cantidad, precio_unit, subtotal))
+                (cuenta_id, producto_id, combo_id, insumo_id, nombre,
+                 cantidad, precio_unit, subtotal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (cuenta_id, producto_id, combo_id, insumo_id, nombre,
+              cantidad, precio_unit, subtotal))
         conn.commit()
 
         return {
@@ -231,6 +280,7 @@ def agregar_item(
             "cuenta_id":   cuenta_id,
             "producto_id": producto_id,
             "combo_id":    combo_id,
+            "insumo_id":   insumo_id,
             "nombre":      nombre,
             "cantidad":    cantidad,
             "precio_unit": precio_unit,
@@ -389,11 +439,12 @@ def cobrar_cuenta(
         for item in cuenta["items"]:
             conn_main.execute("""
                 INSERT INTO detalle_venta
-                    (venta_id, producto_id, combo_id, cantidad, precio_unit, subtotal)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (venta_id, producto_id, combo_id, insumo_id,
+                     cantidad, precio_unit, subtotal)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id,
-                item["producto_id"], item["combo_id"],
+                item["producto_id"], item["combo_id"], item.get("insumo_id"),
                 item["cantidad"], item["precio_unit"], item["subtotal"]
             ))
 
@@ -427,12 +478,13 @@ def cobrar_cuenta(
                                                      cp["cantidad"] * item["cantidad"],
                                                      conn=conn_main)
 
-        # Actualizar sesión de caja
+        # Actualizar sesión de caja: total_ventas + desglose efectivo/digital por
+        # método de pago, IGUAL que una venta directa. Antes solo sumaba a
+        # total_ventas, así que lo cobrado por mesas no entraba al efectivo/digital
+        # y el cierre quedaba descuadrado (sobrante/faltante fantasma).
         if sesion_id:
-            conn_main.execute("""
-                UPDATE sesiones_caja SET total_ventas = total_ventas + ?
-                WHERE id = ?
-            """, (total_final, sesion_id))
+            from modules.ventas import _actualizar_cajas_sesion
+            _actualizar_cajas_sesion(conn_main, sesion_id, pagos, signo=1)
 
         # Cerrar cuenta
         conn_main.execute("""

@@ -411,6 +411,18 @@ def crear_tablas():
     columnas_insumos = [row[1] for row in conn.execute("PRAGMA table_info(insumos)").fetchall()]
     if "costo_unitario" not in columnas_insumos:
         conn.execute("ALTER TABLE insumos ADD COLUMN costo_unitario REAL NOT NULL DEFAULT 0")
+    # Adicionales: un insumo con precio_adicional > 0 se puede vender como extra
+    # (queso extra, tocineta extra…). cantidad_adicional = cuánto insumo trae un
+    # adicional, en la unidad del insumo, para calcular su costo/margen.
+    if "precio_adicional" not in columnas_insumos:
+        conn.execute("ALTER TABLE insumos ADD COLUMN precio_adicional REAL NOT NULL DEFAULT 0")
+    if "cantidad_adicional" not in columnas_insumos:
+        conn.execute("ALTER TABLE insumos ADD COLUMN cantidad_adicional REAL NOT NULL DEFAULT 0")
+
+    # insumo_id en detalle_venta para registrar adicionales vendidos.
+    columnas_dv = [row[1] for row in conn.execute("PRAGMA table_info(detalle_venta)").fetchall()]
+    if "insumo_id" not in columnas_dv:
+        conn.execute("ALTER TABLE detalle_venta ADD COLUMN insumo_id INTEGER REFERENCES insumos(id)")
 
     # Columnas fiscales para clientes (backward compatibility)
     columnas_clientes = [row[1] for row in conn.execute("PRAGMA table_info(clientes)").fetchall()]

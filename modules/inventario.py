@@ -4,7 +4,7 @@ Gestión de productos (tienda + cocina), categorías, insumos y recetas.
 """
 
 from database import get_connection
-from auth import requiere_admin
+from auth import requiere_admin, es_admin
 
 
 # ════════════════════════════════════════════════════════════
@@ -29,7 +29,6 @@ def listar_categorias(tipo: str = None) -> list:
     return [dict(f) for f in filas]
 
 
-@requiere_admin
 def crear_categoria(nombre: str, tipo: str) -> bool:
     """Crea una categoría nueva. tipo: 'tienda' | 'cocina'."""
     if tipo not in ("tienda", "cocina"):
@@ -148,7 +147,6 @@ def obtener_producto(producto_id: int) -> dict | None:
     return dict(fila) if fila else None
 
 
-@requiere_admin
 def crear_producto(
     nombre: str,
     categoria_id: int,
@@ -303,25 +301,31 @@ def obtener_insumo(insumo_id: int) -> dict | None:
     return dict(fila) if fila else None
 
 
-@requiere_admin
 def crear_insumo(
     nombre: str,
     stock: float = 0,
     unidad: str = "unidad",
     stock_minimo: float = 0,
-    costo_unitario: float = 0
+    costo_unitario: float = 0,
+    precio_adicional: float = 0,
+    cantidad_adicional: float = 0,
 ) -> int:
     """
     Crea un insumo de cocina. Retorna el ID generado.
     `costo_unitario` es el costo por unidad (g/ml/unidad); alimenta el costo
     de los platos. Normalmente se actualiza al recibir compras del proveedor.
+    `precio_adicional` (>0) lo habilita para venderse como adicional; y
+    `cantidad_adicional` es cuánto insumo trae un adicional (para su costo).
     """
     conn = get_connection()
     try:
         cur = conn.execute("""
-            INSERT INTO insumos (nombre, stock, unidad, stock_minimo, costo_unitario)
-            VALUES (?, ?, ?, ?, ?)
-        """, (nombre.strip(), stock, unidad, stock_minimo, costo_unitario))
+            INSERT INTO insumos
+                (nombre, stock, unidad, stock_minimo, costo_unitario,
+                 precio_adicional, cantidad_adicional)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (nombre.strip(), stock, unidad, stock_minimo, costo_unitario,
+              precio_adicional, cantidad_adicional))
         conn.commit()
         return cur.lastrowid
     finally:
@@ -335,7 +339,8 @@ def editar_insumo(insumo_id: int, **campos) -> bool:
     activo, costo_unitario. Si cambia el costo, recalcula el costo de los platos
     de cocina (el costo del insumo se propaga a las recetas).
     """
-    permitidos = {"nombre", "stock", "unidad", "stock_minimo", "activo", "costo_unitario"}
+    permitidos = {"nombre", "stock", "unidad", "stock_minimo", "activo",
+                  "costo_unitario", "precio_adicional", "cantidad_adicional"}
     campos_validos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos_validos:
         return False
@@ -352,6 +357,29 @@ def editar_insumo(insumo_id: int, **campos) -> bool:
         return True
     finally:
         conn.close()
+
+
+def listar_adicionales() -> list:
+    """
+    Insumos habilitados para venderse como adicional (precio_adicional > 0).
+    Cada uno trae su costo estimado (cantidad_adicional × costo del insumo) y el
+    margen resultante.
+    """
+    conn = get_connection()
+    filas = conn.execute("""
+        SELECT id, nombre, unidad, costo_unitario, precio_adicional, cantidad_adicional
+        FROM insumos
+        WHERE activo = 1 AND precio_adicional > 0
+        ORDER BY nombre
+    """).fetchall()
+    conn.close()
+    result = []
+    for f in filas:
+        d = dict(f)
+        d["costo"]  = round((d["cantidad_adicional"] or 0) * costo_insumo(d["id"]), 2)
+        d["margen"] = round((d["precio_adicional"] or 0) - d["costo"], 2)
+        result.append(d)
+    return result
 
 
 def actualizar_stock_insumo(insumo_id: int, cantidad: float, conn=None) -> bool:
@@ -409,14 +437,25 @@ def obtener_receta(producto_id: int) -> list:
     return [dict(f) for f in filas]
 
 
-@requiere_admin
 def guardar_receta(producto_id: int, insumos: list[dict]) -> bool:
     """
     Reemplaza la receta completa de un producto.
     insumos: [{"insumo_id": 1, "cantidad": 2}, ...]
+
+    Permisos: el admin siempre puede. El vendedor solo puede DEFINIR la receta de
+    un plato que aún no tiene (creación de plato nuevo); EDITAR una receta ya
+    existente es solo para administradores.
     """
     conn = get_connection()
     try:
+        if not es_admin():
+            ya_tiene = conn.execute(
+                "SELECT 1 FROM receta_insumos WHERE producto_id = ? LIMIT 1",
+                (producto_id,)
+            ).fetchone()
+            if ya_tiene:
+                raise PermissionError(
+                    "Editar la receta de un plato existente es solo para administradores.")
         conn.execute(
             "DELETE FROM receta_insumos WHERE producto_id = ?", (producto_id,)
         )
@@ -428,6 +467,9 @@ def guardar_receta(producto_id: int, insumos: list[dict]) -> bool:
         recalcular_costo_plato(producto_id, conn=conn)
         conn.commit()
         return True
+    except PermissionError:
+        conn.rollback()
+        raise
     except Exception:
         conn.rollback()
         return False

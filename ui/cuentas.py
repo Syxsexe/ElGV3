@@ -302,10 +302,14 @@ class FrameCuentas(FrameBase):
         entry_cliente.bind("<KeyRelease>", buscar)
         lst.bind("<<ListboxSelect>>", seleccionar)
 
-        tk.Label(b, text="Mesa / Puesto", font=FONT_SMALL, bg=COLORS["surface"],
+        tk.Label(b, text="Mesa / Puesto (automático, puedes cambiarlo)",
+                 font=FONT_SMALL, bg=COLORS["surface"],
                  fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
         entry_mesa = self._input(b)
         entry_mesa.pack(fill="x", padx=16, pady=(2, 12), ipady=5)
+        # Sugerir el número de mesa libre más bajo.
+        from modules.cuentas import siguiente_mesa
+        entry_mesa.insert(0, siguiente_mesa())
 
         def guardar():
             from modules.cuentas import abrir_cuenta
@@ -336,7 +340,7 @@ class FrameCuentas(FrameBase):
 
     def _modal_agregar(self):
         from modules.cuentas import obtener_cuenta, agregar_item
-        from modules.inventario import buscar_productos, listar_productos
+        from modules.inventario import buscar_productos, listar_productos, listar_adicionales
         from modules.ventas import listar_combos
         from modules.validaciones import aplicar_validacion
 
@@ -403,6 +407,15 @@ class FrameCuentas(FrameBase):
             add_grupo("Cocina", cocina, "producto", 12)
             add_grupo("Combos", combos, "combo", 8)
 
+            adicionales = [a for a in listar_adicionales()
+                           if not texto or texto.lower() in a["nombre"].lower()]
+            if adicionales:
+                lst.insert("end", "── Adicionales ──")
+                resultados.append(None)
+                for a in adicionales[:12]:
+                    lst.insert("end", f"  {a['nombre']} — ${a['precio_adicional']:,.0f}")
+                    resultados.append(("adicional", a["id"]))
+
         def agregar():
             idx = lst.curselection()
             if not idx:
@@ -426,6 +439,8 @@ class FrameCuentas(FrameBase):
             try:
                 if tipo == "producto":
                     it = agregar_item(self._cuenta_sel, producto_id=item_id, cantidad=cantidad)
+                elif tipo == "adicional":
+                    it = agregar_item(self._cuenta_sel, insumo_id=item_id, cantidad=cantidad)
                 else:
                     it = agregar_item(self._cuenta_sel, combo_id=item_id, cantidad=cantidad)
                 lbl_feedback.config(

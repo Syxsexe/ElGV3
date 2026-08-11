@@ -331,6 +331,13 @@ def registrar_abono(
                 f"pendiente ({formatear_pesos(saldo)})."
             )
 
+    # Si no se indicó sesión, se atribuye a la caja abierta al momento del pago,
+    # para que el abono sume a la caja del día en que se paga.
+    if sesion_id is None:
+        from modules.caja import get_sesion_activa
+        _s = get_sesion_activa()
+        sesion_id = _s["id"] if _s else None
+
     conn = get_connection()
     try:
         cur = conn.execute("""
@@ -339,18 +346,9 @@ def registrar_abono(
             VALUES (?, 'abono', ?, ?, ?, ?, ?)
         """, (cliente_id, monto, metodo_pago, sesion_id, notas, cargo_id))
 
-        if sesion_id:
-            from modules.caja import METODOS_DIGITALES
-            if metodo_pago in METODOS_DIGITALES:
-                conn.execute(
-                    "UPDATE sesiones_caja SET total_digital = total_digital + ? WHERE id = ?",
-                    (monto, sesion_id)
-                )
-            else:
-                conn.execute(
-                    "UPDATE sesiones_caja SET total_efectivo = total_efectivo + ? WHERE id = ?",
-                    (monto, sesion_id)
-                )
+        # El abono entra a la caja del turno como ingreso; el cierre lo suma
+        # leyendo la tabla `creditos` (fuente de verdad), igual que ventas y
+        # egresos. No se toca el acumulador de la sesión aquí.
 
         conn.commit()
         abono_id = cur.lastrowid

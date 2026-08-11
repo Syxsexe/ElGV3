@@ -72,16 +72,17 @@ class FrameInventario(FrameBase):
                 command=self._cambiar_tab, padx=14, pady=6,
             ).pack(side="left", padx=(0, 4))
 
-        # Acciones a la derecha (Importar solo admin; Nuevo solo admin).
+        # Acciones a la derecha. Crear nuevo lo puede hacer también el vendedor
+        # (ej. llega producto nuevo); editar e importar quedan solo para admin.
         if auth.es_admin():
             self._btn_secondary(
                 tab_frame, "⭱  Importar Excel", self._importar_excel
             ).pack(side="right", ipady=4, ipadx=6)
-            self._btn_primary(
-                tab_frame, "+ Nuevo", self._nuevo
+            self._btn_secondary(
+                tab_frame, "✎ Editar", self._editar
             ).pack(side="right", padx=(0, 8), ipady=4, ipadx=12)
-        self._btn_secondary(
-            tab_frame, "✎ Editar", self._editar
+        self._btn_primary(
+            tab_frame, "+ Nuevo", self._nuevo
         ).pack(side="right", padx=(0, 8), ipady=4, ipadx=12)
 
         # ── Barra de búsqueda ───────────────────────────────────────────────
@@ -151,6 +152,11 @@ class FrameInventario(FrameBase):
         elif tab == "recetas":
             self._modal_plato()
         else:
+            if not auth.es_admin():
+                messagebox.showinfo(
+                    "Solo administrador",
+                    "Crear combos es solo para administradores.")
+                return
             self._modal_combo()
 
     def _editar(self):
@@ -374,14 +380,15 @@ class FrameInventario(FrameBase):
             self._combo_cat.set(cats[0]["nombre"])
         self._combo_cat.pack(fill="x", padx=16, pady=(2, 16))
 
-        if auth.es_admin():
+        # Crear: admin y vendedor. Editar/Desactivar: solo admin.
+        if auth.es_admin() or not editar:
             self._btn_primary(m.footer, "Guardar",
                               self._guardar_producto).pack(
                                   side="right", ipady=6, ipadx=16)
-            if editar:
-                self._btn_danger(m.footer, "Desactivar",
-                                 self._desactivar_producto).pack(
-                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        if auth.es_admin() and editar:
+            self._btn_danger(m.footer, "Desactivar",
+                             self._desactivar_producto).pack(
+                                 side="right", padx=(0, 8), ipady=6, ipadx=10)
         self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
             side="left", ipady=6, ipadx=14)
 
@@ -513,22 +520,89 @@ class FrameInventario(FrameBase):
         self._i_nombre = self._input(body)
         self._i_nombre.pack(fill="x", padx=16, pady=(2, 8), ipady=5)
 
-        self._lbl_costo_i = tk.Label(body, text="Costo por unidad ($/g)",
-                                     font=FONT_SMALL, bg=COLORS["surface"],
-                                     fg=COLORS["text_muted"])
-        self._lbl_costo_i.pack(anchor="w", padx=16)
-        self._i_costo = self._input(body)
-        self._i_costo.pack(fill="x", padx=16, pady=(2, 4), ipady=5)
-        aplicar_validacion(self._i_costo, "decimal")
+        # ── Costo por PRESENTACIÓN (cantidad comprada + precio total pagado) ──
+        # Se calcula solo el costo por unidad = precio ÷ cantidad, para evitar
+        # meter el precio de la presentación completa como si fuera por gramo.
+        tk.Label(body, text="Costo del insumo (por presentación)", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+
+        fila_cost = tk.Frame(body, bg=COLORS["surface"])
+        fila_cost.pack(fill="x", padx=16, pady=(2, 2))
+
+        col_cant = tk.Frame(fila_cost, bg=COLORS["surface"])
+        col_cant.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self._lbl_cant_pres = tk.Label(col_cant, text="Cantidad comprada (g)",
+                                       font=("Segoe UI", 8), bg=COLORS["surface"],
+                                       fg=COLORS["text_dim"])
+        self._lbl_cant_pres.pack(anchor="w")
+        self._i_cant_pres = self._input(col_cant)
+        self._i_cant_pres.pack(fill="x", ipady=5)
+        aplicar_validacion(self._i_cant_pres, "decimal")
+
+        col_prec = tk.Frame(fila_cost, bg=COLORS["surface"])
+        col_prec.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        tk.Label(col_prec, text="Precio total pagado ($)", font=("Segoe UI", 8),
+                 bg=COLORS["surface"], fg=COLORS["text_dim"]).pack(anchor="w")
+        self._i_precio_pres = self._input(col_prec)
+        self._i_precio_pres.pack(fill="x", ipady=5)
+        aplicar_validacion(self._i_precio_pres, "decimal")
+
+        self._lbl_costo_calc = tk.Label(body, text="= Costo por unidad: —",
+                                        font=FONT_BOLD, bg=COLORS["surface"],
+                                        fg=COLORS["accent"])
+        self._lbl_costo_calc.pack(anchor="w", padx=16, pady=(4, 4))
+
+        self._i_cant_pres.bind("<KeyRelease>", lambda e: self._recalc_costo_preview())
+        self._i_precio_pres.bind("<KeyRelease>", lambda e: self._recalc_costo_preview())
 
         tk.Label(body,
-                 text="Este costo define el costo de los platos. Normalmente se "
-                      "actualiza solo al recibir compras del proveedor; aquí puedes "
-                      "ajustarlo a mano si hace falta.",
+                 text="Escribe cuánto compraste (ej. 500 g) y cuánto pagaste "
+                      "(ej. $50.600); el costo por unidad se calcula solo. También se "
+                      "actualiza al recibir compras del proveedor.",
                  font=("Segoe UI", 8), bg=COLORS["surface"], fg=COLORS["text_dim"],
                  justify="left", wraplength=390).pack(anchor="w", padx=16, pady=(0, 12))
 
-        if auth.es_admin():
+        # ── Adicional (extra que el cliente puede pedir) ──────────────────────
+        tk.Frame(body, bg=COLORS["border"], height=1).pack(fill="x", padx=16, pady=(0, 8))
+        tk.Label(body, text="Vender como adicional (opcional)", font=FONT_SMALL,
+                 bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(anchor="w", padx=16)
+
+        fila_adic = tk.Frame(body, bg=COLORS["surface"])
+        fila_adic.pack(fill="x", padx=16, pady=(2, 2))
+
+        col_pa = tk.Frame(fila_adic, bg=COLORS["surface"])
+        col_pa.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Label(col_pa, text="Precio del adicional ($)", font=("Segoe UI", 8),
+                 bg=COLORS["surface"], fg=COLORS["text_dim"]).pack(anchor="w")
+        self._i_precio_adic = self._input(col_pa)
+        self._i_precio_adic.pack(fill="x", ipady=5)
+        aplicar_validacion(self._i_precio_adic, "decimal")
+
+        col_ca = tk.Frame(fila_adic, bg=COLORS["surface"])
+        col_ca.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self._lbl_cant_adic = tk.Label(col_ca, text="Insumo por adicional (g)",
+                                       font=("Segoe UI", 8), bg=COLORS["surface"],
+                                       fg=COLORS["text_dim"])
+        self._lbl_cant_adic.pack(anchor="w")
+        self._i_cant_adic = self._input(col_ca)
+        self._i_cant_adic.pack(fill="x", ipady=5)
+        aplicar_validacion(self._i_cant_adic, "decimal")
+
+        self._lbl_margen_adic = tk.Label(body, text="", font=("Segoe UI", 8),
+                                         bg=COLORS["surface"], fg=COLORS["success"])
+        self._lbl_margen_adic.pack(anchor="w", padx=16, pady=(2, 2))
+        self._i_precio_adic.bind("<KeyRelease>", lambda e: self._recalc_margen_adic())
+        self._i_cant_adic.bind("<KeyRelease>", lambda e: self._recalc_margen_adic())
+
+        tk.Label(body,
+                 text="Si pones un precio, el insumo aparece como adicional al cobrar "
+                      "(mesas y venta). 'Insumo por adicional' es cuánto insumo trae un "
+                      "extra (ej. 2 tajadas), para calcular su costo.",
+                 font=("Segoe UI", 8), bg=COLORS["surface"], fg=COLORS["text_dim"],
+                 justify="left", wraplength=390).pack(anchor="w", padx=16, pady=(0, 12))
+
+        # Crear insumo: admin y vendedor. Editar: solo admin.
+        if auth.es_admin() or not editar:
             self._btn_primary(m.footer, "Guardar",
                               self._guardar_insumo).pack(
                                   side="right", ipady=6, ipadx=16)
@@ -547,7 +621,42 @@ class FrameInventario(FrameBase):
     def _actualizar_labels_stock(self):
         display = self._i_unidad_var.get()
         codigo  = self._unidades_map.get(display, "g")
-        self._lbl_costo_i.config(text=f"Costo por unidad ($/{codigo})")
+        if hasattr(self, "_lbl_cant_pres"):
+            self._lbl_cant_pres.config(text=f"Cantidad comprada ({codigo})")
+        if hasattr(self, "_lbl_cant_adic"):
+            self._lbl_cant_adic.config(text=f"Insumo por adicional ({codigo})")
+        self._recalc_costo_preview()
+
+    def _recalc_costo_preview(self):
+        """Muestra en vivo el costo por unidad = precio total ÷ cantidad comprada."""
+        from modules.validaciones import leer_decimal
+        codigo = self._unidades_map.get(self._i_unidad_var.get(), "g")
+        cant   = leer_decimal(self._i_cant_pres)
+        precio = leer_decimal(self._i_precio_pres)
+        if cant and cant > 0:
+            self._costo_unit_actual = precio / cant
+            self._lbl_costo_calc.config(
+                text=f"= Costo por unidad: ${self._costo_unit_actual:,.2f} /{codigo}")
+        else:
+            self._lbl_costo_calc.config(text=f"= Costo por unidad: — /{codigo}")
+        self._recalc_margen_adic()
+
+    def _recalc_margen_adic(self):
+        """Muestra el costo y margen del adicional en vivo."""
+        if not hasattr(self, "_lbl_margen_adic"):
+            return
+        from modules.validaciones import leer_decimal
+        precio = leer_decimal(self._i_precio_adic)
+        cant   = leer_decimal(self._i_cant_adic)
+        cu     = getattr(self, "_costo_unit_actual", 0) or 0
+        if precio and precio > 0:
+            costo  = cant * cu
+            margen = precio - costo
+            self._lbl_margen_adic.config(
+                text=f"Costo del adicional: ${costo:,.0f}  ·  Margen: ${margen:,.0f}",
+                fg=COLORS["success"] if margen >= 0 else COLORS["danger"])
+        else:
+            self._lbl_margen_adic.config(text="")
 
     def _cargar_insumo_en_form(self, insumo_id: int):
         from modules.inventario import obtener_insumo
@@ -559,31 +668,59 @@ class FrameInventario(FrameBase):
         self._actualizar_labels_stock()
         self._i_nombre.delete(0, "end")
         self._i_nombre.insert(0, i["nombre"])
+        # El costo se guarda por unidad; para editar lo mostramos como
+        # "1 {unidad} = costo actual". Para corregirlo, el usuario escribe la
+        # presentación real (ej. 500 g / $50.600) y se recalcula solo.
         costo = i.get("costo_unitario", 0) or 0
-        self._i_costo.delete(0, "end")
-        v = int(costo) if costo == int(costo) else costo
-        self._i_costo.insert(0, str(v))
+        self._i_cant_pres.delete(0, "end")
+        self._i_cant_pres.insert(0, "1")
+        self._i_precio_pres.delete(0, "end")
+        v = int(costo) if costo == int(costo) else round(costo, 4)
+        self._i_precio_pres.insert(0, str(v))
+        # Adicional
+        pa = i.get("precio_adicional", 0) or 0
+        ca = i.get("cantidad_adicional", 0) or 0
+        self._i_precio_adic.delete(0, "end")
+        if pa:
+            self._i_precio_adic.insert(0, str(int(pa) if pa == int(pa) else pa))
+        self._i_cant_adic.delete(0, "end")
+        if ca:
+            self._i_cant_adic.insert(0, str(int(ca) if ca == int(ca) else ca))
+        self._recalc_costo_preview()
 
     def _guardar_insumo(self):
         from modules.inventario import crear_insumo, editar_insumo
         from modules.validaciones import leer_decimal, leer_texto
 
         nombre  = leer_texto(self._i_nombre)
-        costo   = leer_decimal(self._i_costo)
+        cant    = leer_decimal(self._i_cant_pres)
+        precio  = leer_decimal(self._i_precio_pres)
         display = self._i_unidad_var.get()
         unidad  = self._unidades_map.get(display, "g")
 
         if not nombre:
             messagebox.showwarning("Campo vacío", "El nombre del insumo es obligatorio.")
             return
+        if not cant or cant <= 0:
+            messagebox.showwarning(
+                "Cantidad inválida",
+                "Escribe la cantidad comprada (mayor a 0). El costo por unidad se "
+                "calcula como precio ÷ cantidad.")
+            return
+        costo = round((precio or 0) / cant, 4)
+        precio_adic = leer_decimal(self._i_precio_adic) or 0
+        cant_adic   = leer_decimal(self._i_cant_adic) or 0
         try:
             if self._modo == "nuevo":
-                iid = crear_insumo(nombre, unidad=unidad, costo_unitario=costo)
+                iid = crear_insumo(nombre, unidad=unidad, costo_unitario=costo,
+                                   precio_adicional=precio_adic,
+                                   cantidad_adicional=cant_adic)
                 messagebox.showinfo("Creado", f"Insumo creado (ID {iid}).")
             else:
                 editar_insumo(
                     self._insumo_sel,
                     nombre=nombre, unidad=unidad, costo_unitario=costo,
+                    precio_adicional=precio_adic, cantidad_adicional=cant_adic,
                 )
                 messagebox.showinfo("Guardado", "Insumo actualizado.")
             self._cargar_insumos()
@@ -697,14 +834,15 @@ class FrameInventario(FrameBase):
         )
         self._lbl_resumen_r.pack(anchor="w", padx=16, pady=(6, 12))
 
-        if auth.es_admin():
+        # Crear plato nuevo: admin y vendedor. Editar/Desactivar: solo admin.
+        if auth.es_admin() or not editar:
             self._btn_primary(m.footer, "Guardar",
                               self._guardar_plato).pack(
                                   side="right", ipady=6, ipadx=16)
-            if editar:
-                self._btn_danger(m.footer, "Desactivar",
-                                 self._desactivar_plato).pack(
-                                     side="right", padx=(0, 8), ipady=6, ipadx=10)
+        if auth.es_admin() and editar:
+            self._btn_danger(m.footer, "Desactivar",
+                             self._desactivar_plato).pack(
+                                 side="right", padx=(0, 8), ipady=6, ipadx=10)
         self._btn_secondary(m.footer, "Cancelar", m.cerrar).pack(
             side="left", ipady=6, ipadx=14)
 

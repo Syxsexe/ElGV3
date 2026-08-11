@@ -157,10 +157,13 @@ class FrameCaja(FrameBase):
         migrar_dos_cajas()
         migrar_egresos()
 
+        from modules.caja import totales_ventas_sesion
         base_ef   = sesion.get("monto_base", 0) or 0
         base_dig  = sesion.get("monto_base_digital", 0) or 0
-        total_ef  = sesion.get("total_efectivo", 0) or 0
-        total_dig = sesion.get("total_digital",  0) or 0
+        # Ventas por método desde pagos_venta (fuente de verdad, incluye mesas).
+        _tv       = totales_ventas_sesion(sesion["id"])
+        total_ef  = _tv["efectivo"]
+        total_dig = _tv["digital"]
 
         # Egresos del turno separados por caja
         conn = get_connection()
@@ -176,8 +179,12 @@ class FrameCaja(FrameBase):
         eg_ef  = row_eg["eg_ef"]  if row_eg else 0
         eg_dig = row_eg["eg_dig"] if row_eg else 0
 
-        esperado_ef  = base_ef  + total_ef  - eg_ef
-        esperado_dig = base_dig + total_dig - eg_dig
+        # Abonos de fiado recibidos en el turno (ingreso de caja)
+        from modules.caja import abonos_sesion
+        ab_ef, ab_dig = abonos_sesion(sesion["id"])
+
+        esperado_ef  = base_ef  + total_ef  + ab_ef  - eg_ef
+        esperado_dig = base_dig + total_dig + ab_dig - eg_dig
 
         def fila_resumen(parent, label, valor, color=None):
             f = tk.Frame(parent, bg=COLORS["surface"])
@@ -195,6 +202,8 @@ class FrameCaja(FrameBase):
 
         fila_resumen(resumen_card, "Inicial:",        base_ef)
         fila_resumen(resumen_card, "Ventas:",         total_ef,  COLORS["success"])
+        if ab_ef:
+            fila_resumen(resumen_card, "Abonos fiado:", ab_ef,   COLORS["success"])
         fila_resumen(resumen_card, "Gastos:",         eg_ef,     COLORS["danger"])
         fila_resumen(resumen_card, "Esperado en caja:", esperado_ef, COLORS["accent"])
 
@@ -223,6 +232,8 @@ class FrameCaja(FrameBase):
 
         fila_resumen(resumen_card, "Inicial:",          base_dig)
         fila_resumen(resumen_card, "Ventas:",           total_dig, COLORS["success"])
+        if ab_dig:
+            fila_resumen(resumen_card, "Abonos fiado:",  ab_dig,   COLORS["success"])
         fila_resumen(resumen_card, "Gastos:",           eg_dig,    COLORS["danger"])
         fila_resumen(resumen_card, "Esperado en caja:", esperado_dig, COLORS["success"])
 
@@ -247,7 +258,7 @@ class FrameCaja(FrameBase):
         self.lbl_dif_digital.pack(anchor="e", padx=20, pady=(2, 0))
         self.entry_contado_digital.bind(
             "<KeyRelease>",
-            lambda e: self._actualizar_dif_digital(base_dig, total_dig - eg_dig)
+            lambda e: self._actualizar_dif_digital(base_dig, total_dig + ab_dig - eg_dig)
         )
         self._esperado_ef = esperado_ef
 
@@ -602,14 +613,19 @@ class FrameCaja(FrameBase):
         # ── Efectivo ──────────────────────────────────────────────────
         sep()
         titulo("EFECTIVO", COLORS["accent"])
+        from modules.caja import totales_ventas_sesion, abonos_sesion
+        _tv       = totales_ventas_sesion(sesion_id)
+        ab_ef, ab_dig = abonos_sesion(sesion_id)
         base_ef   = sesion.get("monto_base", 0) or 0
-        total_ef  = sesion.get("total_efectivo", 0) or 0
-        esp_ef    = base_ef + total_ef - eg_ef
+        total_ef  = _tv["efectivo"]
+        esp_ef    = base_ef + total_ef + ab_ef - eg_ef
         contado_ef = sesion.get("monto_cierre", 0) or 0
         dif_ef    = sesion.get("diferencia", 0)
 
         fila("Base inicial:", formatear_pesos(base_ef))
         fila("Ventas:", formatear_pesos(total_ef), COLORS["success"])
+        if ab_ef:
+            fila("Abonos fiado:", formatear_pesos(ab_ef), COLORS["success"])
         if eg_ef:
             fila("Gastos/egresos:", f"- {formatear_pesos(eg_ef)}", COLORS["danger"])
         fila("Esperado:", formatear_pesos(esp_ef))
@@ -639,12 +655,14 @@ class FrameCaja(FrameBase):
         sep()
         titulo("DIGITAL", COLORS["success"])
         base_dig   = sesion.get("monto_base_digital", 0) or 0
-        total_dig  = sesion.get("total_digital", 0) or 0
-        esp_dig    = base_dig + total_dig - eg_dig
+        total_dig  = _tv["digital"]
+        esp_dig    = base_dig + total_dig + ab_dig - eg_dig
         dif_dig    = sesion.get("diferencia_digital", 0)
 
         fila("Base inicial:", formatear_pesos(base_dig))
         fila("Ventas:", formatear_pesos(total_dig), COLORS["success"])
+        if ab_dig:
+            fila("Abonos fiado:", formatear_pesos(ab_dig), COLORS["success"])
         if eg_dig:
             fila("Gastos/egresos:", f"- {formatear_pesos(eg_dig)}", COLORS["danger"])
         fila("Esperado:", formatear_pesos(esp_dig))
@@ -702,11 +720,14 @@ class FrameCaja(FrameBase):
             messagebox.showerror("Error", "Sesión no encontrada.")
             return
 
+        from modules.caja import totales_ventas_sesion, abonos_sesion
         eg_ef, eg_dig = egresos_sesion(sesion_id)
+        ab_ef, ab_dig = abonos_sesion(sesion_id)
+        _tv = totales_ventas_sesion(sesion_id)
         base_ef  = sesion.get("monto_base", 0) or 0
         base_dig = sesion.get("monto_base_digital", 0) or 0
-        total_ef = sesion.get("total_efectivo", 0) or 0
-        total_dig = sesion.get("total_digital", 0) or 0
+        total_ef = _tv["efectivo"]
+        total_dig = _tv["digital"]
 
         resumen = {
             "sesion_id":             sesion["id"],
@@ -714,15 +735,17 @@ class FrameCaja(FrameBase):
             "apertura":              sesion["apertura"],
             "monto_base":            base_ef,
             "monto_base_digital":    base_dig,
-            "total_ventas":          sesion.get("total_ventas", 0) or 0,
+            "total_ventas":          _tv["total"],
             "total_efectivo":        total_ef,
             "total_digital":         total_dig,
             "egresos_efectivo":      eg_ef,
             "egresos_digital":       eg_dig,
-            "esperado_efectivo":     base_ef + total_ef - eg_ef,
-            "esperado_digital":      base_dig + total_dig - eg_dig,
+            "abonos_efectivo":       ab_ef,
+            "abonos_digital":        ab_dig,
+            "esperado_efectivo":     base_ef + total_ef + ab_ef - eg_ef,
+            "esperado_digital":      base_dig + total_dig + ab_dig - eg_dig,
             "monto_contado":         sesion.get("monto_cierre", 0) or 0,
-            "monto_contado_digital": base_dig + total_dig - eg_dig,
+            "monto_contado_digital": base_dig + total_dig + ab_dig - eg_dig,
             "diferencia":            sesion.get("diferencia", 0) or 0,
             "diferencia_digital":    sesion.get("diferencia_digital", 0) or 0,
             "denominaciones":        sesion.get("denominaciones", []),

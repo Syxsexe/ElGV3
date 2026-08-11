@@ -138,7 +138,8 @@ class FrameVentas(FrameBase):
         tab_frame = tk.Frame(left, bg=COLORS["bg"])
         tab_frame.pack(fill="x", pady=(0, 8))
         self._tab_actual = tk.StringVar(value="tienda")
-        for texto, valor in [("Tienda", "tienda"), ("Cocina", "cocina"), ("Combos", "combos")]:
+        for texto, valor in [("Tienda", "tienda"), ("Cocina", "cocina"),
+                             ("Combos", "combos"), ("Adicionales", "adicionales")]:
             tk.Radiobutton(
                 tab_frame, text=texto, variable=self._tab_actual, value=valor,
                 font=FONT_BOLD, bg=COLORS["bg"], fg=COLORS["text_muted"],
@@ -349,6 +350,14 @@ class FrameVentas(FrameBase):
                                                values=(c["nombre"],
                                                        formatear_pesos(c["precio"]),
                                                        "—"))
+        elif tab == "adicionales":
+            from modules.inventario import listar_adicionales
+            for a in listar_adicionales():
+                if texto.lower() in a["nombre"].lower() or not texto:
+                    self.tree_productos.insert("", "end", iid=f"adic_{a['id']}",
+                                               values=(f"{a['nombre']} (adicional)",
+                                                       formatear_pesos(a["precio_adicional"]),
+                                                       "—"))
         else:
             prods = buscar_productos(texto, tipo=tab) if texto else listar_productos(tipo=tab)
             for p in prods:
@@ -366,6 +375,9 @@ class FrameVentas(FrameBase):
             if sel.startswith("combo_"):
                 combo_id = int(sel.split("_")[1])
                 self.carrito.agregar_combo(combo_id)
+            elif sel.startswith("adic_"):
+                insumo_id = int(sel.split("_")[1])
+                self.carrito.agregar_adicional(insumo_id)
             else:
                 prod_id = int(sel.split("_")[1])
                 self.carrito.agregar_producto(prod_id)

@@ -63,6 +63,69 @@ def egresos_sesion(sesion_id: int, conn=None) -> tuple:
             conn.close()
 
 
+def totales_ventas_sesion(sesion_id: int, conn=None) -> dict:
+    """
+    Ventas de la sesión por método de pago, calculadas desde `pagos_venta`
+    (fuente de verdad), no desde los acumuladores de sesiones_caja que se
+    desvían si algún flujo no los actualiza bien.
+
+    Retorna {"efectivo", "digital", "total"}. El crédito suma al total pero
+    NO a efectivo/digital (no entra dinero a la caja).
+    """
+    propia = conn is None
+    if propia:
+        conn = get_connection()
+    try:
+        digitales = ",".join(f"'{m}'" for m in sorted(METODOS_DIGITALES))
+        row = conn.execute(f"""
+            SELECT
+                COALESCE(SUM(CASE WHEN pv.metodo = 'efectivo'
+                                 THEN pv.monto ELSE 0 END), 0) AS efectivo,
+                COALESCE(SUM(CASE WHEN pv.metodo IN ({digitales})
+                                 THEN pv.monto ELSE 0 END), 0) AS digital,
+                COALESCE(SUM(pv.monto), 0) AS total
+            FROM pagos_venta pv
+            JOIN ventas v ON pv.venta_id = v.id
+            WHERE v.sesion_id = ?
+        """, (sesion_id,)).fetchone()
+        return {"efectivo": row["efectivo"] or 0,
+                "digital":  row["digital"]  or 0,
+                "total":    row["total"]    or 0}
+    except Exception:
+        return {"efectivo": 0, "digital": 0, "total": 0}
+    finally:
+        if propia:
+            conn.close()
+
+
+def abonos_sesion(sesion_id: int, conn=None) -> tuple:
+    """
+    Retorna (abonos_efectivo, abonos_digital) de una sesión: pagos de fiado
+    (creditos.tipo='abono') recibidos durante el turno. Son ingreso de caja (no
+    ventas), así que se suman al esperado igual que las ventas.
+    """
+    propia = conn is None
+    if propia:
+        conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN metodo_pago = 'efectivo'
+                                 THEN monto ELSE 0 END), 0) AS ef,
+                COALESCE(SUM(CASE WHEN metodo_pago != 'efectivo'
+                                 THEN monto ELSE 0 END), 0) AS dig
+            FROM creditos
+            WHERE tipo = 'abono' AND sesion_id = ?
+        """, (sesion_id,)).fetchone()
+        return (row["ef"] or 0, row["dig"] or 0)
+    except Exception:
+        # La tabla creditos aún no existe (nunca se usó fiado).
+        return (0, 0)
+    finally:
+        if propia:
+            conn.close()
+
+
 def hay_sesion_abierta() -> bool:
     """True si existe una sesión de caja sin cerrar."""
     conn = get_connection()
@@ -158,16 +221,21 @@ def cerrar_caja(
             "subtotal":     subtotal,
         })
 
-    total_efectivo       = sesion.get("total_efectivo",     0) or 0
-    total_digital        = sesion.get("total_digital",      0) or 0
-    monto_base_digital   = sesion.get("monto_base_digital", 0) or 0
+    # Ventas por método desde pagos_venta (fuente de verdad, no los acumuladores).
+    ventas          = totales_ventas_sesion(sesion["id"])
+    total_efectivo  = ventas["efectivo"]
+    total_digital   = ventas["digital"]
+    total_ventas    = ventas["total"]
+    monto_base_digital = sesion.get("monto_base_digital", 0) or 0
 
-    # Egresos del turno (gastos + pedidos), única fuente de verdad.
+    # Egresos del turno (gastos + pedidos) y abonos de fiado, ambos desde su
+    # tabla (fuente de verdad). Los abonos son ingreso de caja; los egresos, salida.
     egresos_ef, egresos_dig = egresos_sesion(sesion["id"])
+    abonos_ef,  abonos_dig  = abonos_sesion(sesion["id"])
 
-    esperado_ef          = round(sesion["monto_base"] + total_efectivo - egresos_ef, 2)
+    esperado_ef          = round(sesion["monto_base"] + total_efectivo + abonos_ef - egresos_ef, 2)
     diferencia_ef        = round(monto_contado - esperado_ef, 2)
-    esperado_digital     = round(monto_base_digital + total_digital - egresos_dig, 2)
+    esperado_digital     = round(monto_base_digital + total_digital + abonos_dig - egresos_dig, 2)
 
     # El campo "digital" viene del entry_contado_digital de la UI
     monto_contado_digital = float(denominaciones.get("digital", esperado_digital))
@@ -175,15 +243,22 @@ def cerrar_caja(
 
     conn = get_connection()
     try:
+        # Sana también los acumuladores con los valores reales (por si venían
+        # desviados de un flujo viejo), para que reportes e historial cuadren.
         conn.execute("""
             UPDATE sesiones_caja
             SET cierre             = datetime('now','localtime'),
                 monto_cierre       = ?,
                 diferencia         = ?,
                 diferencia_digital = ?,
+                total_ventas       = ?,
+                total_efectivo     = ?,
+                total_digital      = ?,
                 notas              = COALESCE(?, notas)
             WHERE id = ?
-        """, (monto_contado, diferencia_ef, diferencia_dig, notas, sesion["id"]))
+        """, (monto_contado, diferencia_ef, diferencia_dig,
+              total_ventas, total_efectivo, total_digital,
+              notas, sesion["id"]))
 
         conn.executemany("""
             INSERT INTO denominaciones_caja (sesion_id, denominacion, cantidad, subtotal)
@@ -202,13 +277,15 @@ def cerrar_caja(
         "apertura":               sesion["apertura"],
         "monto_base":             sesion["monto_base"],
         "monto_base_digital":     monto_base_digital,
-        "total_ventas":           sesion["total_ventas"],
+        "total_ventas":           total_ventas,
         "total_efectivo":         total_efectivo,
         "total_digital":          total_digital,
         "esperado_efectivo":      esperado_ef,
         "esperado_digital":       esperado_digital,
         "egresos_efectivo":       egresos_ef,
         "egresos_digital":        egresos_dig,
+        "abonos_efectivo":        abonos_ef,
+        "abonos_digital":         abonos_dig,
         "monto_contado":          monto_contado,
         "monto_contado_digital":  monto_contado_digital,
         "diferencia":             diferencia_ef,
@@ -221,7 +298,7 @@ def cerrar_caja(
         signo_dig = "+" if diferencia_dig >= 0 else ""
         registrar(
             "caja",
-            f"Cierre de caja — ventas: {formatear_pesos(sesion['total_ventas'])}, "
+            f"Cierre de caja — ventas: {formatear_pesos(total_ventas)}, "
             f"dif. efectivo: {signo_ef}{formatear_pesos(diferencia_ef)}, "
             f"dif. digital: {signo_dig}{formatear_pesos(diferencia_dig)}",
             referencia_id=sesion["id"],

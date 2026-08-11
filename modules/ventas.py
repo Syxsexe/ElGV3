@@ -147,6 +147,37 @@ class Carrito:
         self._items.append(item)
         return item
 
+    def agregar_adicional(self, insumo_id: int, cantidad: float = 1) -> dict:
+        """Agrega un insumo como ADICIONAL (extra) usando su precio_adicional."""
+        conn = get_connection()
+        ins = conn.execute(
+            "SELECT nombre, precio_adicional FROM insumos WHERE id = ? AND activo = 1",
+            (insumo_id,)
+        ).fetchone()
+        conn.close()
+        if not ins:
+            raise ValueError(f"Insumo ID {insumo_id} no encontrado o inactivo.")
+        if (ins["precio_adicional"] or 0) <= 0:
+            raise ValueError("Este insumo no está habilitado como adicional.")
+
+        for item in self._items:
+            if item["tipo"] == "adicional" and item["id"] == insumo_id:
+                item["cantidad"] += cantidad
+                item["subtotal"]  = item["cantidad"] * item["precio_unit"]
+                return item
+
+        item = {
+            "tipo":        "adicional",
+            "id":          insumo_id,
+            "nombre":      f"{ins['nombre']} (adicional)",
+            "precio_unit": ins["precio_adicional"],
+            "cantidad":    cantidad,
+            "subtotal":    ins["precio_adicional"] * cantidad,
+            "venta_tipo":  "cocina",
+        }
+        self._items.append(item)
+        return item
+
     # ── Modificar / quitar ────────────────────────────────────────────────────
     def cambiar_cantidad(self, index: int, nueva_cantidad: float):
         """Cambia la cantidad de un ítem por su posición en la lista."""
@@ -268,12 +299,14 @@ def registrar_venta(
             # Detalle de venta
             conn.execute("""
                 INSERT INTO detalle_venta
-                    (venta_id, producto_id, combo_id, cantidad, precio_unit, subtotal)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (venta_id, producto_id, combo_id, insumo_id,
+                     cantidad, precio_unit, subtotal)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id,
-                item["id"]   if item["tipo"] == "producto" else None,
-                item["id"]   if item["tipo"] == "combo"    else None,
+                item["id"]   if item["tipo"] == "producto"  else None,
+                item["id"]   if item["tipo"] == "combo"     else None,
+                item["id"]   if item["tipo"] == "adicional" else None,
                 item["cantidad"],
                 item["precio_unit"],
                 item["subtotal"],

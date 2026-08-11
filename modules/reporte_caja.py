@@ -189,10 +189,15 @@ def generar_pdf_cierre(resumen: dict, ruta: str = None) -> str:
     dif_ef      = resumen.get("diferencia", 0)
     # Egresos reales del turno (gastos + pedidos) en efectivo.
     gastos_ef   = resumen.get("egresos_efectivo", base_ef + total_ef - esperado_ef)
+    abonos_ef   = resumen.get("abonos_efectivo", 0)
 
     filas_ef = [
         ["Monto inicial:",      formatear_pesos(base_ef)],
         ["Ventas en efectivo:", formatear_pesos(total_ef)],
+    ]
+    if abonos_ef:
+        filas_ef.append(["Abonos de fiado:", formatear_pesos(abonos_ef)])
+    filas_ef += [
         ["Gastos / egresos:",   f"- {formatear_pesos(gastos_ef)}"],
         ["Esperado en caja:",   formatear_pesos(esperado_ef)],
         ["Contado:",            formatear_pesos(contado_ef)],
@@ -241,10 +246,15 @@ def generar_pdf_cierre(resumen: dict, ruta: str = None) -> str:
     dif_dig      = resumen.get("diferencia_digital", 0)
     # Egresos reales del turno (gastos + pedidos) en digital.
     gastos_dig   = resumen.get("egresos_digital", base_dig + total_dig - esperado_dig)
+    abonos_dig   = resumen.get("abonos_digital", 0)
 
     filas_dig = [
         ["Saldo inicial digital:", formatear_pesos(base_dig)],
         ["Ventas digitales:",      formatear_pesos(total_dig)],
+    ]
+    if abonos_dig:
+        filas_dig.append(["Abonos de fiado:", formatear_pesos(abonos_dig)])
+    filas_dig += [
         ["Gastos / egresos:",      f"- {formatear_pesos(gastos_dig)}"],
         ["Esperado en caja:",      formatear_pesos(esperado_dig)],
         ["Saldo contado:",         formatear_pesos(contado_dig)],

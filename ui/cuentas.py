@@ -97,7 +97,11 @@ class FrameCuentas(FrameBase):
         self._cargar_mesas()
 
     def _build_detalle(self, right):
-        """Panel derecho: cabecera de la cuenta, ítems y botones de acción."""
+        """Panel derecho: cabecera de la cuenta, ítems y botones de acción.
+
+        Las acciones (Agregar / Cobrar / Cancelar) y el total se anclan al fondo
+        con side='bottom' para que SIEMPRE se vean, aunque la lista de ítems sea
+        larga o la pantalla sea baja (antes el botón de cancelar se cortaba)."""
         pad = 16
 
         self.lbl_cuenta_titulo = tk.Label(
@@ -112,28 +116,31 @@ class FrameCuentas(FrameBase):
             anchor="w", wraplength=320, justify="left")
         self.lbl_cuenta_sub.pack(fill="x", padx=pad, pady=(0, 10))
 
-        # ── Ítems de la cuenta ─────────────────────────────────────────────
-        items_wrap = tk.Frame(right, bg=COLORS["surface"])
-        items_wrap.pack(fill="both", expand=True, padx=pad)
+        # ── Acciones + total anclados al fondo (reservados, SIEMPRE visibles) ─
+        acciones = tk.Frame(right, bg=COLORS["surface"])
+        acciones.pack(side="bottom", fill="x")
 
-        self.tree_items = self._tabla(
-            items_wrap,
-            ("item_id", "nombre", "cantidad", "subtotal"),
-            alto=9,
-        )
-        self.tree_items.heading("item_id",  text="#")
-        self.tree_items.heading("nombre",   text="Producto / Combo")
-        self.tree_items.heading("cantidad", text="Cant")
-        self.tree_items.heading("subtotal", text="Subtotal")
-        self.tree_items.column("item_id",  width=0, stretch=False)  # oculto
-        self.tree_items.column("nombre",   width=150, anchor="w")
-        self.tree_items.column("cantidad", width=45)
-        self.tree_items.column("subtotal", width=90)
-        self.tree_items.bind("<<TreeviewSelect>>", self._al_seleccionar_item)
+        tk.Frame(acciones, bg=COLORS["border"], height=1).pack(
+            fill="x", padx=pad, pady=12)
+        self.lbl_total_cuenta = tk.Label(
+            acciones, text="Total: $0", font=("Segoe UI", 17, "bold"),
+            bg=COLORS["surface"], fg=COLORS["accent"], anchor="e")
+        self.lbl_total_cuenta.pack(fill="x", padx=pad)
 
-        # ── Controles de cantidad del ítem seleccionado ────────────────────
+        self._btn_primary(acciones, "+ Agregar consumo", self._modal_agregar).pack(
+            fill="x", padx=pad, pady=(12, 6), ipady=9)
+        btn_cobrar = tk.Button(
+            acciones, text="✓ Cobrar cuenta", font=FONT_BOLD,
+            bg=COLORS["success"], fg=COLORS["on_accent"],
+            activebackground=COLORS["success"], activeforeground=COLORS["on_accent"],
+            relief="flat", cursor="hand2", command=self._modal_cobrar)
+        btn_cobrar.pack(fill="x", padx=pad, ipady=10)
+        self._btn_danger(acciones, "✕ Cancelar cuenta", self._cancelar).pack(
+            fill="x", padx=pad, pady=(6, 16), ipady=6)
+
+        # ── Controles de cantidad del ítem seleccionado (sobre las acciones) ─
         qty_row = tk.Frame(right, bg=COLORS["surface"])
-        qty_row.pack(anchor="w", padx=pad, pady=(8, 0))
+        qty_row.pack(side="bottom", anchor="w", padx=pad, pady=(8, 0))
 
         tk.Button(qty_row, text="−", font=("Segoe UI", 13, "bold"),
                   bg=COLORS["surface2"], fg=COLORS["text"],
@@ -152,27 +159,24 @@ class FrameCuentas(FrameBase):
         self._btn_secondary(qty_row, "✕ Quitar", self._quitar_item).pack(
             side="left", padx=(10, 0), ipady=2, ipadx=6)
 
-        # ── Total ──────────────────────────────────────────────────────────
-        tk.Frame(right, bg=COLORS["border"], height=1).pack(
-            fill="x", padx=pad, pady=12)
-        self.lbl_total_cuenta = tk.Label(
-            right, text="Total: $0", font=("Segoe UI", 17, "bold"),
-            bg=COLORS["surface"], fg=COLORS["accent"], anchor="e")
-        self.lbl_total_cuenta.pack(fill="x", padx=pad)
+        # ── Ítems de la cuenta (llenan el espacio central) ──────────────────
+        items_wrap = tk.Frame(right, bg=COLORS["surface"])
+        items_wrap.pack(fill="both", expand=True, padx=pad)
 
-        # ── Acciones de la cuenta ──────────────────────────────────────────
-        self._btn_primary(right, "+ Agregar consumo", self._modal_agregar).pack(
-            fill="x", padx=pad, pady=(12, 6), ipady=9)
-
-        btn_cobrar = tk.Button(
-            right, text="✓ Cobrar cuenta", font=FONT_BOLD,
-            bg=COLORS["success"], fg=COLORS["on_accent"],
-            activebackground=COLORS["success"], activeforeground=COLORS["on_accent"],
-            relief="flat", cursor="hand2", command=self._modal_cobrar)
-        btn_cobrar.pack(fill="x", padx=pad, ipady=10)
-
-        self._btn_danger(right, "✕ Cancelar cuenta", self._cancelar).pack(
-            fill="x", padx=pad, pady=(6, 16), ipady=6)
+        self.tree_items = self._tabla(
+            items_wrap,
+            ("item_id", "nombre", "cantidad", "subtotal"),
+            alto=7,
+        )
+        self.tree_items.heading("item_id",  text="#")
+        self.tree_items.heading("nombre",   text="Producto / Combo")
+        self.tree_items.heading("cantidad", text="Cant")
+        self.tree_items.heading("subtotal", text="Subtotal")
+        self.tree_items.column("item_id",  width=0, stretch=False)  # oculto
+        self.tree_items.column("nombre",   width=150, anchor="w")
+        self.tree_items.column("cantidad", width=45)
+        self.tree_items.column("subtotal", width=90)
+        self.tree_items.bind("<<TreeviewSelect>>", self._al_seleccionar_item)
 
     # ══════════════════════════════════════════════════════════════════════
     # CARGA / SELECCIÓN

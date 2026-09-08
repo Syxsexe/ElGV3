@@ -7,7 +7,7 @@
 ; ============================================================
 
 #define MyAppName "El G POS"
-#define MyAppVersion "3.6"
+#define MyAppVersion "3.6.1"
 #define MyAppPublisher "El G"
 #define MyAppExeName "ElGV3.exe"
 

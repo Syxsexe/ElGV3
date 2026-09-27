@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import PagoModal from "../components/PagoModal";
 import { useIsMobile } from "../useMediaQuery";
-
-const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
+import { fmt } from "../format";
 
 function AbrirCuentaModal({ onClose, onCreated }) {
   const [cliente, setCliente] = useState("Consumidor final");

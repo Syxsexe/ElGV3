@@ -1,4 +1,6 @@
 """pos_api/schemas.py — modelos Pydantic de request/response del piloto."""
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -43,7 +45,7 @@ class CobrarCuentaRequest(BaseModel):
 
 
 class ItemCarrito(BaseModel):
-    tipo: str  # 'producto' | 'combo' | 'adicional'
+    tipo: Literal["producto", "combo", "adicional"]
     id: int
     cantidad: float = Field(default=1, gt=0)
 

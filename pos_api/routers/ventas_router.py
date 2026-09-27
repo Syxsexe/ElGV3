@@ -19,6 +19,11 @@ def post_registrar_venta(body: RegistrarVentaRequest):
             carrito.agregar_combo(item.id, item.cantidad)
         elif item.tipo == "adicional":
             carrito.agregar_adicional(item.id, item.cantidad)
+        else:
+            # Inalcanzable mientras ItemCarrito.tipo sea el Literal de schemas.py;
+            # queda como red de seguridad si algún día se agrega un tipo nuevo
+            # ahí sin actualizar este router.
+            raise ValueError(f"Tipo de ítem no soportado: {item.tipo}")
 
     sesion = get_sesion_activa()
     if not sesion:

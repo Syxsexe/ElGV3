@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { fmt } from "../format";
 
 const METODOS = [
   ["efectivo", "Efectivo"],
@@ -8,8 +9,6 @@ const METODOS = [
   ["transferencia", "Transferencia"],
   ["mixto", "Mixto"],
 ];
-
-const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
 
 export default function PagoModal({ total, onConfirm, onCancel }) {
   const [modo, setModo] = useState("efectivo");
@@ -24,8 +23,8 @@ export default function PagoModal({ total, onConfirm, onCancel }) {
 
   const agregarLinea = () => {
     const monto = Number(nuevoMonto);
-    if (!monto || monto <= 0) return;
-    setLineas((ls) => [...ls, { metodo: nuevoMetodo, monto: Math.min(monto, pendiente) || monto }]);
+    if (!monto || monto <= 0 || pendiente <= 0) return;
+    setLineas((ls) => [...ls, { metodo: nuevoMetodo, monto: Math.min(monto, pendiente) }]);
     setNuevoMonto("");
   };
 
@@ -77,7 +76,7 @@ export default function PagoModal({ total, onConfirm, onCancel }) {
               </select>
               <input className="inp num" type="number" placeholder="Monto" value={nuevoMonto}
                 onChange={(e) => setNuevoMonto(e.target.value)} />
-              <button type="button" className="btn btn-s" onClick={agregarLinea}>Agregar</button>
+              <button type="button" className="btn btn-s" onClick={agregarLinea} disabled={pendiente <= 0}>Agregar</button>
             </div>
             {lineas.map((l, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14 }}>

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import PagoModal from "../components/PagoModal";
 import { useIsMobile } from "../useMediaQuery";
+import { fmt } from "../format";
 
-const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
 const TABS = [
   ["tienda", "Tienda"],
   ["cocina", "Cocina"],

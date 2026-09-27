@@ -1,13 +1,33 @@
 """
 auth.py — El G POS
 Autenticación de usuarios y manejo de sesión activa.
+
+La sesión activa vive en un ContextVar en vez de una variable global simple.
+En el desktop (un solo hilo, un solo usuario por proceso) se comporta igual
+que antes. En el servidor web, cada request de FastAPI corre en su propio
+contexto: una dependencia llama a `set_sesion(...)` con el usuario resuelto
+del JWT al inicio del request, así que dos requests concurrentes de
+vendedores distintos nunca se pisan la identidad entre sí.
 """
+
+from contextvars import ContextVar
 
 from database import get_connection, verificar_contrasena
 
 
-# ── Sesión activa (singleton en memoria) ─────────────────────────────────────
-_sesion_activa: dict | None = None
+# ── Sesión activa (por contexto: por hilo en desktop, por request en el
+# servidor web) ───────────────────────────────────────────────────────────────
+_sesion_activa: ContextVar[dict | None] = ContextVar("sesion_activa", default=None)
+
+
+def set_sesion(sesion: dict | None) -> None:
+    """Fija directamente la sesión activa del contexto actual.
+
+    Usado por el servidor web: la dependencia de FastAPI que valida el JWT
+    llama a esto con el usuario ya resuelto, en vez de pasar por
+    iniciar_sesion() (que golpea la base de datos con usuario/contraseña).
+    """
+    _sesion_activa.set(sesion)
 
 
 def iniciar_sesion(usuario: str, contrasena: str) -> dict | None:
@@ -16,8 +36,6 @@ def iniciar_sesion(usuario: str, contrasena: str) -> dict | None:
     Si son correctas, guarda la sesión en memoria y la retorna.
     Retorna None si las credenciales son incorrectas o el usuario está inactivo.
     """
-    global _sesion_activa
-
     conn = get_connection()
     cur  = conn.cursor()
 
@@ -39,48 +57,51 @@ def iniciar_sesion(usuario: str, contrasena: str) -> dict | None:
     if not verificar_contrasena(contrasena, fila["contrasena_hash"]):
         return None  # contraseña incorrecta
 
-    _sesion_activa = {
+    sesion = {
         "id":      fila["id"],
         "usuario": fila["usuario"],
         "rol":     fila["rol"],      # 'admin' | 'vendedor'
     }
+    _sesion_activa.set(sesion)
     try:
         from modules.auditoria import registrar
         registrar("login", f"Inicio de sesión ({fila['rol']})", referencia_id=fila["id"])
     except Exception:
         pass
-    return _sesion_activa
+    return sesion
 
 
 def cerrar_sesion():
-    """Limpia la sesión activa en memoria."""
-    global _sesion_activa
+    """Limpia la sesión activa del contexto actual."""
     try:
         from modules.auditoria import registrar
         registrar("login", "Cierre de sesión")
     except Exception:
         pass
-    _sesion_activa = None
+    _sesion_activa.set(None)
 
 
 def get_sesion() -> dict | None:
     """Retorna el diccionario de la sesión activa, o None si no hay sesión."""
-    return _sesion_activa
+    return _sesion_activa.get()
 
 
 def get_usuario_id() -> int | None:
     """Retorna el ID del usuario activo, o None si no hay sesión."""
-    return _sesion_activa["id"] if _sesion_activa else None
+    sesion = _sesion_activa.get()
+    return sesion["id"] if sesion else None
 
 
 def get_rol() -> str | None:
     """Retorna el rol del usuario activo ('admin' | 'vendedor'), o None."""
-    return _sesion_activa["rol"] if _sesion_activa else None
+    sesion = _sesion_activa.get()
+    return sesion["rol"] if sesion else None
 
 
 def es_admin() -> bool:
     """True si el usuario activo tiene rol admin."""
-    return _sesion_activa is not None and _sesion_activa["rol"] == "admin"
+    sesion = _sesion_activa.get()
+    return sesion is not None and sesion["rol"] == "admin"
 
 
 def requiere_admin(func):

@@ -7,6 +7,7 @@ Crea todas las tablas si no existen y provee la conexión centralizada.
 import sqlite3
 import hashlib
 import os
+import time
 from pathlib import Path
 
 # ── Ruta de la base de datos ──────────────────────────────────────────────────
@@ -16,11 +17,37 @@ DB_PATH = ruta_datos("elg_pos.db")
 
 # ── Conexión ──────────────────────────────────────────────────────────────────
 def get_connection() -> sqlite3.Connection:
-    """Retorna una conexión con soporte a claves foráneas activado."""
-    conn = sqlite3.connect(DB_PATH)
+    """Retorna una conexión con soporte a claves foráneas activado.
+
+    journal_mode=WAL + timeout permiten que varias conexiones (varios
+    terminales/vendedores atendidos por el servidor web) lean y escriban a la
+    vez sin bloquear todo el archivo; sin esto, dos escrituras concurrentes
+    fallan de inmediato con "database is locked" en vez de esperar su turno.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row          # acceso por nombre de columna
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
+
+
+def commit_con_reintentos(conn: sqlite3.Connection, intentos: int = 3) -> None:
+    """Hace commit reintentando ante "database is locked" con backoff corto.
+
+    Cubre el caso borde de que el timeout de la conexión no alcance a esperar
+    un lock liberado justo después (varias escrituras concurrentes en el
+    mismo instante). No reemplaza el timeout de la conexión, es una segunda
+    red de seguridad para los endpoints de escritura del servidor web.
+    """
+    for intento in range(intentos):
+        try:
+            conn.commit()
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() or intento == intentos - 1:
+                raise
+            time.sleep(0.1 * (intento + 1))
 
 
 # ── Creación de tablas ────────────────────────────────────────────────────────

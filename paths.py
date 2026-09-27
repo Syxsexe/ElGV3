@@ -27,7 +27,17 @@ def esta_empaquetado() -> bool:
 
 
 def carpeta_datos() -> Path:
-    """Carpeta donde se guardan los archivos escribibles (DB, config, colas)."""
+    """Carpeta donde se guardan los archivos escribibles (DB, config, colas).
+
+    Si está definida la variable de entorno ELG_DATA_DIR (servidor web), se usa
+    esa ruta en vez de la carpeta del proyecto, para no mezclar datos con el
+    código versionado.
+    """
+    override = os.environ.get("ELG_DATA_DIR")
+    if override:
+        destino = Path(override)
+        destino.mkdir(parents=True, exist_ok=True)
+        return destino
     if not esta_empaquetado():
         return _carpeta_proyecto()
     if os.name == "nt":

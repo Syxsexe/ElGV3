@@ -1,7 +1,7 @@
 // Grupos de navegación del Sidebar/TabBar, iconos y rutas tomados de los
-// mockups (Sidebar.dc.html / TabBar.dc.html). Solo Cuentas y Nueva venta
-// están implementados en este piloto; el resto queda visible pero
-// deshabilitado, para mantener la fidelidad visual del diseño completo.
+// mockups (Sidebar.dc.html / TabBar.dc.html). Solo Cuentas, Nueva venta y
+// Caja están implementados; el resto queda visible pero deshabilitado,
+// para mantener la fidelidad visual del diseño completo.
 
 export const SIDEBAR_GROUPS = [
   {
@@ -11,7 +11,7 @@ export const SIDEBAR_GROUPS = [
       { label: "Nueva venta", path: "/venta", d: "M3 4h2l2.4 11h11l2-8H6.2M9 20h.01M17 20h.01" },
       { label: "Consulta precios", path: null, d: "M3 12V4h8l10 10-8 8zM7.5 7.5h.01" },
       { label: "Cuentas", path: "/cuentas", d: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6" },
-      { label: "Caja", path: null, d: "M3 7h18v12H3zM3 7l3-4h12l3 4M16 13h2" },
+      { label: "Caja", path: "/caja", d: "M3 7h18v12H3zM3 7l3-4h12l3 4M16 13h2" },
     ],
   },
   {
@@ -53,6 +53,6 @@ export const TABBAR_ITEMS = [
   { label: "Inicio", path: null, d: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" },
   { label: "Vender", path: "/venta", d: "M3 4h2l2.4 11h11l2-8H6.2M9 20h.01M17 20h.01" },
   { label: "Cuentas", path: "/cuentas", d: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6" },
-  { label: "Caja", path: null, d: "M3 7h18v12H3zM3 7l3-4h12l3 4M16 13h2" },
+  { label: "Caja", path: "/caja", d: "M3 7h18v12H3zM3 7l3-4h12l3 4M16 13h2" },
   { label: "Más", path: null, d: "M4 6h16M4 12h16M4 18h16" },
 ];

@@ -3,7 +3,9 @@ modules/caja.py — El G POS
 Manejo de sesiones de caja: apertura, cierre y denominaciones COP.
 """
 
-from database import get_connection
+import sqlite3
+
+from database import get_connection, commit_con_reintentos
 from auth import get_usuario_id, requiere_admin
 
 
@@ -28,6 +30,37 @@ def migrar_dos_cajas():
             conn.execute(
                 f"ALTER TABLE sesiones_caja ADD COLUMN {col} REAL DEFAULT {default}"
             )
+    # Reparación defensiva ANTES de crear el índice de abajo: si por cualquier
+    # motivo (una carrera de una versión anterior a este fix, una edición
+    # manual de la DB) ya hubiera 2+ sesiones abiertas a la vez, el CREATE
+    # UNIQUE INDEX fallaría con IntegrityError — y como esta función se llama
+    # en cada apertura/cierre, caja quedaría rota PERMANENTEMENTE (desktop y
+    # web) hasta reparar la DB a mano. Se cierra automáticamente todo menos la
+    # más reciente, dejando constancia en notas, para que el índice se pueda
+    # crear siempre.
+    abiertas = conn.execute(
+        "SELECT id FROM sesiones_caja WHERE cierre IS NULL ORDER BY apertura DESC"
+    ).fetchall()
+    if len(abiertas) > 1:
+        conn.executemany("""
+            UPDATE sesiones_caja
+            SET cierre = datetime('now','localtime'),
+                notas  = TRIM(COALESCE(notas || ' — ', '') ||
+                         'Cerrada automáticamente: se detectaron múltiples cajas abiertas a la vez.')
+            WHERE id = ?
+        """, [(r["id"],) for r in abiertas[1:]])
+
+    # Único caja abierta a la vez: un índice único sobre la sola columna
+    # `cierre` no serviría (SQLite trata cada NULL como distinto). Se indexa
+    # la EXPRESIÓN `(cierre IS NULL)`, que vale 1 para toda fila que ya
+    # matchea el WHERE — dos filas así sí colisionan entre sí. Esto convierte
+    # la condición de carrera de abrir_caja (chequeo + insert en pasos
+    # separados) en un IntegrityError real ante dos aperturas concurrentes.
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_una_caja_abierta
+        ON sesiones_caja ((cierre IS NULL))
+        WHERE cierre IS NULL
+    """)
     conn.commit()
     conn.close()
 
@@ -168,13 +201,25 @@ def abrir_caja(monto_base: float, monto_base_digital: float = 0,
     usuario_id = get_usuario_id()
     conn = get_connection()
     try:
-        cur = conn.execute("""
-            INSERT INTO sesiones_caja
-                (usuario_id, monto_base, monto_base_digital,
-                 total_ventas, total_efectivo, total_digital, notas)
-            VALUES (?, ?, ?, 0, 0, 0, ?)
-        """, (usuario_id, monto_base, monto_base_digital, notas))
-        conn.commit()
+        try:
+            cur = conn.execute("""
+                INSERT INTO sesiones_caja
+                    (usuario_id, monto_base, monto_base_digital,
+                     total_ventas, total_efectivo, total_digital, notas)
+                VALUES (?, ?, ?, 0, 0, 0, ?)
+            """, (usuario_id, monto_base, monto_base_digital, notas))
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            if "idx_una_caja_abierta" not in str(e):
+                # Otra violación de integridad (ej. usuario_id NULL): no la
+                # enmascaremos como "ya existe sesión abierta", es un bug
+                # distinto y hay que verlo tal cual.
+                raise
+            # El chequeo hay_sesion_abierta() de arriba es solo para dar un
+            # buen mensaje en el camino feliz; la guarda real ante dos
+            # aperturas concurrentes es el índice único de migrar_dos_cajas().
+            raise ValueError("Ya existe una sesión de caja abierta. Ciérrela antes de abrir una nueva.")
+        commit_con_reintentos(conn)
         sesion_id = cur.lastrowid
     finally:
         conn.close()
@@ -245,7 +290,10 @@ def cerrar_caja(
     try:
         # Sana también los acumuladores con los valores reales (por si venían
         # desviados de un flujo viejo), para que reportes e historial cuadren.
-        conn.execute("""
+        # El `AND cierre IS NULL` + chequeo de rowcount es la guarda real ante
+        # dos cierres concurrentes de la misma sesión (que si no, duplicarían
+        # las 11 filas de denominaciones_caja y se pisarían el cuadre).
+        cur = conn.execute("""
             UPDATE sesiones_caja
             SET cierre             = datetime('now','localtime'),
                 monto_cierre       = ?,
@@ -255,10 +303,14 @@ def cerrar_caja(
                 total_efectivo     = ?,
                 total_digital      = ?,
                 notas              = COALESCE(?, notas)
-            WHERE id = ?
+            WHERE id = ? AND cierre IS NULL
         """, (monto_contado, diferencia_ef, diferencia_dig,
               total_ventas, total_efectivo, total_digital,
               notas, sesion["id"]))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise ValueError("La caja ya fue cerrada (por otra sesión concurrente).")
 
         conn.executemany("""
             INSERT INTO denominaciones_caja (sesion_id, denominacion, cantidad, subtotal)
@@ -267,7 +319,7 @@ def cerrar_caja(
             (sesion["id"], d["denominacion"], d["cantidad"], d["subtotal"])
             for d in detalle_denom
         ])
-        conn.commit()
+        commit_con_reintentos(conn)
     finally:
         conn.close()
 

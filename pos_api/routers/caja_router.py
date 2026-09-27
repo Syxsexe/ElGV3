@@ -1,12 +1,25 @@
-"""pos_api/routers/caja_router.py — solo lectura para el piloto.
+"""pos_api/routers/caja_router.py — envuelve modules/caja.py.
 
-Abrir/cerrar caja se queda en el desktop por ahora (fuera de alcance del
-piloto de Ventas/Cuentas); la web solo necesita saber si hay una sesión
-abierta para permitir cobrar cuentas.
+Abrir/cerrar caja y su historial (solo admin) se exponen aquí. La
+generación del PDF de cierre (modules/reporte_caja.py) queda fuera de
+alcance por ahora — sigue siendo solo de escritorio.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from modules.caja import get_sesion_activa, hay_sesion_abierta
+import auth
+from modules.caja import (
+    abonos_sesion,
+    abrir_caja,
+    cerrar_caja,
+    egresos_sesion,
+    get_sesion_activa,
+    hay_sesion_abierta,
+    listar_sesiones,
+    obtener_sesion,
+    resumen_sesiones,
+    totales_ventas_sesion,
+)
+from pos_api.schemas import AbrirCajaRequest, CerrarCajaRequest
 from pos_api.security import usuario_actual
 
 router = APIRouter(prefix="/caja", tags=["caja"], dependencies=[Depends(usuario_actual)])
@@ -15,3 +28,65 @@ router = APIRouter(prefix="/caja", tags=["caja"], dependencies=[Depends(usuario_
 @router.get("/sesion-activa")
 def get_caja_sesion_activa():
     return {"abierta": hay_sesion_abierta(), "sesion": get_sesion_activa()}
+
+
+@router.post("/abrir", status_code=status.HTTP_201_CREATED)
+def post_abrir_caja(body: AbrirCajaRequest):
+    sesion_id = abrir_caja(body.monto_base, monto_base_digital=body.monto_base_digital, notas=body.notas)
+    return {"sesion_id": sesion_id}
+
+
+@router.get("/preview-cierre")
+def get_preview_cierre():
+    """Mismos números que hoy arma a mano ui/caja.py, calculados en el
+    servidor para que el frontend no duplique el SQL."""
+    sesion = get_sesion_activa()
+    if not sesion:
+        raise ValueError("No hay una caja abierta.")
+
+    ventas = totales_ventas_sesion(sesion["id"])
+    egresos_ef, egresos_dig = egresos_sesion(sesion["id"])
+    abonos_ef, abonos_dig = abonos_sesion(sesion["id"])
+    monto_base_digital = sesion.get("monto_base_digital", 0) or 0
+
+    esperado_efectivo = round(sesion["monto_base"] + ventas["efectivo"] + abonos_ef - egresos_ef, 2)
+    esperado_digital = round(monto_base_digital + ventas["digital"] + abonos_dig - egresos_dig, 2)
+
+    return {
+        "sesion": sesion,
+        "ventas": {"efectivo": ventas["efectivo"], "digital": ventas["digital"]},
+        "egresos": {"efectivo": egresos_ef, "digital": egresos_dig},
+        "abonos": {"efectivo": abonos_ef, "digital": abonos_dig},
+        "esperado_efectivo": esperado_efectivo,
+        "esperado_digital": esperado_digital,
+    }
+
+
+@router.post("/cerrar")
+def post_cerrar_caja(body: CerrarCajaRequest):
+    denominaciones = {int(k): v for k, v in body.denominaciones.items()}
+    denominaciones["digital"] = body.digital
+    return cerrar_caja(denominaciones, notas=body.notas)
+
+
+@router.get("/historial")
+def get_historial(desde: str | None = None, hasta: str | None = None, limite: int = 60):
+    return listar_sesiones(limite=limite, fecha_inicio=desde, fecha_fin=hasta)
+
+
+@router.get("/historial/resumen")
+def get_historial_resumen(desde: str | None = None, hasta: str | None = None):
+    return resumen_sesiones(fecha_inicio=desde, fecha_fin=hasta)
+
+
+@router.get("/historial/{sesion_id}")
+def get_historial_detalle(sesion_id: int):
+    # obtener_sesion() no está decorada con @requiere_admin en modules/caja.py
+    # (a diferencia de listar_sesiones/resumen_sesiones) — se replica aquí la
+    # misma regla del desktop: la pestaña Historial es solo para admin.
+    if not auth.es_admin():
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Se requiere rol administrador.")
+    sesion = obtener_sesion(sesion_id)
+    if sesion is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sesión no encontrada.")
+    return sesion

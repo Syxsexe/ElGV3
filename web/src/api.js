@@ -22,6 +22,20 @@ function notificarNoAutorizado() {
   window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
+// FastAPI manda `detail` como string en nuestros errores de negocio (400/403),
+// pero como un ARRAY de objetos {msg,...} en errores 422 de validación de
+// Pydantic — sin esto, `new Error(array)` se convierte en "[object Object]" y
+// el mensaje real nunca le llega al usuario.
+function mensajeDeError(data, status) {
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => d?.msg || JSON.stringify(d)).join("; ");
+  }
+  if (detail) return JSON.stringify(detail);
+  return `Error ${status}`;
+}
+
 class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -57,8 +71,7 @@ async function request(path, { method = "GET", body } = {}) {
   }
 
   if (!res.ok) {
-    const detail = data?.detail || `Error ${res.status}`;
-    throw new ApiError(detail, res.status);
+    throw new ApiError(mensajeDeError(data, res.status), res.status);
   }
   return data;
 }
@@ -89,6 +102,14 @@ export const api = {
   registrarVenta: (body) => request("/ventas", { method: "POST", body }),
 
   cajaSesionActiva: () => request("/caja/sesion-activa"),
+  abrirCaja: (body) => request("/caja/abrir", { method: "POST", body }),
+  previewCierre: () => request("/caja/preview-cierre"),
+  cerrarCaja: (body) => request("/caja/cerrar", { method: "POST", body }),
+  historialCaja: (desde, hasta) =>
+    request(`/caja/historial?${desde ? `desde=${desde}&` : ""}${hasta ? `hasta=${hasta}` : ""}`),
+  resumenHistorialCaja: (desde, hasta) =>
+    request(`/caja/historial/resumen?${desde ? `desde=${desde}&` : ""}${hasta ? `hasta=${hasta}` : ""}`),
+  detalleSesionCaja: (id) => request(`/caja/historial/${id}`),
 };
 
 export { ApiError };

@@ -105,6 +105,26 @@ button { font-family: inherit; }
 .chip.bad { background: var(--danger-bg); color: #8E2A20; }
 .chip.neu { background: var(--neu-bg); color: var(--text-label); }
 
+.th {
+  display: grid;
+  gap: 12px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.tr {
+  display: grid;
+  gap: 12px;
+  padding: 11px 16px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border-2);
+  align-items: center;
+}
+.r { text-align: right; }
+
 .seg { display: inline-flex; background: var(--neu-bg); border-radius: 12px; padding: 4px; gap: 4px; }
 .seg button {
   font: 600 13px Figtree, sans-serif;

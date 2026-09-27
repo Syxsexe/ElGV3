@@ -65,6 +65,15 @@ def sqlite_locked_handler(request: Request, exc: sqlite3.OperationalError):
     return JSONResponse(status_code=503, content={"detail": "Base de datos ocupada, intenta de nuevo."})
 
 
+@app.exception_handler(sqlite3.IntegrityError)
+def sqlite_integrity_handler(request: Request, exc: sqlite3.IntegrityError):
+    # Red de seguridad: las violaciones de integridad que el propio código de
+    # negocio ya sabe traducir (ej. doble apertura de caja) se relanzan como
+    # ValueError antes de llegar aquí. Cualquier otra que se escape (bug, dato
+    # inesperado) cae aquí en vez de convertirse en un 500 crudo sin detail.
+    return JSONResponse(status_code=400, content={"detail": "Operación inválida: violación de integridad de datos."})
+
+
 @app.get("/salud")
 def salud():
     return {"ok": True}

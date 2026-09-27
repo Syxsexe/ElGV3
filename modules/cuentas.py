@@ -6,7 +6,7 @@ Flujo: abrir cuenta → agregar ítems → ver resumen → cobrar y cerrar.
 
 import re
 
-from database import get_connection
+from database import get_connection, commit_con_reintentos
 from auth import get_usuario_id
 
 
@@ -126,7 +126,7 @@ def abrir_cuenta(
             INSERT INTO cuentas (cliente, cliente_id, mesa, usuario_id, notas)
             VALUES (?, ?, ?, ?, ?)
         """, (cliente, cliente_id, mesa, get_usuario_id(), notas))
-        conn.commit()
+        commit_con_reintentos(conn)
         cuenta_id = cur.lastrowid
     finally:
         conn.close()
@@ -273,7 +273,7 @@ def agregar_item(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (cuenta_id, producto_id, combo_id, insumo_id, nombre,
               cantidad, precio_unit, subtotal))
-        conn.commit()
+        commit_con_reintentos(conn)
 
         return {
             "id":          cur.lastrowid,
@@ -307,7 +307,7 @@ def quitar_item(item_id: int) -> bool:
             raise ValueError("No se puede modificar una cuenta ya cerrada.")
 
         conn.execute("DELETE FROM cuenta_items WHERE id = ?", (item_id,))
-        conn.commit()
+        commit_con_reintentos(conn)
         return True
     finally:
         conn.close()
@@ -336,7 +336,7 @@ def cambiar_cantidad_item(item_id: int, nueva_cantidad: float) -> bool:
             "UPDATE cuenta_items SET cantidad = ?, subtotal = ? WHERE id = ?",
             (nueva_cantidad, subtotal, item_id)
         )
-        conn.commit()
+        commit_con_reintentos(conn)
         return True
     finally:
         conn.close()
@@ -495,7 +495,7 @@ def cobrar_cuenta(
             WHERE id = ?
         """, (venta_id, cuenta_id))
 
-        conn_main.commit()
+        commit_con_reintentos(conn_main)
 
         # Registrar cargo de crédito si aplica
         if metodo_final == "credito" and cuenta.get("cliente_id"):
@@ -546,7 +546,7 @@ def cancelar_cuenta(cuenta_id: int) -> bool:
                 cerrada_en = datetime('now','localtime')
             WHERE id = ?
         """, (cuenta_id,))
-        conn.commit()
+        commit_con_reintentos(conn)
     finally:
         conn.close()
 

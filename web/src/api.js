@@ -13,6 +13,15 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// AuthContext escucha este evento para sincronizar su estado en React: sin
+// esto, un 401 limpia localStorage pero el `token` en memoria de React sigue
+// viendo la sesión como activa (Layout no redirige a /login) hasta recargar.
+export const UNAUTHORIZED_EVENT = "elg:unauthorized";
+
+function notificarNoAutorizado() {
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+}
+
 class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -33,6 +42,7 @@ async function request(path, { method = "GET", body } = {}) {
 
   if (res.status === 401) {
     clearToken();
+    notificarNoAutorizado();
     throw new ApiError("Sesión expirada, vuelve a ingresar.", 401);
   }
 

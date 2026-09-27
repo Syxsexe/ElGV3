@@ -78,11 +78,13 @@ def delete_item(item_id: int):
 @router.post("/{cuenta_id}/cobrar")
 def post_cobrar_cuenta(cuenta_id: int, body: CobrarCuentaRequest):
     sesion = get_sesion_activa()
+    if not sesion:
+        raise ValueError("No hay una caja abierta. Ábrela desde el escritorio antes de cobrar.")
     venta_id = cobrar_cuenta(
         cuenta_id,
         metodo_pago=body.metodo_pago,
         descuento=body.descuento,
-        sesion_id=sesion["id"] if sesion else None,
+        sesion_id=sesion["id"],
         pagos=[p.model_dump() for p in body.pagos] if body.pagos else None,
     )
     return {"venta_id": venta_id}

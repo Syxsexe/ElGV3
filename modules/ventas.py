@@ -3,7 +3,7 @@ modules/ventas.py — El G POS
 Registro de ventas, manejo de carrito y coordinación con inventario.
 """
 
-from database import get_connection
+from database import get_connection, commit_con_reintentos
 from auth import get_usuario_id, requiere_admin
 from modules.clientes import obtener_cliente
 from modules.inventario import (
@@ -364,7 +364,7 @@ def registrar_venta(
         if emitir_factura or cliente_id:
             _crear_factura(conn, venta_id, cliente_id, total, iva_porcentaje, notas)
 
-        conn.commit()
+        commit_con_reintentos(conn)
         carrito.limpiar()
 
         # Registrar cargo de crédito si aplica

@@ -1,5 +1,5 @@
 """pos_api/schemas.py — modelos Pydantic de request/response del piloto."""
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
@@ -24,33 +24,33 @@ class AgregarItemRequest(BaseModel):
     producto_id: int | None = None
     combo_id: int | None = None
     insumo_id: int | None = None
-    cantidad: float = 1
+    cantidad: float = Field(default=1, gt=0)
 
 
 class CambiarCantidadRequest(BaseModel):
-    cantidad: float
+    cantidad: float = Field(gt=0)
 
 
 class PagoMixto(BaseModel):
     metodo: str
-    monto: float
+    monto: float = Field(gt=0)
 
 
 class CobrarCuentaRequest(BaseModel):
     metodo_pago: str = "efectivo"
-    descuento: float = 0
+    descuento: float = Field(default=0, ge=0)
     pagos: list[PagoMixto] | None = None
 
 
 class ItemCarrito(BaseModel):
     tipo: str  # 'producto' | 'combo' | 'adicional'
     id: int
-    cantidad: float = 1
+    cantidad: float = Field(default=1, gt=0)
 
 
 class RegistrarVentaRequest(BaseModel):
     items: list[ItemCarrito]
     metodo_pago: str = "efectivo"
-    descuento: float = 0
+    descuento: float = Field(default=0, ge=0)
     cliente_id: int | None = None
     pagos: list[PagoMixto] | None = None

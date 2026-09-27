@@ -21,11 +21,13 @@ def post_registrar_venta(body: RegistrarVentaRequest):
             carrito.agregar_adicional(item.id, item.cantidad)
 
     sesion = get_sesion_activa()
+    if not sesion:
+        raise ValueError("No hay una caja abierta. Ábrela desde el escritorio antes de cobrar.")
     venta_id = registrar_venta(
         carrito,
         metodo_pago=body.metodo_pago,
         descuento=body.descuento,
-        sesion_id=sesion["id"] if sesion else None,
+        sesion_id=sesion["id"],
         cliente_id=body.cliente_id,
         pagos=[p.model_dump() for p in body.pagos] if body.pagos else None,
     )

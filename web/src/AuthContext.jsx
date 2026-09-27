@@ -1,5 +1,5 @@
-import { createContext, useContext, useMemo, useState } from "react";
-import { api, clearToken, getToken, setToken } from "./api";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { api, clearToken, getToken, setToken, UNAUTHORIZED_EVENT } from "./api";
 
 const AuthContext = createContext(null);
 
@@ -29,6 +29,17 @@ export function AuthProvider({ children }) {
     setTokenState(null);
     setUsuario(null);
   };
+
+  // api.js dispara este evento cuando un 401 ya limpió localStorage; sin este
+  // listener el estado en memoria de React seguiría creyendo que hay sesión.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setTokenState(null);
+      setUsuario(null);
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
 
   const value = useMemo(() => ({ token, usuario, login, logout }), [token, usuario]);
 

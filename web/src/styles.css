@@ -1,0 +1,299 @@
+/* El G POS — estilos globales, replican el sistema de diseño de los mockups
+   (Bricolage Grotesque + Figtree, fondo crema, acento verde). */
+
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap");
+
+:root {
+  --bg: #F7F4EE;
+  --surface: #FFFFFF;
+  --surface-2: #FBF9F5;
+  --border: #E4DDD1;
+  --border-2: #EFE9DF;
+  --text: #2A2622;
+  --text-muted: #6B635A;
+  --text-label: #4A433C;
+  --accent: #1E6E64;
+  --accent-hover: #15524A;
+  --accent-soft: #E8F3F0;
+  --danger: #B83A2E;
+  --danger-border: #EBC3BD;
+  --danger-bg: #F8DEDA;
+  --ok-bg: #DFF1E4;
+  --ok-text: #1F5E39;
+  --warn-bg: #FBEFD2;
+  --warn-text: #7A4D05;
+  --neu-bg: #F1ECE3;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  font-family: Figtree, "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+h1, h2, h3 {
+  font-family: "Bricolage Grotesque", Figtree, sans-serif;
+  margin: 0;
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}
+
+button { font-family: inherit; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; }
+
+.btn {
+  font: 600 14px Figtree, sans-serif;
+  border-radius: 10px;
+  padding: 0 16px;
+  height: 40px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  text-decoration: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-p { background: var(--accent); color: #fff; }
+.btn-p:hover:not(:disabled) { background: var(--accent-hover); color: #fff; }
+.btn-s { background: #fff; color: var(--text); border-color: #D9D1C4; }
+.btn-s:hover:not(:disabled) { background: var(--bg); }
+.btn-g { background: var(--neu-bg); color: var(--text); }
+.btn-d { background: #fff; color: var(--danger); border-color: var(--danger-border); }
+.btn-d:hover:not(:disabled) { background: var(--danger-bg); }
+
+.inp {
+  font: 400 14px Figtree, sans-serif;
+  height: 40px;
+  border: 1px solid #D9D1C4;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--text);
+  box-sizing: border-box;
+  width: 100%;
+}
+.inp:focus { outline: 3px solid #BFE0D8; border-color: var(--accent); }
+
+.lbl { font-size: 13px; font-weight: 600; color: var(--text-label); }
+.muted { color: var(--text-muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chip.ok { background: var(--ok-bg); color: var(--ok-text); }
+.chip.warn { background: var(--warn-bg); color: var(--warn-text); }
+.chip.bad { background: var(--danger-bg); color: #8E2A20; }
+.chip.neu { background: var(--neu-bg); color: var(--text-label); }
+
+.seg { display: inline-flex; background: var(--neu-bg); border-radius: 12px; padding: 4px; gap: 4px; }
+.seg button {
+  font: 600 13px Figtree, sans-serif;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.seg button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(42, 38, 34, .14); }
+
+.mesa {
+  font-family: Figtree, sans-serif;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text);
+  box-sizing: border-box;
+  width: 100%;
+}
+.mesa:hover { border-color: var(--accent); }
+.mesa.on { border: 2px solid var(--accent); background: #F4FAF8; padding: 15px; }
+
+.prod {
+  font-family: Figtree, sans-serif;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--text);
+  min-height: 100px;
+  box-sizing: border-box;
+  position: relative;
+}
+.prod:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(30, 110, 100, .12); }
+
+.qty {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.step {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid #D9D1C4;
+  background: #fff;
+  font: 700 16px Figtree, sans-serif;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.pay {
+  font: 600 13px Figtree, sans-serif;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid #D9D1C4;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+.pay.on { border: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent-hover); }
+
+.pill {
+  font: 600 14px Figtree, sans-serif;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid #D9D1C4;
+  background: #fff;
+  color: var(--text-label);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pill.on { background: var(--text); border-color: var(--text); color: #fff; }
+
+/* ── Navegación: Sidebar (desktop) / TabBar (móvil) ─────────────────────── */
+.sb-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--text-label);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.sb-nav:hover { background: #F4EFE7; color: var(--text); }
+.sb-nav.on { background: #DCEFEA; color: var(--accent-hover); font-weight: 700; }
+.sb-nav.disabled { color: #B7AFA3; cursor: default; pointer-events: none; }
+.sb-nav svg { flex-shrink: 0; }
+
+.tb {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  height: 60px;
+  border-radius: 14px;
+  background: none;
+  border: 0;
+}
+.tb.on { color: var(--accent-hover); }
+.tb .ic { width: 52px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; }
+.tb.on .ic { background: #DCEFEA; }
+.tb.disabled { color: #C9C1B4; pointer-events: none; }
+
+/* ── Layout responsivo: desktop >=880px con sidebar fija; móvil con tab bar */
+.app-shell { display: flex; min-height: 100vh; }
+.app-main { flex-grow: 1; min-width: 0; box-sizing: border-box; padding: 28px 32px; display: flex; flex-direction: column; gap: 20px; }
+
+.desktop-only { display: initial; }
+.mobile-only { display: none; }
+
+/* Nav: clase propia por breakpoint en vez de desktop-only/mobile-only, para
+   que el display:flex que cada una necesita no compita con un display
+   inline (un estilo inline le gana a una clase sin !important). */
+.sidebar-nav { display: flex; }
+.tabbar-nav { display: none; }
+
+@media (max-width: 880px) {
+  .desktop-only { display: none !important; }
+  .mobile-only { display: initial; }
+  .sidebar-nav { display: none; }
+  .tabbar-nav { display: flex; }
+  .app-main { padding: 16px 16px 84px; }
+}
+
+/* ── Login ───────────────────────────────────────────────────────────────── */
+.login-shell { display: flex; min-height: 100vh; background: var(--bg); }
+.login-hero {
+  width: 640px; flex-shrink: 0; box-sizing: border-box; background: var(--accent); color: #fff;
+  padding: 64px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden;
+}
+.login-form-side { flex-grow: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.login-form { width: 400px; max-width: 100%; display: flex; flex-direction: column; gap: 22px; }
+
+@media (max-width: 880px) {
+  .login-shell { flex-direction: column; }
+  .login-hero { width: 100%; height: 220px; padding: 32px 24px; border-radius: 0 0 28px 28px; }
+  .login-hero h1 { font-size: 48px !important; }
+  .login-form-side { padding: 28px 24px; align-items: flex-start; }
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--danger-bg);
+  color: #8E2A20;
+  font-size: 14px;
+  font-weight: 500;
+}

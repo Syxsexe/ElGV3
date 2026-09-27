@@ -40,3 +40,17 @@ class CobrarCuentaRequest(BaseModel):
     metodo_pago: str = "efectivo"
     descuento: float = 0
     pagos: list[PagoMixto] | None = None
+
+
+class ItemCarrito(BaseModel):
+    tipo: str  # 'producto' | 'combo' | 'adicional'
+    id: int
+    cantidad: float = 1
+
+
+class RegistrarVentaRequest(BaseModel):
+    items: list[ItemCarrito]
+    metodo_pago: str = "efectivo"
+    descuento: float = 0
+    cliente_id: int | None = None
+    pagos: list[PagoMixto] | None = None

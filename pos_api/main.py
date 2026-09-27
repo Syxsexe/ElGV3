@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from database import inicializar
 from modules.cuentas import migrar as migrar_cuentas
 from pos_api.config import CORS_ORIGINS
-from pos_api.routers import auth_router, caja_router, cuentas_router, productos_router
+from pos_api.routers import auth_router, caja_router, cuentas_router, productos_router, ventas_router
 
 app = FastAPI(title="El G POS — API web (piloto Ventas/Cuentas)")
 
@@ -37,6 +37,7 @@ app.include_router(auth_router.router)
 app.include_router(cuentas_router.router)
 app.include_router(productos_router.router)
 app.include_router(caja_router.router)
+app.include_router(ventas_router.router)
 
 
 @app.on_event("startup")

@@ -169,18 +169,29 @@ def hay_sesion_abierta() -> bool:
     return fila is not None
 
 
-def get_sesion_activa() -> dict | None:
-    """Retorna la sesión de caja abierta actualmente, o None."""
-    conn = get_connection()
-    fila = conn.execute("""
-        SELECT s.*, u.usuario AS cajero
-        FROM sesiones_caja s
-        JOIN usuarios u ON s.usuario_id = u.id
-        WHERE s.cierre IS NULL
-        LIMIT 1
-    """).fetchone()
-    conn.close()
-    return dict(fila) if fila else None
+def get_sesion_activa(conn=None) -> dict | None:
+    """Retorna la sesión de caja abierta actualmente, o None.
+
+    Acepta una conexión externa opcional (mismo patrón que egresos_sesion/
+    totales_ventas_sesion/abonos_sesion) para que un caller que necesita
+    varias de estas consultas — como el preview de cierre — pueda compartir
+    una sola conexión en vez de abrir una por función.
+    """
+    propia = conn is None
+    if propia:
+        conn = get_connection()
+    try:
+        fila = conn.execute("""
+            SELECT s.*, u.usuario AS cajero
+            FROM sesiones_caja s
+            JOIN usuarios u ON s.usuario_id = u.id
+            WHERE s.cierre IS NULL
+            LIMIT 1
+        """).fetchone()
+        return dict(fila) if fila else None
+    finally:
+        if propia:
+            conn.close()
 
 
 def abrir_caja(monto_base: float, monto_base_digital: float = 0,
@@ -208,17 +219,19 @@ def abrir_caja(monto_base: float, monto_base_digital: float = 0,
                      total_ventas, total_efectivo, total_digital, notas)
                 VALUES (?, ?, ?, 0, 0, 0, ?)
             """, (usuario_id, monto_base, monto_base_digital, notas))
-        except sqlite3.IntegrityError as e:
+        except sqlite3.IntegrityError:
             conn.rollback()
-            if "idx_una_caja_abierta" not in str(e):
-                # Otra violación de integridad (ej. usuario_id NULL): no la
-                # enmascaremos como "ya existe sesión abierta", es un bug
-                # distinto y hay que verlo tal cual.
-                raise
             # El chequeo hay_sesion_abierta() de arriba es solo para dar un
             # buen mensaje en el camino feliz; la guarda real ante dos
             # aperturas concurrentes es el índice único de migrar_dos_cajas().
-            raise ValueError("Ya existe una sesión de caja abierta. Ciérrela antes de abrir una nueva.")
+            # Para distinguir ESA violación de cualquier otra (ej. usuario_id
+            # inválido) se vuelve a preguntar el estado real de la DB en vez
+            # de parsear el texto del mensaje de SQLite (frágil entre
+            # versiones): si ahora SÍ hay una sesión abierta, fue la carrera
+            # esperada; si no, es un bug distinto y hay que verlo tal cual.
+            if hay_sesion_abierta():
+                raise ValueError("Ya existe una sesión de caja abierta. Ciérrela antes de abrir una nueva.")
+            raise
         commit_con_reintentos(conn)
         sesion_id = cur.lastrowid
     finally:
@@ -364,8 +377,11 @@ def cerrar_caja(
 # CONSULTAS DE SESIONES
 # ════════════════════════════════════════════════════════════
 
+@requiere_admin
 def obtener_sesion(sesion_id: int) -> dict | None:
-    """Retorna una sesión de caja con su detalle de denominaciones."""
+    """Retorna una sesión de caja con su detalle de denominaciones. Solo admin
+    (igual que listar_sesiones/resumen_sesiones — el historial completo, del
+    que esta es la vista de detalle, ya es admin-only)."""
     conn = get_connection()
     sesion = conn.execute("""
         SELECT s.*, u.usuario AS cajero

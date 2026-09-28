@@ -110,22 +110,27 @@ function CierreCaja({ onCerrada }) {
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
-    api.previewCierre().then((p) => {
-      setPreview(p);
-      setContadoDigital(String(Math.round(p.esperado_digital)));
-    }).catch((err) => setError(err.message));
+    // El campo de contado digital se deja VACÍO a propósito (no se precarga
+    // con esperado_digital): el cajero debe escribir lo que de verdad ve en
+    // Nequi/Daviplata, para no ocultar un faltante real con un valor que
+    // siempre cuadra por defecto.
+    api.previewCierre().then(setPreview).catch((err) => setError(err.message));
   }, []);
 
   const cambiar = (d, delta) => setCantidades((c) => ({ ...c, [d]: Math.max(0, c[d] + delta) }));
   const contadoEfectivo = DENOMINACIONES.reduce((a, d) => a + d * cantidades[d], 0);
 
   const cerrar = async () => {
+    if (contadoDigital.trim() === "") {
+      setError("Ingresa el saldo digital contado antes de cerrar.");
+      return;
+    }
     setError("");
     setEnviando(true);
     try {
       await api.cerrarCaja({
         denominaciones: Object.fromEntries(DENOMINACIONES.map((d) => [String(d), cantidades[d]])),
-        digital: Number(contadoDigital) || 0,
+        digital: Number(contadoDigital),
         notas: notas || null,
       });
       onCerrada();

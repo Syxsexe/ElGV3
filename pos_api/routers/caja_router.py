@@ -6,7 +6,7 @@ alcance por ahora — sigue siendo solo de escritorio.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 
-import auth
+from database import get_connection
 from modules.caja import (
     abonos_sesion,
     abrir_caja,
@@ -39,16 +39,22 @@ def post_abrir_caja(body: AbrirCajaRequest):
 @router.get("/preview-cierre")
 def get_preview_cierre():
     """Mismos números que hoy arma a mano ui/caja.py, calculados en el
-    servidor para que el frontend no duplique el SQL."""
-    sesion = get_sesion_activa()
-    if not sesion:
-        raise ValueError("No hay una caja abierta.")
+    servidor para que el frontend no duplique el SQL. Comparte una sola
+    conexión entre las cuatro consultas de solo lectura en vez de abrir
+    una por función — todas la aceptan opcionalmente para esto."""
+    conn = get_connection()
+    try:
+        sesion = get_sesion_activa(conn=conn)
+        if not sesion:
+            raise ValueError("No hay una caja abierta.")
 
-    ventas = totales_ventas_sesion(sesion["id"])
-    egresos_ef, egresos_dig = egresos_sesion(sesion["id"])
-    abonos_ef, abonos_dig = abonos_sesion(sesion["id"])
+        ventas = totales_ventas_sesion(sesion["id"], conn=conn)
+        egresos_ef, egresos_dig = egresos_sesion(sesion["id"], conn=conn)
+        abonos_ef, abonos_dig = abonos_sesion(sesion["id"], conn=conn)
+    finally:
+        conn.close()
+
     monto_base_digital = sesion.get("monto_base_digital", 0) or 0
-
     esperado_efectivo = round(sesion["monto_base"] + ventas["efectivo"] + abonos_ef - egresos_ef, 2)
     esperado_digital = round(monto_base_digital + ventas["digital"] + abonos_dig - egresos_dig, 2)
 
@@ -81,11 +87,10 @@ def get_historial_resumen(desde: str | None = None, hasta: str | None = None):
 
 @router.get("/historial/{sesion_id}")
 def get_historial_detalle(sesion_id: int):
-    # obtener_sesion() no está decorada con @requiere_admin en modules/caja.py
-    # (a diferencia de listar_sesiones/resumen_sesiones) — se replica aquí la
-    # misma regla del desktop: la pestaña Historial es solo para admin.
-    if not auth.es_admin():
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Se requiere rol administrador.")
+    # obtener_sesion() ya está decorada con @requiere_admin (modules/caja.py),
+    # el mismo mecanismo que listar_sesiones/resumen_sesiones — PermissionError
+    # la captura el exception_handler global de pos_api/main.py (403). Ya no
+    # hace falta un chequeo manual duplicado aquí.
     sesion = obtener_sesion(sesion_id)
     if sesion is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Sesión no encontrada.")

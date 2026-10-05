@@ -6,7 +6,7 @@ Flujo: abrir cuenta → agregar ítems → ver resumen → cobrar y cerrar.
 
 import re
 
-from database import get_connection, commit_con_reintentos
+from database import get_connection, commit_con_reintentos, recrear_tabla_con_constraint
 from auth import get_usuario_id
 
 
@@ -88,6 +88,38 @@ def migrar():
             "ALTER TABLE cuenta_items ADD COLUMN insumo_id INTEGER REFERENCES insumos(id)")
     conn.commit()
     conn.close()
+
+    # Migración en conexión separada (evita conflictos de transacción implícita,
+    # mismo patrón que database.py::_migrar_metodo_credito).
+    _migrar_cuenta_items_check()
+
+
+def _migrar_cuenta_items_check():
+    """Agrega CHECK: exactamente uno de producto_id/combo_id/insumo_id por
+    línea (agregar_item más abajo siempre fija uno solo según el tipo)."""
+    recrear_tabla_con_constraint(
+        "cuenta_items",
+        marcador="CHECK ((producto_id IS NOT NULL)",
+        ddl_nueva="""
+            CREATE TABLE cuenta_items (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                cuenta_id   INTEGER NOT NULL REFERENCES cuentas(id) ON DELETE CASCADE,
+                producto_id INTEGER REFERENCES productos(id),
+                combo_id    INTEGER REFERENCES combos(id),
+                nombre      TEXT    NOT NULL,
+                cantidad    REAL    NOT NULL DEFAULT 1,
+                precio_unit REAL    NOT NULL,
+                subtotal    REAL    NOT NULL,
+                agregado_en TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                insumo_id   INTEGER REFERENCES insumos(id),
+                CHECK ((producto_id IS NOT NULL) + (combo_id IS NOT NULL) + (insumo_id IS NOT NULL) = 1)
+            )
+        """,
+        sql_violaciones="""
+            SELECT COUNT(*) FROM cuenta_items
+            WHERE (producto_id IS NOT NULL) + (combo_id IS NOT NULL) + (insumo_id IS NOT NULL) != 1
+        """,
+    )
 
 
 # ════════════════════════════════════════════════════════════
@@ -227,6 +259,9 @@ def agregar_item(
         ).fetchone()
         if not cuenta or cuenta["estado"] != "abierta":
             raise ValueError("La cuenta no existe o ya está cerrada.")
+
+        if sum(1 for x in (producto_id, combo_id, insumo_id) if x) > 1:
+            raise ValueError("Solo puedes indicar uno de producto_id, combo_id o insumo_id.")
 
         if producto_id:
             prod = conn.execute(

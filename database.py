@@ -477,11 +477,40 @@ def crear_tablas():
         if col_name not in columnas_facturas:
             conn.execute(f"ALTER TABLE facturas ADD COLUMN {col} {tipo}")
 
+    # Índice único parcial: un (tipo_documento, documento) real no puede repetirse,
+    # pero se excluye documento='' para permitir varios clientes CONSUMIDOR_FINAL
+    # sin documento (ver modules/migracion_clientes.py, que los crea así cuando
+    # la persona no trae cédula). Si ya hay duplicados reales (datos sucios de
+    # antes de esta validación), no se fuerza la creación del índice — fusionar
+    # saldos de crédito de clientes sin confirmación es riesgoso — solo se avisa
+    # y se reintenta en el próximo arranque una vez resuelto a mano.
+    duplicados_clientes = conn.execute("""
+        SELECT tipo_documento, documento, COUNT(*) AS c
+        FROM clientes
+        WHERE documento != ''
+        GROUP BY tipo_documento, documento
+        HAVING c > 1
+    """).fetchall()
+    if duplicados_clientes:
+        print("⚠ Hay clientes duplicados por documento, no se creó el índice único:")
+        for d in duplicados_clientes:
+            print(f"   · {d[0]} {d[1]} ({d[2]} registros)")
+    else:
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_documento
+            ON clientes(tipo_documento, documento)
+            WHERE documento != ''
+        """)
+
     conn.commit()
     conn.close()
 
     # Migración en conexión separada (evita conflictos de transacción implícita)
     _migrar_metodo_credito()
+    _migrar_torneo_participantes()
+    _migrar_detalle_venta()
+    _migrar_detalle_pedido()
+    _migrar_documento_items()
 
 
 def _migrar_metodo_credito():
@@ -547,6 +576,180 @@ def _migrar_metodo_credito():
         raise
     finally:
         conn.close()
+
+
+def recrear_tabla_con_constraint(
+    tabla: str,
+    marcador: str,
+    ddl_nueva: str,
+    sql_violaciones: str = None,
+) -> None:
+    """
+    Agrega una CHECK/FK nueva a una tabla existente recreándola (SQLite no
+    soporta ALTER TABLE ADD CONSTRAINT): rename → create con el DDL nuevo →
+    copiar filas → drop de la vieja, en una conexión propia con
+    isolation_level=None y foreign_keys=OFF durante la transacción DDL
+    (mismo patrón que la migración original de 'credito' en ventas/pagos_venta,
+    ver más arriba).
+
+    `marcador`: substring que debe aparecer en sqlite_master.sql si la tabla
+    ya tiene la constraint — para saltar la migración si ya se aplicó, o si
+    la tabla no existe todavía (otro módulo la crea más adelante).
+
+    `sql_violaciones`: query opcional que cuenta filas que violarían la
+    constraint nueva. Si hay alguna, NO se recrea la tabla esta vez — solo
+    se avisa por consola y se reintenta en el próximo arranque — así datos
+    heredados sucios no dejan la base de datos sin poder arrancar nunca más
+    (INSERT INTO ... SELECT fallaría con IntegrityError sin este chequeo
+    previo; mismo espíritu defensivo que migrar_dos_cajas en modules/caja.py).
+    """
+    import sqlite3 as _sq3
+    conn = _sq3.connect(str(DB_PATH), isolation_level=None)
+    conn.row_factory = _sq3.Row
+    try:
+        schema_v = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (tabla,)
+        ).fetchone()
+        if not schema_v or marcador in schema_v[0]:
+            return  # Ya migrado o la tabla no existe todavía
+
+        if sql_violaciones:
+            violaciones = conn.execute(sql_violaciones).fetchone()[0]
+            if violaciones:
+                print(
+                    f"⚠ {tabla} tiene {violaciones} fila(s) que violarían la "
+                    f"nueva restricción — no se migró esta vez. Corrige esos "
+                    f"datos y reinicia para que se aplique."
+                )
+                return
+
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN")
+        conn.execute(f"ALTER TABLE {tabla} RENAME TO _{tabla}_bk")
+        conn.execute(ddl_nueva)
+        conn.execute(f"INSERT INTO {tabla} SELECT * FROM _{tabla}_bk")
+        conn.execute(f"DROP TABLE _{tabla}_bk")
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def _migrar_torneo_participantes():
+    """
+    Declara cargo_id como FK real hacia creditos(id) (hoy lo llena
+    modules/torneos.py pero la columna es un INTEGER suelto) y restringe
+    metodo_pago al mismo enum que ya usan pagos_venta.metodo/egresos.metodo_pago
+    (sin 'mixto': cada inscripción es un pago individual, no un desglose).
+    """
+    recrear_tabla_con_constraint(
+        "torneo_participantes",
+        marcador="REFERENCES creditos(id)",
+        ddl_nueva="""
+            CREATE TABLE torneo_participantes (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                torneo_id   INTEGER NOT NULL REFERENCES torneos(id) ON DELETE CASCADE,
+                cliente_id  INTEGER          REFERENCES clientes(id),
+                nombre      TEXT    NOT NULL,
+                monto       REAL    NOT NULL DEFAULT 0,
+                metodo_pago TEXT    NOT NULL DEFAULT 'efectivo'
+                                CHECK(metodo_pago IN
+                                    ('efectivo','transferencia','tarjeta','nequi','daviplata','credito')),
+                cargo_id    INTEGER REFERENCES creditos(id)
+            )
+        """,
+        sql_violaciones="""
+            SELECT COUNT(*) FROM torneo_participantes
+            WHERE metodo_pago NOT IN
+                ('efectivo','transferencia','tarjeta','nequi','daviplata','credito')
+        """,
+    )
+
+
+def _migrar_detalle_venta():
+    """
+    Agrega un CHECK: a lo sumo uno de producto_id/combo_id/insumo_id por
+    línea. Los tres en NULL SÍ es válido (modules/torneos.py registra el
+    ingreso de inscripciones como una línea sin producto de catálogo), pero
+    nunca pueden ir dos o tres a la vez.
+    """
+    recrear_tabla_con_constraint(
+        "detalle_venta",
+        marcador="CHECK ((producto_id IS NOT NULL)",
+        ddl_nueva="""
+            CREATE TABLE detalle_venta (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id     INTEGER NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
+                producto_id  INTEGER          REFERENCES productos(id),
+                combo_id     INTEGER          REFERENCES combos(id),
+                cantidad     REAL    NOT NULL CHECK(cantidad > 0),
+                precio_unit  REAL    NOT NULL,
+                subtotal     REAL    NOT NULL,
+                insumo_id    INTEGER          REFERENCES insumos(id),
+                CHECK ((producto_id IS NOT NULL) + (combo_id IS NOT NULL) + (insumo_id IS NOT NULL) <= 1)
+            )
+        """,
+        sql_violaciones="""
+            SELECT COUNT(*) FROM detalle_venta
+            WHERE (producto_id IS NOT NULL) + (combo_id IS NOT NULL) + (insumo_id IS NOT NULL) > 1
+        """,
+    )
+
+
+def _migrar_detalle_pedido():
+    """Agrega CHECK: exactamente uno de producto_id/insumo_id por línea de
+    pedido (crear_pedido en modules/proveedores.py siempre fija uno solo)."""
+    recrear_tabla_con_constraint(
+        "detalle_pedido",
+        marcador="CHECK ((producto_id IS NOT NULL)",
+        ddl_nueva="""
+            CREATE TABLE detalle_pedido (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                pedido_id   INTEGER NOT NULL REFERENCES pedidos(id)   ON DELETE CASCADE,
+                producto_id INTEGER          REFERENCES productos(id),
+                insumo_id   INTEGER          REFERENCES insumos(id),
+                cantidad    REAL    NOT NULL CHECK(cantidad > 0),
+                precio_unit REAL    NOT NULL DEFAULT 0,
+                CHECK ((producto_id IS NOT NULL) + (insumo_id IS NOT NULL) = 1)
+            )
+        """,
+        sql_violaciones="""
+            SELECT COUNT(*) FROM detalle_pedido
+            WHERE (producto_id IS NOT NULL) + (insumo_id IS NOT NULL) != 1
+        """,
+    )
+
+
+def _migrar_documento_items():
+    """Agrega CHECK: producto_id y combo_id no pueden ir seteados a la vez
+    (el propio diseño permite ambos en NULL para ítems de texto libre, ver
+    comentario original en crear_tablas())."""
+    recrear_tabla_con_constraint(
+        "documento_items",
+        marcador="CHECK (producto_id IS NULL OR combo_id IS NULL)",
+        ddl_nueva="""
+            CREATE TABLE documento_items (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                documento_id INTEGER NOT NULL REFERENCES documentos_comerciales(id) ON DELETE CASCADE,
+                producto_id  INTEGER          REFERENCES productos(id),
+                combo_id     INTEGER          REFERENCES combos(id),
+                descripcion  TEXT    NOT NULL,
+                cantidad     REAL    NOT NULL CHECK(cantidad > 0),
+                precio_unit  REAL    NOT NULL,
+                subtotal     REAL    NOT NULL,
+                CHECK (producto_id IS NULL OR combo_id IS NULL)
+            )
+        """,
+        sql_violaciones="""
+            SELECT COUNT(*) FROM documento_items
+            WHERE producto_id IS NOT NULL AND combo_id IS NOT NULL
+        """,
+    )
 
 
 # ── Datos iniciales ───────────────────────────────────────────────────────────

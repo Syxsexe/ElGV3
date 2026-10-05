@@ -3,6 +3,8 @@ modules/clientes.py — El G POS
 Gestión de clientes para facturación y clientes frecuentes.
 """
 
+import sqlite3
+
 from database import get_connection
 
 TIPOS_DOCUMENTO = ("CC", "NIT", "CE", "TI", "CONSUMIDOR_FINAL")
@@ -70,18 +72,34 @@ def crear_cliente(
 
     conn = get_connection()
     try:
-        cur = conn.execute(
-            """
-            INSERT INTO clientes
+        existente = conn.execute(
+            "SELECT nombre FROM clientes WHERE tipo_documento = ? AND documento = ?",
+            (tipo_documento, documento)
+        ).fetchone()
+        if existente:
+            raise ValueError(
+                f"Ya existe un cliente con ese documento: {existente['nombre']}."
+            )
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO clientes
+                    (nombre, tipo_documento, documento, direccion, telefono, email,
+                     regimen, responsabilidad_fiscal, municipio)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (nombre, tipo_documento, documento, direccion, telefono, email,
                  regimen, responsabilidad_fiscal, municipio)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (nombre, tipo_documento, documento, direccion, telefono, email,
-             regimen, responsabilidad_fiscal, municipio)
-        )
-        conn.commit()
-        return cur.lastrowid
+            )
+            conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            # Respaldo ante una carrera real (dos creaciones casi simultáneas
+            # con el mismo documento): el SELECT de arriba no la detectó a
+            # tiempo, pero el índice único sí — mismo documento, mismo mensaje
+            # claro en vez de un IntegrityError crudo.
+            conn.rollback()
+            raise ValueError(f"Ya existe un cliente con ese documento: {documento}.")
     finally:
         conn.close()
 
@@ -113,8 +131,34 @@ def editar_cliente(cliente_id: int, **campos) -> bool:
 
     conn = get_connection()
     try:
-        conn.execute(f"UPDATE clientes SET {set_clause} WHERE id = ?", valores)
-        conn.commit()
-        return True
+        # Si cambia tipo_documento y/o documento, validar duplicado contra el
+        # par resultante (resolviendo con el valor actual el campo que no
+        # se esté editando).
+        if "tipo_documento" in campos_validos or "documento" in campos_validos:
+            actual = conn.execute(
+                "SELECT tipo_documento, documento FROM clientes WHERE id = ?",
+                (cliente_id,)
+            ).fetchone()
+            if not actual:
+                raise ValueError("Cliente no encontrado.")
+            tipo_final = campos_validos.get("tipo_documento", actual["tipo_documento"])
+            doc_final = campos_validos.get("documento", actual["documento"])
+            if doc_final:
+                existente = conn.execute(
+                    "SELECT nombre FROM clientes WHERE tipo_documento = ? AND documento = ? AND id != ?",
+                    (tipo_final, doc_final, cliente_id)
+                ).fetchone()
+                if existente:
+                    raise ValueError(
+                        f"Ya existe un cliente con ese documento: {existente['nombre']}."
+                    )
+
+        try:
+            conn.execute(f"UPDATE clientes SET {set_clause} WHERE id = ?", valores)
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise ValueError("Ya existe un cliente con ese documento.")
     finally:
         conn.close()

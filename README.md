@@ -44,7 +44,29 @@ Pruebas del backend DIAN:
 .venv/bin/python -m pytest tests
 ```
 
+## Base de datos Postgres (`db/`)
+
+El modelo relacional nuevo (59 tablas, Postgres 18) vive en `db/migraciones/`
+como archivos SQL numerados. Todavía no lo usa la API: `pos_api` sigue sobre
+SQLite hasta la migración de datos.
+
+```bash
+db/pg_local.sh                                   # Postgres 18 en podman, puerto 5433
+.venv/bin/pip install -r db/requirements.txt
+export DATABASE_URL=postgresql://elg:elg@localhost:5433/elg
+.venv/bin/python db/migrar.py                    # aplica las migraciones pendientes
+```
+
+Pruebas del esquema (crean y borran una base desechable):
+
+```bash
+PRUEBAS_DATABASE_URL=postgresql://elg:elg@localhost:5433/elg .venv/bin/python -m pytest db/pruebas
+```
+
+Sin `PRUEBAS_DATABASE_URL` esas pruebas se omiten. `db/migraciones/0014_divipola.sql`
+se genera con `db/datos/generar_divipola.py` desde el CSV oficial del DANE.
+
 ## Estado
 
 - Migrados a web: Ventas, Cuentas (mesas) y Caja (apertura, cierre, historial).
-- En diseño: nuevo modelo relacional para pasar de SQLite a Postgres.
+- Modelo relacional nuevo en Postgres: esquema listo (`db/`); falta migrar los datos y adaptar la API.

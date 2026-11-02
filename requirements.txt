@@ -1,6 +1,0 @@
-openpyxl
-pyinstaller
-pywin32; sys_platform == "win32"
-httpx
-reportlab==5.0.0
-pillow>=9.0.0  # dependencia de reportlab (generación de PDF)

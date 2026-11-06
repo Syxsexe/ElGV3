@@ -54,7 +54,9 @@ async function request(path, { method = "GET", body } = {}) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401) {
+  // Un 401 con token es una sesión vencida o revocada. Sin token (el propio
+  // login) es "usuario o contraseña incorrectos": se muestra el detail del servidor.
+  if (res.status === 401 && token) {
     clearToken();
     notificarNoAutorizado();
     throw new ApiError("Sesión expirada, vuelve a ingresar.", 401);
@@ -79,37 +81,7 @@ async function request(path, { method = "GET", body } = {}) {
 export const api = {
   login: (usuario, contrasena) =>
     request("/auth/login", { method: "POST", body: { usuario, contrasena } }),
-
-  cuentasAbiertas: () => request("/cuentas"),
-  siguienteMesa: () => request("/cuentas/siguiente-mesa"),
-  abrirCuenta: (cliente, mesa) =>
-    request("/cuentas", { method: "POST", body: { cliente, mesa } }),
-  obtenerCuenta: (id) => request(`/cuentas/${id}`),
-  agregarItemCuenta: (cuentaId, item) =>
-    request(`/cuentas/${cuentaId}/items`, { method: "POST", body: item }),
-  cambiarCantidadItem: (itemId, cantidad) =>
-    request(`/cuentas/items/${itemId}`, { method: "PATCH", body: { cantidad } }),
-  quitarItem: (itemId) => request(`/cuentas/items/${itemId}`, { method: "DELETE" }),
-  cobrarCuenta: (cuentaId, body) =>
-    request(`/cuentas/${cuentaId}/cobrar`, { method: "POST", body }),
-  cancelarCuenta: (cuentaId) =>
-    request(`/cuentas/${cuentaId}/cancelar`, { method: "POST" }),
-
-  buscarProductos: (q, tipo) =>
-    request(`/productos/buscar?q=${encodeURIComponent(q)}${tipo ? `&tipo=${tipo}` : ""}`),
-  combos: () => request("/productos/combos"),
-
-  registrarVenta: (body) => request("/ventas", { method: "POST", body }),
-
-  cajaSesionActiva: () => request("/caja/sesion-activa"),
-  abrirCaja: (body) => request("/caja/abrir", { method: "POST", body }),
-  previewCierre: () => request("/caja/preview-cierre"),
-  cerrarCaja: (body) => request("/caja/cerrar", { method: "POST", body }),
-  historialCaja: (desde, hasta) =>
-    request(`/caja/historial?${desde ? `desde=${desde}&` : ""}${hasta ? `hasta=${hasta}` : ""}`),
-  resumenHistorialCaja: (desde, hasta) =>
-    request(`/caja/historial/resumen?${desde ? `desde=${desde}&` : ""}${hasta ? `hasta=${hasta}` : ""}`),
-  detalleSesionCaja: (id) => request(`/caja/historial/${id}`),
+  yo: () => request("/auth/yo"),
 };
 
 export { ApiError };

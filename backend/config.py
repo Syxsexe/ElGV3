@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     certificate_path: str = ""
     certificate_password: str = ""
 
+    # Base Postgres del POS (db/migraciones). El login del panel admin valida
+    # contra sus usuarios; vacío = nadie puede entrar al panel.
+    elg_database_url: str = ""
+
     # JWT
     jwt_secret: str = "change-this-to-a-random-secret-key"
     jwt_algorithm: str = "HS256"

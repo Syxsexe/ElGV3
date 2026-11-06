@@ -1,16 +1,30 @@
-"""pos_api/routers/auth_router.py — login de vendedores → JWT."""
-from fastapi import APIRouter, HTTPException, status
+"""pos_api/routers/auth_router.py — login → JWT, y quién soy."""
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
-from pos_api.schemas import LoginRequest, LoginResponse
-from pos_api.security import crear_token, verificar_credenciales
+from pos_api.auditoria import auditar
+from pos_api.db import transaccion
+from pos_api.seguridad import Usuario, crear_token, usuario_actual, verificar_credenciales
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=LoginResponse)
+class LoginRequest(BaseModel):
+    usuario: str
+    contrasena: str
+
+
+@router.post("/login")
 def login(body: LoginRequest):
-    usuario = verificar_credenciales(body.usuario, body.contrasena)
+    with transaccion() as conn:
+        usuario = verificar_credenciales(conn, body.usuario, body.contrasena)
+        if usuario is not None:
+            auditar(conn, usuario.id, "login", "Inicio de sesión en la web")
     if usuario is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario o contraseña incorrectos.")
-    token = crear_token(usuario)
-    return LoginResponse(token=token, usuario=usuario["usuario"], rol=usuario["rol"])
+    return {"token": crear_token(usuario), **usuario.como_dict()}
+
+
+@router.get("/yo")
+def yo(usuario: Usuario = Depends(usuario_actual)):
+    return usuario.como_dict()

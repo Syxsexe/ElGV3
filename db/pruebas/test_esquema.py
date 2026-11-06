@@ -22,7 +22,7 @@ def test_admin_tiene_todos_los_permisos_y_vendedor_ninguno(db):
         SELECT r.nombre, count(rp.permiso_id) AS n
           FROM roles r LEFT JOIN rol_permisos rp ON rp.rol_id = r.id
          GROUP BY r.nombre""").fetchall()
-    assert {r["nombre"]: r["n"] for r in filas} == {"admin": 8, "vendedor": 0}
+    assert {r["nombre"]: r["n"] for r in filas} == {"admin": 12, "vendedor": 0}
 
 
 def test_metodos_de_pago_caen_en_su_caja(db):

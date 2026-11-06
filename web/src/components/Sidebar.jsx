@@ -12,7 +12,7 @@ function Icon({ d }) {
 }
 
 export default function Sidebar() {
-  const { usuario, logout } = useAuth();
+  const { usuario, logout, puede } = useAuth();
   const inicial = (usuario?.usuario || "?").charAt(0).toUpperCase();
 
   return (
@@ -38,9 +38,9 @@ export default function Sidebar() {
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", padding: "6px 12px 4px" }}>
               {g.name}
             </div>
-            {g.items.map((it) =>
+            {g.items.filter((it) => puede(it.permiso)).map((it) =>
               it.path ? (
-                <NavLink key={it.label} to={it.path} className={({ isActive }) => `sb-nav${isActive ? " on" : ""}`}>
+                <NavLink key={it.label} to={it.path} end className={({ isActive }) => `sb-nav${isActive ? " on" : ""}`}>
                   <Icon d={it.d} /><span>{it.label}</span>
                 </NavLink>
               ) : (
@@ -60,7 +60,7 @@ export default function Sidebar() {
         <div style={{ display: "flex", flexDirection: "column", flexGrow: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{usuario?.usuario}</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            {usuario?.rol === "admin" ? "Administrador" : "Vendedor"}
+            {usuario?.rol === "admin" ? "Administrador" : usuario?.rol === "vendedor" ? "Vendedor" : usuario?.rol}
           </div>
         </div>
         <button type="button" onClick={logout} aria-label="Cerrar sesión" style={{

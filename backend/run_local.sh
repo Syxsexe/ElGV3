@@ -34,6 +34,8 @@ podman run -d --name "$BE" --network "$NET" --restart=always \
 echo
 echo "✓ Backend levantado."
 echo "  Salud:  http://localhost:8000/health"
-echo "  Admin:  http://localhost:8000/admin   (admin / admin123)"
+echo "  Admin:  http://localhost:8000/admin   (usuario del POS con permiso usuarios.gestionar;"
+echo "          requiere ELG_DATABASE_URL en backend/.env apuntando a la base Postgres 18 del POS,"
+echo "          ej. postgresql://elg:elg@host.containers.internal:5433/elg — ver db/pg_local.sh)"
 echo "  Logs:   podman logs -f $BE"
 echo "  Parar:  backend/stop_local.sh"

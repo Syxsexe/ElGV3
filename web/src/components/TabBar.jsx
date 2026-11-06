@@ -10,7 +10,7 @@ export default function TabBar() {
     }}>
       {TABBAR_ITEMS.map((it) =>
         it.path ? (
-          <NavLink key={it.label} to={it.path} className={({ isActive }) => `tb${isActive ? " on" : ""}`}>
+          <NavLink key={it.label} to={it.path} end className={({ isActive }) => `tb${isActive ? " on" : ""}`}>
             <span className="ic">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={it.d} /></svg>

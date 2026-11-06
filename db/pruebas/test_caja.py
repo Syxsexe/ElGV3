@@ -108,12 +108,14 @@ def test_diferencia_de_apertura_y_anulacion_en_otro_turno(db, f):
     assert _caja(db, s1, "Efectivo")["diferencia"] == 0  # el turno cerrado no cambia
 
 
-def test_migracion_historica_puede_insertar_en_turnos_cerrados(db, f):
-    # La fase 2 (datos desde SQLite) carga turnos ya cerrados con sus ventas.
+def test_no_hay_via_de_escape_para_turnos_cerrados(db, f):
+    # La vía elg.migracion existía para cargar datos históricos; ya no hay migración.
     db.execute("SET LOCAL elg.migracion = 'on'")
-    uid, prod = f.usuario(), f.producto(precio=1000)
-    s = db.execute("INSERT INTO sesiones_caja (abierta_por, abierta_en, cerrada_por, cerrada_en) "
-                   "VALUES (%s, '2026-08-04 19:00', %s, '2026-08-05 15:00') RETURNING id", (uid, uid)).fetchone()["id"]
-    db.execute("INSERT INTO sesion_cajas (sesion_id, caja_id, base, contado) SELECT %s, id, 0, 0 FROM cajas", (s,))
-    f.venta(s, [(prod, 1, 1000)], pagos=[("efectivo", 1000)])
-    confirmar(db)  # los cuadres siguen aplicando aunque el turno esté cerrado
+    uid = f.usuario()
+    with falla(db, "se abre abierto"):
+        db.execute("INSERT INTO sesiones_caja (abierta_por, cerrada_por, cerrada_en) "
+                   "VALUES (%s, %s, now())", (uid, uid))
+    s = f.turno()
+    f.cerrar_turno(s, {}, digital=0)
+    with falla(db, "ya está cerrado"):
+        f.venta(s, [(f.producto(precio=1000), 1, 1000)], pagos=[("efectivo", 1000)])

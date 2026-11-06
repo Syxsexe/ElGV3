@@ -12,7 +12,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
-  if (token) return <Navigate to={location.state?.from || "/cuentas"} replace />;
+  if (token) return <Navigate to={location.state?.from || "/"} replace />;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -20,7 +20,7 @@ export default function Login() {
     setCargando(true);
     try {
       await login(usuario, contrasena);
-      navigate("/cuentas", { replace: true });
+      navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "Usuario o contraseña incorrectos.");
     } finally {

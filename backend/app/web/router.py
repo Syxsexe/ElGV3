@@ -3,6 +3,7 @@ app/web/router.py — Admin web panel routes.
 """
 import uuid
 import json
+import logging
 from datetime import date, datetime
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse, JSONResponse,
 )
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +25,7 @@ from app.models import Factura, Resolucion, SyncLog
 from config import settings, BASE_DIR
 
 router = APIRouter(prefix="/admin", tags=["admin_web"])
+_log = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "web" / "templates"))
 
@@ -43,6 +46,30 @@ def _get_admin_user(request: Request) -> str | None:
     if token and token in _admin_sessions:
         return _admin_sessions[token]
     return None
+
+
+class _BasePosNoDisponible(Exception):
+    """No se pudo consultar la base del POS para validar el login."""
+
+
+def _verificar_admin_pos(usuario: str, contrasena: str) -> bool:
+    """Valida contra los usuarios del POS (Postgres de pos_api), con la misma
+    función que usa la API web. Solo entra quien tenga usuarios.gestionar."""
+    if not settings.elg_database_url:
+        raise _BasePosNoDisponible("Falta ELG_DATABASE_URL en el .env del backend.")
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        from pos_api.seguridad import verificar_credenciales
+
+        with psycopg.connect(settings.elg_database_url, row_factory=dict_row, connect_timeout=5) as conn:
+            with conn.transaction():
+                sesion = verificar_credenciales(conn, usuario, contrasena)
+    except Exception as exc:  # import fallido, base caída o URL mala: el panel muestra el motivo
+        _log.exception("No se pudo validar el login del panel contra la base del POS")
+        raise _BasePosNoDisponible("No se pudo conectar con la base del POS (ELG_DATABASE_URL).") from exc
+    return sesion is not None and sesion.puede("usuarios.gestionar")
 
 
 def _require_admin(request: Request):
@@ -72,20 +99,22 @@ async def login_page(request: Request):
 
 @router.post("/login")
 async def login_submit(request: Request):
-    from auth import iniciar_sesion
-
     form = await request.form()
     username = form.get("username", "")
     password = form.get("password", "")
 
-    session = iniciar_sesion(username, password)
-    if not session or session.get("rol") != "admin":
+    try:
+        valido = await run_in_threadpool(_verificar_admin_pos, username, password)
+        error = None if valido else "Credenciales inválidas o no tienes permisos de admin"
+    except _BasePosNoDisponible as exc:
+        error = str(exc)
+    if error:
         return templates.TemplateResponse(
             "login.html",
             {
                 "request": request,
                 "hide_sidebar": True,
-                "error": "Credenciales inválidas o no tienes permisos de admin",
+                "error": error,
             },
         )
 

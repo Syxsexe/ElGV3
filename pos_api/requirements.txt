@@ -1,3 +1,5 @@
 fastapi
 uvicorn[standard]
 pyjwt
+psycopg[binary,pool]
+argon2-cffi

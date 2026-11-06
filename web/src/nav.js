@@ -9,7 +9,7 @@ export const SIDEBAR_GROUPS = [
     items: [
       { label: "Inicio", path: "/", d: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" },
       { label: "Nueva venta", path: null, d: "M3 4h2l2.4 11h11l2-8H6.2M9 20h.01M17 20h.01" },
-      { label: "Consulta precios", path: null, d: "M3 12V4h8l10 10-8 8zM7.5 7.5h.01" },
+      { label: "Consulta precios", path: "/precios", d: "M3 12V4h8l10 10-8 8zM7.5 7.5h.01" },
       { label: "Cuentas", path: null, d: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6" },
       { label: "Caja", path: null, d: "M3 7h18v12H3zM3 7l3-4h12l3 4M16 13h2" },
     ],
@@ -24,8 +24,8 @@ export const SIDEBAR_GROUPS = [
   {
     name: "Inventario",
     items: [
-      { label: "Inventario", path: null, d: "M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10" },
-      { label: "Preparaciones", path: null, d: "M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM2 10h20M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2" },
+      { label: "Inventario", path: "/inventario", permiso: ["inventario.editar", "combos.editar", "preparaciones.editar"], d: "M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10" },
+      { label: "Preparaciones", path: "/preparaciones", permiso: "preparaciones.editar", d: "M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM2 10h20M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2" },
       { label: "Proveedores", path: null, d: "M2 6h12v10H2zM14 10h4l3 3v3h-7M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
     ],
   },

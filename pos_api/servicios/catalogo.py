@@ -1,0 +1,401 @@
+"""
+pos_api/servicios/catalogo.py — Lo que se vende y lo que se cocina.
+
+Un artículo se crea junto con su fila de subtipo (producto, combo, adicional
+o servicio) en la misma transacción: la base exige el par al confirmar. Los
+costos de platos y preparaciones los recalcula la base al cambiar recetas o
+costos de insumos; aquí solo se guardan las recetas.
+
+Permisos: combos.editar para combos, preparaciones.editar para recetas de
+preparaciones, inventario.editar para todo lo demás.
+"""
+from decimal import Decimal
+
+from pos_api.auditoria import auditar
+from pos_api.errores import ErrorNegocio, NoEncontrado, SinPermiso
+from pos_api.seguridad import Usuario
+from pos_api.servicios.comun import actualizar
+
+PERMISO_INVENTARIO = "inventario.editar"
+PERMISO_COMBOS = "combos.editar"
+PERMISO_PREPARACIONES = "preparaciones.editar"
+
+TABLA_SUBTIPO = {"producto": "productos", "combo": "combos", "adicional": "adicionales", "servicio": "servicios"}
+CAMPOS_ARTICULO = {"nombre", "categoria_id", "impuesto_id", "precio_venta", "activo"}
+CAMPOS_SUBTIPO = {
+    "producto": {"codigo", "precio_costo", "stock_minimo"},
+    "combo": {"descripcion"},
+    "adicional": {"insumo_id", "cantidad"},
+    "servicio": set(),
+}
+NOMBRE_TIPO = {"producto": "producto", "combo": "combo", "adicional": "adicional", "servicio": "servicio"}
+
+
+# Búsqueda por nombre: normalizar() a ambos lados (minúsculas sin tildes) y el
+# texto del usuario como literal (sus % y _ no son comodines). Va con
+# {"patron": _literal_like(texto)} en los parámetros.
+BUSCAR_NOMBRE = "normalizar(nombre) LIKE '%%' || normalizar(%(patron)s) || '%%'"
+
+
+def _literal_like(texto: str | None) -> str | None:
+    texto = (texto or "").strip()
+    if not texto:
+        return None
+    return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _exigir_permiso_tipo(actor: Usuario, tipo: str) -> None:
+    permiso = PERMISO_COMBOS if tipo == "combo" else PERMISO_INVENTARIO
+    if not actor.puede(permiso):
+        raise SinPermiso("No tienes permiso para editar este tipo de artículo.")
+
+
+def _sin_duplicados(lineas: list[dict], clave: str, que: str) -> None:
+    ids = [l[clave] for l in lineas]
+    if len(ids) != len(set(ids)):
+        raise ErrorNegocio(f"{que} tiene un componente repetido: junta las cantidades en una sola línea.")
+
+
+# ── Categorías, impuestos y unidades ────────────────────────────────────────
+
+def listar_categorias(conn) -> list[dict]:
+    return conn.execute(
+        """SELECT c.id, c.nombre, c.tipo, count(a.id) AS articulos
+             FROM categorias c LEFT JOIN articulos a ON a.categoria_id = c.id
+            GROUP BY c.id ORDER BY c.tipo DESC, c.nombre"""
+    ).fetchall()
+
+
+def crear_categoria(conn, actor: Usuario, nombre: str, tipo: str) -> dict:
+    fila = conn.execute("INSERT INTO categorias (nombre, tipo) VALUES (%s, %s) RETURNING *", (nombre, tipo)).fetchone()
+    auditar(conn, actor.id, "inventario", f"Creó la categoría {nombre} ({tipo})", "categorias", fila["id"])
+    return fila
+
+
+def editar_categoria(conn, actor: Usuario, categoria_id, cambios: dict) -> dict:
+    fila = actualizar(conn, "categorias", categoria_id, cambios, no_existe="La categoría no existe.")
+    auditar(conn, actor.id, "inventario", f"Editó la categoría {fila['nombre']}", "categorias", categoria_id)
+    return fila
+
+
+def borrar_categoria(conn, actor: Usuario, categoria_id) -> None:
+    fila = conn.execute("DELETE FROM categorias WHERE id = %s RETURNING nombre", (categoria_id,)).fetchone()
+    if fila is None:
+        raise NoEncontrado("La categoría no existe.")
+    auditar(conn, actor.id, "inventario", f"Borró la categoría {fila['nombre']}", "categorias", categoria_id)
+
+
+def listar_impuestos(conn) -> list[dict]:
+    return conn.execute("SELECT id, codigo, nombre, tributo, tarifa FROM impuestos ORDER BY tributo DESC, tarifa DESC").fetchall()
+
+
+def listar_unidades(conn) -> list[dict]:
+    return conn.execute("SELECT id, simbolo, nombre FROM unidades_medida ORDER BY nombre").fetchall()
+
+
+def _impuesto_por_defecto(conn, tipo: str, categoria_id) -> object:
+    """Combos → INC 8; si no, según la categoría: tienda → IVA 19, cocina → INC 8."""
+    fila = conn.execute(
+        """SELECT i.id FROM impuestos i, categorias c
+            WHERE c.id = %s
+              AND i.codigo = CASE WHEN %s = 'combo' OR c.tipo = 'cocina' THEN 'INC8' ELSE 'IVA19' END""",
+        (categoria_id, tipo),
+    ).fetchone()
+    if fila is None:
+        raise NoEncontrado("La categoría no existe.")
+    return fila["id"]
+
+
+# ── Artículos ───────────────────────────────────────────────────────────────
+
+def listar_articulos(conn, *, tipo=None, texto=None, categoria_id=None, solo_activos=False) -> list[dict]:
+    return conn.execute(
+        """SELECT * FROM v_articulos
+            WHERE (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
+              AND (%(categoria)s::uuid IS NULL OR categoria_id = %(categoria)s)
+              AND (NOT %(solo_activos)s OR activo)
+              AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
+            ORDER BY activo DESC, nombre""",
+        {"tipo": tipo, "categoria": categoria_id, "solo_activos": solo_activos,
+         "patron": _literal_like(texto), "texto": (texto or "").strip()},
+    ).fetchall()
+
+
+def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: int = 60) -> list[dict]:
+    """Artículos activos para vender o consultar precio (sin costos)."""
+    return conn.execute(
+        """SELECT id, tipo, nombre, precio_venta, categoria_id, categoria, categoria_tipo,
+                  impuesto, codigo, stock, stock_minimo
+             FROM v_articulos
+            WHERE activo
+              AND (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
+              AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
+            ORDER BY nombre
+            LIMIT %(limite)s""",
+        {"tipo": tipo, "patron": _literal_like(texto), "texto": (texto or "").strip(), "limite": limite},
+    ).fetchall()
+
+
+def obtener_articulo(conn, articulo_id) -> dict:
+    fila = conn.execute("SELECT * FROM v_articulos WHERE id = %s", (articulo_id,)).fetchone()
+    if fila is None:
+        raise NoEncontrado("El artículo no existe.")
+    if fila["tipo"] == "combo":
+        fila["productos"] = conn.execute(
+            """SELECT cp.producto_id, a.nombre, cp.cantidad, p.precio_costo AS costo_unit
+                 FROM combo_productos cp
+                 JOIN articulos a ON a.id = cp.producto_id
+                 JOIN productos p ON p.articulo_id = cp.producto_id
+                WHERE cp.combo_id = %s ORDER BY a.nombre""",
+            (articulo_id,),
+        ).fetchall()
+    if fila["tipo"] == "producto":
+        fila["receta"] = conn.execute(
+            """SELECT r.insumo_id, i.nombre, i.unidad, r.cantidad, i.costo AS costo_unit,
+                      round(r.cantidad * i.costo, 2) AS subtotal
+                 FROM receta_insumos r JOIN v_insumos i ON i.id = r.insumo_id
+                WHERE r.producto_id = %s ORDER BY i.nombre""",
+            (articulo_id,),
+        ).fetchall()
+    return fila
+
+
+def _guardar_componentes_combo(conn, combo_id, productos: list[dict]) -> None:
+    if not productos:
+        raise ErrorNegocio("Un combo necesita al menos un producto.")
+    _sin_duplicados(productos, "producto_id", "El combo")
+    conn.execute("DELETE FROM combo_productos WHERE combo_id = %s", (combo_id,))
+    conn.execute(
+        """INSERT INTO combo_productos (combo_id, producto_id, cantidad)
+           SELECT %s, x.producto_id, x.cantidad
+             FROM unnest(%s::uuid[], %s::numeric[]) AS x(producto_id, cantidad)""",
+        (combo_id, [p["producto_id"] for p in productos], [p["cantidad"] for p in productos]),
+    )
+
+
+def _guardar_receta(conn, producto_id, receta: list[dict]) -> None:
+    """Reemplaza la receta del plato. Vacía = sin receta (conserva su último
+    costo, que pasa a editarse a mano). La base recalcula el costo."""
+    _sin_duplicados(receta, "insumo_id", "La receta")
+    conn.execute("DELETE FROM receta_insumos WHERE producto_id = %s", (producto_id,))
+    if receta:
+        conn.execute(
+            """INSERT INTO receta_insumos (producto_id, insumo_id, cantidad)
+               SELECT %s, x.insumo_id, x.cantidad
+                 FROM unnest(%s::uuid[], %s::numeric[]) AS x(insumo_id, cantidad)""",
+            (producto_id, [r["insumo_id"] for r in receta], [r["cantidad"] for r in receta]),
+        )
+
+
+def _lineas_actuales(conn, tabla: str, columna_padre: str, columna_hijo: str, padre_id) -> dict:
+    """{componente: cantidad} de una receta o combo. Nombres de tabla y
+    columnas fijos de este módulo, nunca del cliente."""
+    return {r[columna_hijo]: r["cantidad"] for r in conn.execute(
+        f"SELECT {columna_hijo}, cantidad FROM {tabla} WHERE {columna_padre} = %s", (padre_id,))}
+
+
+def crear_articulo(conn, actor: Usuario, datos: dict) -> dict:
+    """datos: tipo, nombre, categoria_id, precio_venta, impuesto_id (opcional) y
+    lo del subtipo: producto (codigo, precio_costo, stock_minimo, stock inicial,
+    receta), combo (descripcion, productos), adicional (insumo_id, cantidad)."""
+    tipo = datos["tipo"]
+    _exigir_permiso_tipo(actor, tipo)
+    impuesto_id = datos.get("impuesto_id") or _impuesto_por_defecto(conn, tipo, datos["categoria_id"])
+    articulo_id = conn.execute(
+        """INSERT INTO articulos (tipo, nombre, categoria_id, impuesto_id, precio_venta)
+           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+        (tipo, datos["nombre"], datos["categoria_id"], impuesto_id, datos["precio_venta"]),
+    ).fetchone()["id"]
+
+    if tipo == "producto":
+        conn.execute(
+            """INSERT INTO productos (articulo_id, codigo, precio_costo, stock, stock_minimo)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (articulo_id, datos.get("codigo"), datos.get("precio_costo") or 0,
+             datos.get("stock") or 0, datos.get("stock_minimo") or 0),
+        )
+        if datos.get("receta"):
+            _guardar_receta(conn, articulo_id, datos["receta"])
+    elif tipo == "combo":
+        conn.execute("INSERT INTO combos (articulo_id, descripcion) VALUES (%s, %s)",
+                     (articulo_id, datos.get("descripcion")))
+        _guardar_componentes_combo(conn, articulo_id, datos.get("productos") or [])
+    elif tipo == "adicional":
+        if not datos.get("insumo_id") or not datos.get("cantidad"):
+            raise ErrorNegocio("Un adicional necesita el insumo y la cantidad de la porción.")
+        conn.execute("INSERT INTO adicionales (articulo_id, insumo_id, cantidad) VALUES (%s, %s, %s)",
+                     (articulo_id, datos["insumo_id"], datos["cantidad"]))
+    else:
+        conn.execute("INSERT INTO servicios (articulo_id) VALUES (%s)", (articulo_id,))
+
+    stock = f", stock inicial {datos['stock']}" if tipo == "producto" and datos.get("stock") else ""
+    auditar(conn, actor.id, "inventario",
+            f"Creó el {NOMBRE_TIPO[tipo]} {datos['nombre']} a ${datos['precio_venta']}{stock}", "articulos", articulo_id)
+    return obtener_articulo(conn, articulo_id)
+
+
+def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
+    """cambios: campos del artículo y de su subtipo (el tipo no cambia), y
+    `productos` (combo) o `receta` (producto) para reemplazarlos."""
+    # Primero el bloqueo, después la lectura: así el "antes" con el que se
+    # compara y se audita no lo puede cambiar otra edición en paralelo.
+    if conn.execute("SELECT 1 FROM articulos WHERE id = %s FOR UPDATE", (articulo_id,)).fetchone() is None:
+        raise NoEncontrado("El artículo no existe.")
+    antes = conn.execute("SELECT * FROM v_articulos WHERE id = %s", (articulo_id,)).fetchone()
+    tipo = antes["tipo"]
+    _exigir_permiso_tipo(actor, tipo)
+
+    articulo = {k: v for k, v in cambios.items() if k in CAMPOS_ARTICULO and antes[k] != v}
+    subtipo = {k: v for k, v in cambios.items() if k in CAMPOS_SUBTIPO[tipo]}
+    if tipo == "adicional":
+        subtipo = {k: v for k, v in subtipo.items() if antes[f"adicional_{k}"] != v}
+    else:
+        subtipo = {k: v for k, v in subtipo.items() if antes[k] != v}
+    # Repetidos se rechazan siempre, cambie o no la receta.
+    if cambios.get("receta"):
+        _sin_duplicados(cambios["receta"], "insumo_id", "La receta")
+    if cambios.get("productos"):
+        _sin_duplicados(cambios["productos"], "producto_id", "El combo")
+    # La pantalla manda la receta / los productos completos: solo cuentan si cambian.
+    receta_nueva = (tipo == "producto" and "receta" in cambios
+                    and _lineas_actuales(conn, "receta_insumos", "producto_id", "insumo_id", articulo_id)
+                    != {r["insumo_id"]: r["cantidad"] for r in cambios["receta"]})
+    combo_nuevo = (tipo == "combo" and "productos" in cambios
+                   and _lineas_actuales(conn, "combo_productos", "combo_id", "producto_id", articulo_id)
+                   != {p["producto_id"]: p["cantidad"] for p in cambios["productos"]})
+    if "precio_costo" in subtipo and antes["tiene_receta"] and not (receta_nueva and not cambios["receta"]):
+        raise ErrorNegocio("El costo de un plato con receta se calcula solo: edita la receta o quítala.")
+
+    actualizar(conn, "articulos", articulo_id, articulo)
+    if subtipo:
+        actualizar(conn, TABLA_SUBTIPO[tipo], articulo_id, subtipo, pk="articulo_id")
+    detalle = [f"{k}: {antes.get(k) if k in antes else antes.get('adicional_' + k)} → {v}"
+               for k, v in {**articulo, **subtipo}.items()]
+    if combo_nuevo:
+        _guardar_componentes_combo(conn, articulo_id, cambios["productos"])
+        detalle.append("productos del combo")
+    if receta_nueva:
+        _guardar_receta(conn, articulo_id, cambios["receta"])
+        detalle.append("receta" if cambios["receta"] else "quitó la receta")
+    if detalle:
+        auditar(conn, actor.id, "inventario", f"Editó {antes['nombre']}: {'; '.join(detalle)}", "articulos", articulo_id)
+    return obtener_articulo(conn, articulo_id)
+
+
+def ajustar_stock(conn, actor: Usuario, producto_id, contado: Decimal, motivo: str) -> dict:
+    """Fija el stock al conteo físico y deja el antes y el después en la auditoría."""
+    fila = conn.execute(
+        """SELECT p.stock, a.nombre FROM productos p JOIN articulos a ON a.id = p.articulo_id
+            WHERE p.articulo_id = %s FOR UPDATE OF p""",
+        (producto_id,),
+    ).fetchone()
+    if fila is None:
+        raise NoEncontrado("El producto no existe.")
+    conn.execute("UPDATE productos SET stock = %s WHERE articulo_id = %s", (contado, producto_id))
+    auditar(conn, actor.id, "inventario",
+            f"Ajustó el stock de {fila['nombre']}: {fila['stock']} → {contado} ({motivo})", "articulos", producto_id)
+    return obtener_articulo(conn, producto_id)
+
+
+# ── Insumos y preparaciones ─────────────────────────────────────────────────
+
+def listar_insumos(conn, solo_activos: bool = False, texto: str | None = None) -> list[dict]:
+    return conn.execute(
+        """SELECT * FROM v_insumos
+            WHERE (NOT %(solo_activos)s OR activo)
+              AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """)
+            ORDER BY activo DESC, nombre""",
+        {"solo_activos": solo_activos, "patron": _literal_like(texto)},
+    ).fetchall()
+
+
+def crear_insumo(conn, actor: Usuario, nombre: str, unidad_medida_id, costo_unitario: Decimal) -> dict:
+    fila = conn.execute(
+        "INSERT INTO insumos (nombre, unidad_medida_id, costo_unitario) VALUES (%s, %s, %s) RETURNING id",
+        (nombre, unidad_medida_id, costo_unitario),
+    ).fetchone()
+    auditar(conn, actor.id, "inventario", f"Creó el insumo {nombre} a ${costo_unitario} por unidad", "insumos", fila["id"])
+    return conn.execute("SELECT * FROM v_insumos WHERE id = %s", (fila["id"],)).fetchone()
+
+
+def editar_insumo(conn, actor: Usuario, insumo_id, cambios: dict) -> dict:
+    """cambios: nombre, unidad_medida_id, costo_unitario y/o activo. Cambiar el
+    costo recalcula (en la base) el costo de los platos que lo usan."""
+    if conn.execute("SELECT 1 FROM insumos WHERE id = %s FOR UPDATE", (insumo_id,)).fetchone() is None:
+        raise NoEncontrado("El insumo no existe.")
+    antes = conn.execute("SELECT * FROM v_insumos WHERE id = %s", (insumo_id,)).fetchone()
+    cambios = {k: v for k, v in cambios.items() if antes[k] != v}
+    if "costo_unitario" in cambios and antes["es_preparacion"]:
+        raise ErrorNegocio("El costo de una preparación se calcula con su receta y rendimiento.")
+    actualizar(conn, "insumos", insumo_id, cambios)
+    if cambios:
+        detalle = "; ".join(f"{k}: {antes[k]} → {v}" for k, v in cambios.items())
+        auditar(conn, actor.id, "inventario", f"Editó el insumo {antes['nombre']}: {detalle}", "insumos", insumo_id)
+    return conn.execute("SELECT * FROM v_insumos WHERE id = %s", (insumo_id,)).fetchone()
+
+
+def listar_preparaciones(conn, insumo_id=None) -> list[dict]:
+    return conn.execute(
+        """SELECT i.*,
+                  COALESCE((SELECT json_agg(json_build_object(
+                                'insumo_id', c.id, 'nombre', c.nombre, 'unidad', c.unidad,
+                                'cantidad', r.cantidad, 'costo_unit', c.costo) ORDER BY c.nombre)
+                              FROM receta_preparacion r JOIN v_insumos c ON c.id = r.insumo_id
+                             WHERE r.preparacion_id = i.id), '[]') AS receta
+             FROM v_insumos i
+            WHERE i.es_preparacion AND (%s::uuid IS NULL OR i.id = %s)
+            ORDER BY i.activo DESC, i.nombre""",
+        (insumo_id, insumo_id),
+    ).fetchall()
+
+
+def guardar_preparacion(conn, actor: Usuario, insumo_id, rendimiento: Decimal, receta: list[dict]) -> dict:
+    """Convierte el insumo en preparación (o la actualiza): rendimiento por
+    lote y su receta. La base rechaza ciclos y recalcula los platos."""
+    nombre = conn.execute("SELECT nombre FROM insumos WHERE id = %s FOR UPDATE", (insumo_id,)).fetchone()
+    if nombre is None:
+        raise NoEncontrado("El insumo no existe.")
+    if not receta:
+        raise ErrorNegocio("Una preparación necesita al menos un componente.")
+    _sin_duplicados(receta, "insumo_id", "La receta")
+    conn.execute(
+        """INSERT INTO preparaciones (insumo_id, rendimiento) VALUES (%s, %s)
+           ON CONFLICT (insumo_id) DO UPDATE SET rendimiento = EXCLUDED.rendimiento""",
+        (insumo_id, rendimiento),
+    )
+    conn.execute("DELETE FROM receta_preparacion WHERE preparacion_id = %s", (insumo_id,))
+    conn.execute(
+        """INSERT INTO receta_preparacion (preparacion_id, insumo_id, cantidad)
+           SELECT %s, x.insumo_id, x.cantidad
+             FROM unnest(%s::uuid[], %s::numeric[]) AS x(insumo_id, cantidad)""",
+        (insumo_id, [r["insumo_id"] for r in receta], [r["cantidad"] for r in receta]),
+    )
+    auditar(conn, actor.id, "inventario",
+            f"Guardó la preparación {nombre['nombre']}: rinde {rendimiento}, {len(receta)} componentes",
+            "insumos", insumo_id)
+    return listar_preparaciones(conn, insumo_id)[0]
+
+
+def crear_preparacion(conn, actor: Usuario, nombre: str, unidad_medida_id, rendimiento: Decimal,
+                      receta: list[dict]) -> dict:
+    insumo = crear_insumo(conn, actor, nombre, unidad_medida_id, Decimal(0))
+    return guardar_preparacion(conn, actor, insumo["id"], rendimiento, receta)
+
+
+def quitar_preparacion(conn, actor: Usuario, insumo_id) -> None:
+    """La preparación vuelve a ser un insumo comprado (con su costo_unitario)."""
+    fila = conn.execute(
+        """SELECT i.nombre FROM preparaciones p JOIN insumos i ON i.id = p.insumo_id
+            WHERE p.insumo_id = %s FOR UPDATE OF p""", (insumo_id,)).fetchone()
+    if fila is None:
+        raise NoEncontrado("La preparación no existe.")
+    # Se queda con el último costo calculado como costo a mano: si no, los
+    # platos que la usan bajarían de costo sin que nadie lo note.
+    costo = conn.execute(
+        "UPDATE insumos SET costo_unitario = round(costo_insumo(id), 4) WHERE id = %s RETURNING costo_unitario",
+        (insumo_id,)).fetchone()["costo_unitario"]
+    conn.execute("DELETE FROM receta_preparacion WHERE preparacion_id = %s", (insumo_id,))
+    conn.execute("DELETE FROM preparaciones WHERE insumo_id = %s", (insumo_id,))
+    auditar(conn, actor.id, "inventario",
+            f"Quitó la receta de la preparación {fila['nombre']}: queda con costo fijo ${costo} por unidad",
+            "insumos", insumo_id)

@@ -80,6 +80,8 @@ se genera con `db/datos/generar_divipola.py` desde el CSV oficial del DANE.
 - `pos_api` y la web están pasando a Postgres módulo por módulo (fase 3). Listo:
   base de la API (pool, errores, sesión con permisos), configuración inicial y
   Administración (usuarios, roles, datos del negocio, cajas y métodos de pago,
-  mesas, categorías de gasto, juegos y auditoría).
+  mesas, categorías de gasto, juegos y auditoría) y Catálogo (productos con
+  stock, platos con receta y costo calculado, combos, adicionales, servicios,
+  insumos, preparaciones y consulta de precios).
   Las pantallas de Ventas, Cuentas y Caja vuelven al menú cuando se reescriban
   sobre la base nueva.

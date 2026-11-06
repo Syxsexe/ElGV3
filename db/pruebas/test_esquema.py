@@ -2,7 +2,7 @@
 import migrar
 
 
-def test_59_tablas_y_10_vistas(db):
+def test_59_tablas_y_12_vistas(db):
     tablas = db.execute("""
         SELECT count(*) AS n FROM information_schema.tables
          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
@@ -10,7 +10,7 @@ def test_59_tablas_y_10_vistas(db):
     vistas = db.execute(
         "SELECT count(*) AS n FROM information_schema.views WHERE table_schema = 'public'").fetchone()["n"]
     assert tablas == 59
-    assert vistas == 10
+    assert vistas == 12
 
 
 def test_migrar_dos_veces_no_aplica_nada(url_prueba):

@@ -42,6 +42,10 @@ MENSAJES = {
     "mesas_nombre_key": "Ya existe una mesa con ese nombre.",
     "categorias_gasto_nombre_key": "Ya existe una categoría de gasto con ese nombre.",
     "juegos_nombre_key": "Ya existe un juego con ese nombre.",
+    "categorias_nombre_key": "Ya existe una categoría con ese nombre.",
+    "insumos_nombre_key": "Ya existe un insumo con ese nombre.",
+    "productos_codigo_key": "Ya existe un producto con ese código.",
+    "receta_preparacion_no_se_contiene": "Una preparación no puede usarse a sí misma en su receta.",
 }
 
 # Errores de regla (400): el dato no es válido y reintentar igual no sirve.

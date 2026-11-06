@@ -32,6 +32,9 @@ def abrir_pool(url: str) -> None:
             "row_factory": dict_row,
             "options": f"-c lock_timeout={LOCK_TIMEOUT_MS} -c TimeZone={ZONA_HORARIA}",
         },
+        # Verifica cada conexión antes de entregarla: si Postgres se reinició,
+        # la conexión muerta se reemplaza en vez de fallar el request.
+        check=ConnectionPool.check_connection,
         open=True,
     )
 

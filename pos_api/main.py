@@ -24,7 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pos_api import errores
 from pos_api.config import CORS_ORIGINS, DATABASE_URL
 from pos_api.db import abrir_pool, cerrar_pool, migraciones_pendientes
-from pos_api.routers import auditoria_router, auth_router, configuracion_router, usuarios_router
+from pos_api.routers import (auditoria_router, auth_router, catalogo_router, configuracion_router,
+                             usuarios_router)
 
 
 @asynccontextmanager
@@ -56,6 +57,7 @@ app.include_router(auth_router.router)
 app.include_router(usuarios_router.router)
 app.include_router(configuracion_router.router)
 app.include_router(auditoria_router.router)
+app.include_router(catalogo_router.router)
 
 
 @app.get("/salud")

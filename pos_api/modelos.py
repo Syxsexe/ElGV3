@@ -13,6 +13,10 @@ from pydantic import BaseModel, BeforeValidator, Field, StringConstraints
 Dinero = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 DineroPositivo = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)]
 Cantidad = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=3)]
+CantidadNoNegativa = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=3)]
+Stock = Annotated[Decimal, Field(max_digits=12, decimal_places=3)]  # puede ser negativo
+# Costo por unidad de insumo: 4 decimales porque suele ser fracción de peso ($/g).
+CostoUnitario = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=4)]
 Texto = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 # Texto libre opcional: "" o solo espacios se guardan como NULL.
 TextoOpcional = Annotated[str | None, BeforeValidator(lambda v: (v.strip() or None) if isinstance(v, str) else v)]

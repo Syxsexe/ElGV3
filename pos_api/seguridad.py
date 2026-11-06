@@ -131,8 +131,13 @@ def usuario_actual(credenciales: HTTPAuthorizationCredentials | None = Depends(_
 
 def requiere_permiso(permiso: str):
     """Dependencia que exige un permiso (ej. "caja.historial")."""
+    return requiere_alguno(permiso)
+
+
+def requiere_alguno(*permisos: str):
+    """Dependencia que exige al menos uno de los permisos."""
     def _dependencia(usuario: Usuario = Depends(usuario_actual)) -> Usuario:
-        if not usuario.puede(permiso):
+        if not any(usuario.puede(p) for p in permisos):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No tienes permiso para esta acción.")
         return usuario
     return _dependencia

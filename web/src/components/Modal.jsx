@@ -39,3 +39,14 @@ export function ErrorBanner({ mensaje }) {
   if (!mensaje) return null;
   return <div role="alert" className="error-banner">{mensaje}</div>;
 }
+
+// Como Campo, pero para grupos con varios controles (listas de componentes):
+// un <label> con varios controles adentro les roba los clics.
+export function Seccion({ etiqueta, children }) {
+  return (
+    <div role="group" aria-label={etiqueta} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="lbl">{etiqueta}</span>
+      {children}
+    </div>
+  );
+}

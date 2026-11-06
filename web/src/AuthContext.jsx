@@ -55,7 +55,12 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(() => {
     // La web oculta lo que el usuario no puede usar; el servidor igual lo valida.
-    const puede = (permiso) => !permiso || Boolean(usuario?.permisos?.includes(permiso));
+    // permiso puede ser un código o una lista (basta con tener uno).
+    const puede = (permiso) => {
+      if (!permiso) return true;
+      const lista = Array.isArray(permiso) ? permiso : [permiso];
+      return lista.some((p) => usuario?.permisos?.includes(p));
+    };
     return { token, usuario, errorSesion, cargarUsuario, login, logout, puede };
   }, [token, usuario, errorSesion, cargarUsuario]);
 

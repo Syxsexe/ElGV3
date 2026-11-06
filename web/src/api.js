@@ -110,6 +110,28 @@ export const api = {
   crearEnCatalogo: (catalogo, nombre) => request(`/config/${catalogo}`, { method: "POST", body: { nombre } }),
   editarEnCatalogo: (catalogo, id, body) => request(`/config/${catalogo}/${id}`, { method: "PATCH", body }),
 
+  vendibles: (q, tipo) => request(`/catalogo/vendibles?${new URLSearchParams(Object.entries({ q, tipo }).filter(([, v]) => v))}`),
+  categorias: () => request("/catalogo/categorias"),
+  crearCategoria: (body) => request("/catalogo/categorias", { method: "POST", body }),
+  editarCategoria: (id, body) => request(`/catalogo/categorias/${id}`, { method: "PATCH", body }),
+  borrarCategoria: (id) => request(`/catalogo/categorias/${id}`, { method: "DELETE" }),
+  impuestos: () => request("/catalogo/impuestos"),
+  unidades: () => request("/catalogo/unidades"),
+  articulos: (filtros = {}) =>
+    request(`/catalogo/articulos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  articulo: (id) => request(`/catalogo/articulos/${id}`),
+  crearArticulo: (body) => request("/catalogo/articulos", { method: "POST", body }),
+  editarArticulo: (id, body) => request(`/catalogo/articulos/${id}`, { method: "PATCH", body }),
+  ajustarStock: (id, contado, motivo) =>
+    request(`/catalogo/articulos/${id}/ajuste-stock`, { method: "POST", body: { contado, motivo } }),
+  insumos: (q) => request(`/catalogo/insumos${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  crearInsumo: (body) => request("/catalogo/insumos", { method: "POST", body }),
+  editarInsumo: (id, body) => request(`/catalogo/insumos/${id}`, { method: "PATCH", body }),
+  preparaciones: () => request("/catalogo/preparaciones"),
+  crearPreparacion: (body) => request("/catalogo/preparaciones", { method: "POST", body }),
+  guardarPreparacion: (id, body) => request(`/catalogo/preparaciones/${id}`, { method: "PUT", body }),
+  quitarPreparacion: (id) => request(`/catalogo/preparaciones/${id}`, { method: "DELETE" }),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

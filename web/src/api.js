@@ -132,6 +132,13 @@ export const api = {
   guardarPreparacion: (id, body) => request(`/catalogo/preparaciones/${id}`, { method: "PUT", body }),
   quitarPreparacion: (id) => request(`/catalogo/preparaciones/${id}`, { method: "DELETE" }),
 
+  terceros: (filtros = {}) =>
+    request(`/terceros?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  tercero: (id) => request(`/terceros/${id}`),
+  responsabilidades: () => request("/terceros/responsabilidades"),
+  crearTercero: (body) => request("/terceros", { method: "POST", body }),
+  editarTercero: (id, body) => request(`/terceros/${id}`, { method: "PATCH", body }),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

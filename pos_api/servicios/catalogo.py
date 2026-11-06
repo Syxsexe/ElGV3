@@ -14,7 +14,7 @@ from decimal import Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado, SinPermiso
 from pos_api.seguridad import Usuario
-from pos_api.servicios.comun import actualizar
+from pos_api.servicios.comun import actualizar, condicion_busqueda, literal_like
 
 PERMISO_INVENTARIO = "inventario.editar"
 PERMISO_COMBOS = "combos.editar"
@@ -31,17 +31,7 @@ CAMPOS_SUBTIPO = {
 NOMBRE_TIPO = {"producto": "producto", "combo": "combo", "adicional": "adicional", "servicio": "servicio"}
 
 
-# Búsqueda por nombre: normalizar() a ambos lados (minúsculas sin tildes) y el
-# texto del usuario como literal (sus % y _ no son comodines). Va con
-# {"patron": _literal_like(texto)} en los parámetros.
-BUSCAR_NOMBRE = "normalizar(nombre) LIKE '%%' || normalizar(%(patron)s) || '%%'"
-
-
-def _literal_like(texto: str | None) -> str | None:
-    texto = (texto or "").strip()
-    if not texto:
-        return None
-    return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+BUSCAR_NOMBRE = condicion_busqueda("nombre")
 
 
 def _exigir_permiso_tipo(actor: Usuario, tipo: str) -> None:
@@ -117,7 +107,7 @@ def listar_articulos(conn, *, tipo=None, texto=None, categoria_id=None, solo_act
               AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
             ORDER BY activo DESC, nombre""",
         {"tipo": tipo, "categoria": categoria_id, "solo_activos": solo_activos,
-         "patron": _literal_like(texto), "texto": (texto or "").strip()},
+         "patron": literal_like(texto), "texto": (texto or "").strip()},
     ).fetchall()
 
 
@@ -132,7 +122,7 @@ def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: i
               AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
             ORDER BY nombre
             LIMIT %(limite)s""",
-        {"tipo": tipo, "patron": _literal_like(texto), "texto": (texto or "").strip(), "limite": limite},
+        {"tipo": tipo, "patron": literal_like(texto), "texto": (texto or "").strip(), "limite": limite},
     ).fetchall()
 
 
@@ -305,7 +295,7 @@ def listar_insumos(conn, solo_activos: bool = False, texto: str | None = None) -
             WHERE (NOT %(solo_activos)s OR activo)
               AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """)
             ORDER BY activo DESC, nombre""",
-        {"solo_activos": solo_activos, "patron": _literal_like(texto)},
+        {"solo_activos": solo_activos, "patron": literal_like(texto)},
     ).fetchall()
 
 

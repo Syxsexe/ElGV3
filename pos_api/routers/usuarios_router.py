@@ -22,6 +22,7 @@ class CrearUsuario(BaseModel):
 class EditarUsuario(BaseModel):
     rol_id: uuid.UUID | None = None
     activo: bool | None = None
+    tercero_id: uuid.UUID | None = None  # null = desvincular la persona
 
 
 class NuevaContrasena(BaseModel):
@@ -55,7 +56,7 @@ def post_usuario(body: CrearUsuario, actor: Usuario = Depends(gestor)):
 @router.patch("/usuarios/{usuario_id}")
 def patch_usuario(usuario_id: uuid.UUID, body: EditarUsuario, actor: Usuario = Depends(gestor)):
     with transaccion() as conn:
-        return servicio.editar_usuario(conn, actor, usuario_id, cambios_enviados(body))
+        return servicio.editar_usuario(conn, actor, usuario_id, cambios_enviados(body, obligatorios={"rol_id", "activo"}))
 
 
 @router.post("/usuarios/{usuario_id}/contrasena")

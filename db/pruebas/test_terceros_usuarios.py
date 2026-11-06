@@ -52,3 +52,10 @@ def test_auditoria_referencia_completa_y_accion_valida(db):
         db.execute("INSERT INTO auditoria (accion, entidad) VALUES ('venta', 'ventas')")
     with falla(db, "auditoria_accion_check"):
         db.execute("INSERT INTO auditoria (accion) VALUES ('produccion')")
+
+
+def test_consumidor_final_marcado_y_unico(db, f):
+    fila = db.execute("SELECT nombre, numero_identificacion FROM terceros WHERE es_consumidor_final").fetchone()
+    assert fila == {"nombre": "CONSUMIDOR FINAL", "numero_identificacion": "222222222222"}
+    with falla(db, "terceros_un_consumidor_final"):
+        db.execute("UPDATE terceros SET es_consumidor_final = true WHERE id = %s", (f.tercero("Otro"),))

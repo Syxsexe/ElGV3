@@ -3,7 +3,7 @@ import unicodedata
 
 from psycopg import sql
 
-from pos_api.errores import NoEncontrado
+from pos_api.errores import ErrorNegocio, NoEncontrado
 
 
 def actualizar(conn, tabla: str, id_, cambios: dict, *, pk: str = "id", no_existe: str = "No existe.") -> dict:
@@ -44,3 +44,68 @@ def digito_verificacion(nit: str) -> int:
         raise ValueError("El NIT debe tener solo dígitos (máximo 15), sin el dígito de verificación.")
     residuo = sum(int(d) * p for d, p in zip(reversed(nit), _PESOS_DV)) % 11
     return residuo if residuo < 2 else 11 - residuo
+
+
+# ── Búsqueda por nombre ─────────────────────────────────────────────────────
+# normalizar() (minúsculas sin tildes, en SQL) a ambos lados, y el texto del
+# usuario como literal: sus % y _ no son comodines.
+
+def condicion_busqueda(columna: str) -> str:
+    """Condición SQL para `columna` contiene el texto buscado; va con
+    {"patron": literal_like(texto)} en los parámetros. `columna` es fija del
+    código, nunca del cliente."""
+    return f"normalizar({columna}) LIKE '%%' || normalizar(%(patron)s) || '%%'"
+
+
+def literal_like(texto: str | None) -> str | None:
+    texto = (texto or "").strip()
+    if not texto:
+        return None
+    return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# ── Documentos de identidad ─────────────────────────────────────────────────
+
+# Registro civil, tarjeta de identidad, cédula, NIT y NUIP llevan solo dígitos.
+SOLO_DIGITOS = {"11", "12", "13", "31", "91"}
+
+
+def limpiar_numero(numero: str | None) -> str:
+    """Sin puntos ni espacios: "1.085.123 456" → "1085123456"."""
+    return (numero or "").replace(".", "").replace(" ", "").strip()
+
+
+def normalizar_documento(tipo: str | None, numero: str | None) -> str | None:
+    """Limpia el número y lo valida según el tipo (código DIAN). Un NIT escrito
+    con su DV ("900123456-8") se acepta si el DV es correcto y se guarda sin él."""
+    numero = limpiar_numero(numero)
+    if tipo is None:
+        if numero:
+            raise ErrorNegocio("Elige el tipo de documento o deja el número vacío.")
+        return None
+    if not numero:
+        raise ErrorNegocio("Falta el número de documento.")
+    if tipo == "31" and "-" in numero:
+        numero, dv = numero.rsplit("-", 1)
+        if not (numero.isdigit() and dv.isdigit()):
+            raise ErrorNegocio("El NIT lleva solo dígitos (y el dígito de verificación después del guion).")
+        if int(dv) != digito_verificacion(numero):
+            raise ErrorNegocio(f"El dígito de verificación no coincide: para el NIT {numero} es {digito_verificacion(numero)}.")
+    if tipo in SOLO_DIGITOS and not numero.isdigit():
+        raise ErrorNegocio("Este tipo de documento lleva solo dígitos.")
+    if tipo == "31":
+        try:
+            digito_verificacion(numero)
+        except ValueError as exc:
+            raise ErrorNegocio(str(exc)) from exc
+    return numero
+
+
+def tipo_identificacion_id(conn, codigo: str | None):
+    """id del tipo de documento por su código DIAN (None → None)."""
+    if codigo is None:
+        return None
+    fila = conn.execute("SELECT id FROM tipos_identificacion WHERE codigo = %s", (codigo,)).fetchone()
+    if fila is None:
+        raise ErrorNegocio("Tipo de documento desconocido.")
+    return fila["id"]

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { cloneElement, isValidElement, useEffect, useId } from "react";
 
 // Ventana modal con fondo oscuro. Escape o clic afuera la cierran (onClose).
 export default function Modal({ titulo, onClose, children, ancho = 440 }) {
@@ -24,14 +24,21 @@ export default function Modal({ titulo, onClose, children, ancho = 440 }) {
   );
 }
 
-// Campo con etiqueta, para formularios dentro de modales y páginas.
+// Campo con etiqueta, para formularios dentro de modales y páginas. La
+// etiqueta se asocia por id (no envolviendo el control): así el nombre
+// accesible de un <select> es la etiqueta y no el texto de todas sus opciones.
+// El hijo recibe `id`: si es un componente propio (ej. BuscarMunicipio), debe
+// pasarlo a su control real para que la etiqueta lo nombre.
 export function Campo({ etiqueta, children, ayuda }) {
+  const idPropio = useId();
+  const hijo = isValidElement(children) ? children : null;
+  const id = hijo?.props.id || idPropio;
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span className="lbl">{etiqueta}</span>
-      {children}
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label className="lbl" htmlFor={id}>{etiqueta}</label>
+      {hijo ? cloneElement(hijo, { id }) : children}
       {ayuda && <span className="muted" style={{ fontSize: 12 }}>{ayuda}</span>}
-    </label>
+    </div>
   );
 }
 

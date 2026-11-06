@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
+import BuscarTercero from "../components/BuscarTercero";
 import Modal, { Campo, ErrorBanner } from "../components/Modal";
 
 // Agrupa "inventario.editar" bajo "inventario" para mostrar los permisos por módulo.
@@ -16,6 +17,7 @@ function ModalUsuario({ usuario, roles, onClose, onGuardado }) {
   const [rolId, setRolId] = useState(usuario?.rol_id || roles.find((r) => r.nombre === "vendedor")?.id || "");
   const [activo, setActivo] = useState(usuario?.activo ?? true);
   const [contrasena, setContrasena] = useState("");
+  const [persona, setPersona] = useState(usuario?.tercero_id ? { id: usuario.tercero_id, nombre: usuario.persona } : null);
   const [error, setError] = useState("");
 
   const guardar = async (e) => {
@@ -28,6 +30,7 @@ function ModalUsuario({ usuario, roles, onClose, onGuardado }) {
         const cambios = {};
         if (rolId !== usuario.rol_id) cambios.rol_id = rolId;
         if (activo !== usuario.activo) cambios.activo = activo;
+        if ((persona?.id || null) !== (usuario.tercero_id || null)) cambios.tercero_id = persona?.id || null;
         if (Object.keys(cambios).length) await api.editarUsuario(usuario.id, cambios);
         if (contrasena) await api.restablecerContrasena(usuario.id, contrasena);
       }
@@ -56,6 +59,22 @@ function ModalUsuario({ usuario, roles, onClose, onGuardado }) {
             minLength={contrasena || nuevo ? 8 : undefined}
             value={contrasena} onChange={(e) => setContrasena(e.target.value)} />
         </Campo>
+        {!nuevo && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span className="lbl">Persona</span>
+            <span className="muted" style={{ fontSize: 12 }}>
+              Si el empleado también es cliente de fiado o recibe nómina, vincúlalo con su registro.
+            </span>
+            {persona ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <strong>{persona.nombre}</strong>
+                <button type="button" className="btn btn-g" style={{ height: 30 }} onClick={() => setPersona(null)}>Quitar</button>
+              </div>
+            ) : (
+              <BuscarTercero onElegir={setPersona} />
+            )}
+          </div>
+        )}
         {!nuevo && (
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} />
@@ -184,7 +203,7 @@ export default function Usuarios() {
       <ErrorBanner mensaje={error} />
 
       {vista === "usuarios" ? (
-        <div className="card" style={{ overflow: "hidden" }}>
+        <div className="card tabla">
           <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px" }}>
             <span>Usuario</span><span>Rol</span><span>Estado</span>
           </div>

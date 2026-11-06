@@ -9,6 +9,7 @@ import Mas from "./pages/Mas";
 import Inventario from "./pages/Inventario";
 import Preparaciones from "./pages/Preparaciones";
 import ConsultaPrecios from "./pages/ConsultaPrecios";
+import Terceros from "./pages/Terceros";
 
 export default function App() {
   return (
@@ -23,6 +24,8 @@ export default function App() {
         <Route path="/inventario" element={<Inventario />} />
         <Route path="/preparaciones" element={<Preparaciones />} />
         <Route path="/precios" element={<ConsultaPrecios />} />
+        <Route path="/clientes" element={<Terceros key="cliente" rol="cliente" />} />
+        <Route path="/proveedores" element={<Terceros key="proveedor" rol="proveedor" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

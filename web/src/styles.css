@@ -125,6 +125,11 @@ button { font-family: inherit; }
 }
 .r { text-align: right; }
 
+/* Tablas en tarjeta: en pantallas angostas se deslizan de lado en vez de
+   cortar columnas. */
+.tabla { overflow-x: auto; }
+.tabla > .th, .tabla > .tr { min-width: 620px; }
+
 .seg { display: inline-flex; background: var(--neu-bg); border-radius: 12px; padding: 4px; gap: 4px; }
 .seg button {
   font: 600 13px Figtree, sans-serif;

@@ -17,7 +17,7 @@ export const SIDEBAR_GROUPS = [
   {
     name: "Clientes",
     items: [
-      { label: "Clientes", path: null, d: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-4 3-6 7-6s7 2 7 6M17 3a4 4 0 0 1 0 8M22 21c0-3-1.5-5-4-5.6" },
+      { label: "Clientes", path: "/clientes", d: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-4 3-6 7-6s7 2 7 6M17 3a4 4 0 0 1 0 8M22 21c0-3-1.5-5-4-5.6" },
       { label: "Créditos", path: null, d: "M2 6h20v12H2zM2 10h20M6 15h4" },
     ],
   },
@@ -26,7 +26,7 @@ export const SIDEBAR_GROUPS = [
     items: [
       { label: "Inventario", path: "/inventario", permiso: ["inventario.editar", "combos.editar", "preparaciones.editar"], d: "M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10" },
       { label: "Preparaciones", path: "/preparaciones", permiso: "preparaciones.editar", d: "M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM2 10h20M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2" },
-      { label: "Proveedores", path: null, d: "M2 6h12v10H2zM14 10h4l3 3v3h-7M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
+      { label: "Proveedores", path: "/proveedores", permiso: ["compras.registrar", "inventario.editar"], d: "M2 6h12v10H2zM14 10h4l3 3v3h-7M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
     ],
   },
   {

@@ -82,6 +82,7 @@ se genera con `db/datos/generar_divipola.py` desde el CSV oficial del DANE.
   Administración (usuarios, roles, datos del negocio, cajas y métodos de pago,
   mesas, categorías de gasto, juegos y auditoría) y Catálogo (productos con
   stock, platos con receta y costo calculado, combos, adicionales, servicios,
-  insumos, preparaciones y consulta de precios).
+  insumos, preparaciones y consulta de precios) y Terceros (clientes y
+  proveedores con documento, DV y municipio; usuarios vinculados a su persona).
   Las pantallas de Ventas, Cuentas y Caja vuelven al menú cuando se reescriban
   sobre la base nueva.

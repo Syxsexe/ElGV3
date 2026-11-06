@@ -95,6 +95,9 @@ def test_catalogos_simples(api, sesion):
 def test_bordes_de_configuracion(api, sesion, turno):
     h = sesion("admin")
     assert api.patch(f"/config/metodos-pago/{uuid.uuid4()}", headers=h, json={"activo": True}).status_code == 404
+    # El NIT del negocio acepta el mismo formato que el de clientes y proveedores.
+    r = api.patch("/config/empresa", headers=h, json={"tipo_identificacion": "31", "numero_identificacion": "800.197.268-4"})
+    assert (r.status_code, r.json()["numero_identificacion"], r.json()["dv"]) == (200, "800197268", 4)
     largo = api.patch("/config/empresa", headers=h, json={"tipo_identificacion": "31", "numero_identificacion": "1234567890123456"})
     assert largo.status_code == 400 and "máximo 15" in largo.json()["detail"]
 

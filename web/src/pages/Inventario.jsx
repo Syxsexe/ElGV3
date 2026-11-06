@@ -319,7 +319,7 @@ function Categorias({ categorias, puedeEditar, recargar }) {
           <button type="submit" className="btn btn-s">Agregar</button>
         </form>
       )}
-      <div className="card" style={{ overflow: "hidden" }}>
+      <div className="card tabla">
         <div className="th" style={{ gridTemplateColumns: "1fr 120px 90px 80px" }}>
           <span>Nombre</span><span>Tipo</span><span className="r">Artículos</span><span />
         </div>
@@ -420,7 +420,7 @@ export default function Inventario() {
       <ErrorBanner mensaje={error} />
 
       {pestana === "producto" && (
-        <div className="card" style={{ overflow: "hidden" }}>
+        <div className="card tabla">
           <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 90px 80px" }}>
             <span>Producto</span><span>Categoría</span><span className="r">Precio</span><span className="r">Costo</span>
             <span className="r">Margen</span><span className="r">Stock</span><span>Estado</span>
@@ -454,7 +454,7 @@ export default function Inventario() {
       )}
 
       {(pestana === "combo" || pestana === "adicional" || pestana === "servicio") && (
-        <div className="card" style={{ overflow: "hidden" }}>
+        <div className="card tabla">
           <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 80px" }}>
             <span>Nombre</span><span>Impuesto</span><span className="r">Precio</span><span className="r">Costo</span>
             <span className="r">Margen</span><span>Estado</span>
@@ -477,7 +477,7 @@ export default function Inventario() {
       {pestana !== "categorias" && articulos.length === 0 && <div className="muted">Nada que mostrar.</div>}
 
       {pestana === "insumos" && (
-        <div className="card" style={{ overflow: "hidden" }}>
+        <div className="card tabla">
           <div className="th" style={{ gridTemplateColumns: "1fr 80px 130px 120px 80px" }}>
             <span>Insumo</span><span>Unidad</span><span className="r">Costo por unidad</span><span>Tipo</span><span>Estado</span>
           </div>

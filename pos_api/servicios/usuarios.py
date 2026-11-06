@@ -14,6 +14,7 @@ from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado, SinPermiso
 from pos_api.seguridad import Usuario, contrasena_correcta, guardar_contrasena, hash_contrasena
 from pos_api.servicios.comun import actualizar
+from pos_api.servicios.terceros import exigir_no_protegido
 
 PERMISO_GESTIONAR = "usuarios.gestionar"
 
@@ -62,7 +63,7 @@ def _exigir_sin_escalar(actor: Usuario, permisos, que: str) -> None:
 
 
 def _usuario(conn, usuario_id) -> dict:
-    fila = conn.execute("SELECT id, usuario, rol_id, activo FROM usuarios WHERE id = %s FOR UPDATE",
+    fila = conn.execute("SELECT id, usuario, rol_id, activo, tercero_id FROM usuarios WHERE id = %s FOR UPDATE",
                         (usuario_id,)).fetchone()
     if fila is None:
         raise NoEncontrado("El usuario no existe.")
@@ -95,7 +96,8 @@ def crear_usuario(conn, actor: Usuario, usuario: str, contrasena: str, rol_id) -
 
 
 def editar_usuario(conn, actor: Usuario, usuario_id, cambios: dict) -> dict:
-    """cambios: rol_id y/o activo. Solo se aplica y audita lo que cambia."""
+    """cambios: rol_id, activo y/o tercero_id (la persona detrás del usuario;
+    None la desvincula). Solo se aplica y audita lo que cambia."""
     _bloquear_gestores(conn)
     antes = _usuario(conn, usuario_id)
     rol_actual = _rol(conn, antes["rol_id"])
@@ -110,11 +112,16 @@ def editar_usuario(conn, actor: Usuario, usuario_id, cambios: dict) -> dict:
         detalle.append(f"rol {rol_actual['nombre']} → {rol_nuevo['nombre']}")
     if "activo" in cambios:
         detalle.append("activado" if cambios["activo"] else "desactivado")
+    if "tercero_id" in cambios:
+        # Ni CONSUMIDOR FINAL ni el propio negocio son la persona de un empleado.
+        persona = cambios["tercero_id"] and exigir_no_protegido(conn, cambios["tercero_id"])
+        detalle.append(f"vinculado a {persona}" if persona else "sin persona vinculada")
     fila = actualizar(conn, "usuarios", usuario_id, cambios)
     _exigir_gestor_activo(conn)
     auditar(conn, actor.id, "usuario", f"Editó el usuario {fila['usuario']}: {', '.join(detalle)}",
             "usuarios", usuario_id)
-    return {"id": fila["id"], "usuario": fila["usuario"], "rol_id": fila["rol_id"], "activo": fila["activo"]}
+    return {"id": fila["id"], "usuario": fila["usuario"], "rol_id": fila["rol_id"], "activo": fila["activo"],
+            "tercero_id": fila["tercero_id"]}
 
 
 def restablecer_contrasena(conn, actor: Usuario, usuario_id, contrasena: str) -> None:

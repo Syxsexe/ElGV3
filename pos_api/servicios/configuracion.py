@@ -9,7 +9,8 @@ import re
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
-from pos_api.servicios.comun import actualizar, describir_cambios, digito_verificacion, sin_tildes
+from pos_api.servicios.comun import (actualizar, describir_cambios, digito_verificacion, normalizar_documento,
+                                     sin_tildes, tipo_identificacion_id)
 
 # ── Empresa ─────────────────────────────────────────────────────────────────
 
@@ -49,20 +50,13 @@ def editar_empresa(conn, actor: Usuario, cambios: dict) -> dict:
     cambios = {k: v for k, v in cambios.items() if antes.get(k) != v}
     if not cambios:
         return antes
-    tipo = cambios.get("tipo_identificacion", antes["tipo_identificacion"])
-    numero = cambios.get("numero_identificacion", antes["numero_identificacion"])
-    if tipo == "31":
-        try:
-            digito_verificacion(numero)
-        except ValueError as exc:
-            raise ErrorNegocio(str(exc)) from exc
     tercero = {k: v for k, v in cambios.items() if k in CAMPOS_TERCERO_EMPRESA}
-    if "tipo_identificacion" in cambios:
-        tipo = conn.execute("SELECT id FROM tipos_identificacion WHERE codigo = %s",
-                            (cambios["tipo_identificacion"],)).fetchone()
-        if tipo is None:
-            raise ErrorNegocio("Tipo de documento desconocido.")
-        tercero["tipo_identificacion_id"] = tipo["id"]
+    if "tipo_identificacion" in cambios or "numero_identificacion" in cambios:
+        # Mismas reglas que clientes y proveedores (NIT con o sin DV, solo dígitos…).
+        tipo = cambios.get("tipo_identificacion", antes["tipo_identificacion"])
+        tercero["tipo_identificacion_id"] = tipo_identificacion_id(conn, tipo)
+        tercero["numero_identificacion"] = normalizar_documento(
+            tipo, cambios.get("numero_identificacion", antes["numero_identificacion"]))
     actualizar(conn, "terceros", actual["tercero_id"], tercero)
     actualizar(conn, "empresa", True, {k: v for k, v in cambios.items() if k in CAMPOS_EMPRESA})
     auditar(conn, actor.id, "sistema", f"Editó los datos del negocio: {describir_cambios(cambios)}",

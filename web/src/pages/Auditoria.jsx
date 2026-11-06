@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
-import { ErrorBanner } from "../components/Modal";
+import { Campo, ErrorBanner } from "../components/Modal";
 import { fmtFechaHora } from "../format";
 
 const ACCIONES = ["login", "caja", "venta", "cuenta", "credito", "gasto", "compra",
@@ -41,33 +41,29 @@ export default function Auditoria() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <h1 style={{ fontSize: 28 }}>Auditoría</h1>
       <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span className="lbl">Desde</span>
+        <Campo etiqueta="Desde">
           <input className="inp" type="date" value={filtros.desde} onChange={cambiar("desde")} />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span className="lbl">Hasta</span>
+        </Campo>
+        <Campo etiqueta="Hasta">
           <input className="inp" type="date" value={filtros.hasta} onChange={cambiar("hasta")} />
-        </label>
+        </Campo>
         {usuarios.length > 0 && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span className="lbl">Usuario</span>
+          <Campo etiqueta="Usuario">
             <select className="inp" value={filtros.usuario_id} onChange={cambiar("usuario_id")}>
               <option value="">Todos</option>
               {usuarios.map((u) => <option key={u.id} value={u.id}>{u.usuario}</option>)}
             </select>
-          </label>
+          </Campo>
         )}
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span className="lbl">Acción</span>
+        <Campo etiqueta="Acción">
           <select className="inp" value={filtros.accion} onChange={cambiar("accion")}>
             <option value="">Todas</option>
             {ACCIONES.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
-        </label>
+        </Campo>
       </div>
       <ErrorBanner mensaje={error} />
-      <div className="card" style={{ overflow: "hidden" }}>
+      <div className="card tabla">
         <div className="th" style={{ gridTemplateColumns: "130px 110px 90px 1fr" }}>
           <span>Fecha</span><span>Usuario</span><span>Acción</span><span>Detalle</span>
         </div>

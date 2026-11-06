@@ -28,9 +28,9 @@ def test_admin_tiene_todos_los_permisos_y_vendedor_ninguno(db):
 def test_metodos_de_pago_caen_en_su_caja(db):
     filas = db.execute("""
         SELECT m.codigo, c.nombre FROM metodos_pago m JOIN cajas c ON c.id = m.caja_id""").fetchall()
-    assert {r["codigo"]: r["nombre"] for r in filas} == {
-        "efectivo": "Efectivo", "nequi": "Digital", "daviplata": "Digital",
-        "transferencia": "Digital", "tarjeta": "Digital"}
+    sembrados = {"efectivo": "Efectivo", "nequi": "Digital", "daviplata": "Digital",
+                 "transferencia": "Digital", "tarjeta": "Digital"}
+    assert {r["codigo"]: r["nombre"] for r in filas if r["codigo"] in sembrados} == sembrados
 
 
 def test_divipola_completo(db):

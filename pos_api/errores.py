@@ -24,6 +24,10 @@ class NoEncontrado(Exception):
     """El registro pedido no existe. Sale como 404 con su mensaje."""
 
 
+class SinPermiso(Exception):
+    """El usuario no puede hacer esto. Sale como 403 con su mensaje."""
+
+
 MENSAJES = {
     "sesiones_caja_un_turno_abierto": "Ya hay un turno de caja abierto.",
     "cuentas_una_abierta_por_mesa": "Esa mesa ya tiene una cuenta abierta.",
@@ -31,6 +35,13 @@ MENSAJES = {
     "usuarios_tercero_id_key": "Esa persona ya tiene un usuario.",
     "terceros_identificacion_unica": "Ya existe un tercero con ese tipo y número de documento.",
     "empresa_pkey": "Los datos del negocio ya están configurados.",
+    "roles_nombre_key": "Ya existe un rol con ese nombre.",
+    "cajas_nombre_key": "Ya existe una caja con ese nombre.",
+    "cajas_una_con_denominaciones": "Solo una caja puede contarse en billetes y monedas.",
+    "metodos_pago_codigo_key": "Ya existe un método de pago con ese nombre.",
+    "mesas_nombre_key": "Ya existe una mesa con ese nombre.",
+    "categorias_gasto_nombre_key": "Ya existe una categoría de gasto con ese nombre.",
+    "juegos_nombre_key": "Ya existe un juego con ese nombre.",
 }
 
 # Errores de regla (400): el dato no es válido y reintentar igual no sirve.
@@ -69,6 +80,10 @@ def registrar(app: FastAPI) -> None:
     @app.exception_handler(ErrorNegocio)
     def _negocio(request: Request, exc: ErrorNegocio):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(SinPermiso)
+    def _sin_permiso(request: Request, exc: SinPermiso):
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
 
     @app.exception_handler(NoEncontrado)
     def _no_encontrado(request: Request, exc: NoEncontrado):

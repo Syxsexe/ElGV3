@@ -132,3 +132,37 @@ def test_borrar_el_subtipo_deja_el_articulo_invalido(db, f):
     db.execute("UPDATE articulos SET tipo = 'servicio' WHERE id = %s", (prod,))
     db.execute("INSERT INTO servicios (articulo_id) VALUES (%s)", (prod,))
     confirmar(db)
+
+
+def test_cambio_de_caja_de_un_metodo_espera_al_pago_en_curso(url_prueba):
+    # Sin el FOR SHARE de 0016, el cambio de caja no veía el pago sin confirmar
+    # (el bloqueo de la FK no choca con el UPDATE) y los dos confirmaban.
+    with psycopg.connect(url_prueba, autocommit=True, row_factory=dict_row) as base:
+        with base.transaction():
+            fb = Fabrica(base)
+            turno, prod = fb.turno(), fb.producto(precio=1000)
+            metodo = base.execute(
+                "INSERT INTO metodos_pago (codigo, nombre, caja_id) "
+                "SELECT %s, 'QR prueba', id FROM cajas WHERE nombre = 'Digital' RETURNING id",
+                (f"qr_{uuid.uuid4().hex[:6]}",)).fetchone()["id"]
+
+    cajero = psycopg.connect(url_prueba, row_factory=dict_row)
+    admin = psycopg.connect(url_prueba, row_factory=dict_row)
+    try:
+        venta = Fabrica(cajero).venta(turno, [(prod, 1, 1000)])
+        cajero.execute("INSERT INTO pagos_venta (venta_id, metodo_pago_id, monto) VALUES (%s, %s, 1000)", (venta, metodo))
+        admin.execute("SET lock_timeout = '300ms'")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            admin.execute("UPDATE metodos_pago SET caja_id = (SELECT id FROM cajas WHERE nombre = 'Efectivo') WHERE id = %s",
+                          (metodo,))
+        admin.rollback()
+        cajero.commit()
+        with pytest.raises(psycopg.Error, match="no puede cambiar de caja"):
+            admin.execute("UPDATE metodos_pago SET caja_id = (SELECT id FROM cajas WHERE nombre = 'Efectivo') WHERE id = %s",
+                          (metodo,))
+        admin.rollback()
+        Fabrica(admin).cerrar_turno(turno, {}, digital=1000)  # deja la base sin turno abierto
+        admin.commit()
+    finally:
+        cajero.close()
+        admin.close()

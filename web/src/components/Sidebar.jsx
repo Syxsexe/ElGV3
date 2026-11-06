@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import CambiarContrasena from "./CambiarContrasena";
 import { SIDEBAR_GROUPS } from "../nav";
 
 function Icon({ d }) {
@@ -13,6 +15,7 @@ function Icon({ d }) {
 
 export default function Sidebar() {
   const { usuario, logout, puede } = useAuth();
+  const [cambiandoClave, setCambiandoClave] = useState(false);
   const inicial = (usuario?.usuario || "?").charAt(0).toUpperCase();
 
   return (
@@ -57,12 +60,15 @@ export default function Sidebar() {
           width: 36, height: 36, borderRadius: 999, background: "#FCE7D6", color: "#9A4A12",
           display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14,
         }}>{inicial}</div>
-        <div style={{ display: "flex", flexDirection: "column", flexGrow: 1 }}>
+        <button type="button" onClick={() => setCambiandoClave(true)} title="Cambiar mi contraseña" style={{
+          display: "flex", flexDirection: "column", flexGrow: 1, alignItems: "flex-start",
+          background: "none", border: 0, padding: 0, cursor: "pointer", color: "inherit", textAlign: "left",
+        }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{usuario?.usuario}</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {usuario?.rol === "admin" ? "Administrador" : usuario?.rol === "vendedor" ? "Vendedor" : usuario?.rol}
           </div>
-        </div>
+        </button>
         <button type="button" onClick={logout} aria-label="Cerrar sesión" style={{
           width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
           color: "var(--text-muted)", background: "none", border: 0, cursor: "pointer",
@@ -73,6 +79,7 @@ export default function Sidebar() {
           </svg>
         </button>
       </div>
+      {cambiandoClave && <CambiarContrasena onClose={() => setCambiandoClave(false)} />}
     </nav>
   );
 }

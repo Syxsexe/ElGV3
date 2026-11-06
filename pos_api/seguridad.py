@@ -34,6 +34,7 @@ class Usuario:
     usuario: str
     rol: str
     permisos: frozenset[str]
+    sesiones_desde: int = 0  # epoch en segundos: tokens con iat anterior no valen
 
     def puede(self, permiso: str) -> bool:
         return permiso in self.permisos
@@ -52,6 +53,7 @@ def cargar_usuario(conn, usuario_id) -> Usuario | None:
     """El usuario activo con sus permisos, o None si no existe o está inactivo."""
     fila = conn.execute(
         """SELECT u.id, u.usuario, r.nombre AS rol,
+                  extract(epoch FROM u.sesiones_desde)::bigint AS sesiones_desde,
                   COALESCE(array_agg(p.codigo) FILTER (WHERE p.codigo IS NOT NULL), '{}') AS permisos
              FROM usuarios u
              JOIN roles r ON r.id = u.rol_id
@@ -63,7 +65,7 @@ def cargar_usuario(conn, usuario_id) -> Usuario | None:
     ).fetchone()
     if fila is None:
         return None
-    return Usuario(fila["id"], fila["usuario"], fila["rol"], frozenset(fila["permisos"]))
+    return Usuario(fila["id"], fila["usuario"], fila["rol"], frozenset(fila["permisos"]), fila["sesiones_desde"])
 
 
 def verificar_credenciales(conn, usuario: str, contrasena: str) -> Usuario | None:
@@ -86,6 +88,22 @@ def verificar_credenciales(conn, usuario: str, contrasena: str) -> Usuario | Non
     return cargar_usuario(conn, fila["id"])
 
 
+def guardar_contrasena(conn, usuario_id, contrasena: str) -> None:
+    """Cambia la contraseña e invalida los tokens ya emitidos de ese usuario."""
+    conn.execute(
+        "UPDATE usuarios SET contrasena_hash = %s, sesiones_desde = date_trunc('second', now()) WHERE id = %s",
+        (hash_contrasena(contrasena), usuario_id),
+    )
+
+
+def contrasena_correcta(conn, usuario_id, contrasena: str) -> bool:
+    fila = conn.execute("SELECT contrasena_hash FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    try:
+        return fila is not None and _hasher.verify(fila["contrasena_hash"], contrasena)
+    except (VerificationError, InvalidHashError):
+        return False
+
+
 def crear_token(usuario: Usuario) -> str:
     ahora = datetime.now(timezone.utc)
     payload = {"sub": str(usuario.id), "iat": ahora, "exp": ahora + timedelta(hours=JWT_EXPIRATION_HORAS)}
@@ -99,12 +117,15 @@ def usuario_actual(credenciales: HTTPAuthorizationCredentials | None = Depends(_
     try:
         payload = jwt.decode(credenciales.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         usuario_id = uuid.UUID(payload["sub"])
-    except (jwt.PyJWTError, KeyError, ValueError):
+        emitido = int(payload["iat"])
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o expirado.")
     with transaccion() as conn:
         usuario = cargar_usuario(conn, usuario_id)
     if usuario is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "El usuario no existe o está desactivado.")
+    if emitido < usuario.sesiones_desde:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "La contraseña cambió: vuelve a iniciar sesión.")
     return usuario
 
 

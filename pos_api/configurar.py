@@ -9,7 +9,6 @@ migrar; se niega si la base ya tiene usuarios.
 """
 import getpass
 import sys
-import unicodedata
 
 import psycopg
 from psycopg.rows import dict_row
@@ -19,17 +18,8 @@ from pos_api.config import DATABASE_URL
 from pos_api.db import migraciones_pendientes
 from pos_api.errores import ErrorNegocio
 from pos_api.seguridad import hash_contrasena
-
-# Pesos del dígito de verificación del NIT (DIAN), de derecha a izquierda.
-_PESOS_DV = (3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71)
-
-
-def digito_verificacion(nit: str) -> int:
-    """Dígito de verificación DIAN de un NIT (sin el DV)."""
-    if not nit.isdigit() or len(nit) > len(_PESOS_DV):
-        raise ValueError("El NIT debe tener solo dígitos (máximo 15), sin el dígito de verificación.")
-    residuo = sum(int(d) * p for d, p in zip(reversed(nit), _PESOS_DV)) % 11
-    return residuo if residuo < 2 else 11 - residuo
+from pos_api.servicios.comun import digito_verificacion
+from pos_api.servicios.configuracion import buscar_municipios
 
 
 def crear_configuracion(conn, negocio: dict, admin: dict) -> None:
@@ -99,29 +89,17 @@ def _elegir(texto: str, opciones: list[tuple[str, str]]) -> str:
         print("  Elige un número de la lista.")
 
 
-def _sin_tildes(texto: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFD", texto.upper()) if unicodedata.category(c) != "Mn")
-
-
 def _municipio(conn) -> str:
     while True:
-        nombre = _preguntar("Municipio (nombre o código DIVIPOLA)")
-        # Los nombres DIVIPOLA están en mayúsculas con tildes: se compara sin ellas.
-        filas = conn.execute(
-            """SELECT m.id, m.codigo, m.nombre, d.nombre AS depto
-                 FROM municipios m JOIN departamentos d ON d.id = m.departamento_id
-                WHERE m.codigo = %s OR translate(m.nombre, 'ÁÉÍÓÚÜÑ', 'AEIOUUN') LIKE %s
-                ORDER BY m.nombre LIMIT 15""",
-            (nombre, f"%{_sin_tildes(nombre)}%"),
-        ).fetchall()
+        filas = buscar_municipios(conn, _preguntar("Municipio (nombre o código DIVIPOLA)"))
         if not filas:
             print("  No se encontró ese municipio.")
             continue
         if len(filas) == 1:
             f = filas[0]
-            print(f"  → {f['nombre']} ({f['depto']}), {f['codigo']}")
+            print(f"  → {f['nombre']} ({f['departamento']}), {f['codigo']}")
             return f["id"]
-        return _elegir("¿Cuál?", [(f["id"], f"{f['nombre']} ({f['depto']}), {f['codigo']}") for f in filas])
+        return _elegir("¿Cuál?", [(f["id"], f"{f['nombre']} ({f['departamento']}), {f['codigo']}") for f in filas])
 
 
 def _contrasena() -> str:

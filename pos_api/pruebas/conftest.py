@@ -74,6 +74,13 @@ else:
         return Fabrica(bd)
 
     @pytest.fixture
+    def turno(bd, f):
+        """El turno abierto (solo puede haber uno en toda la base de prueba):
+        lo reutiliza si otra prueba ya lo abrió, con sus cajas Efectivo y Digital."""
+        fila = bd.execute("SELECT id FROM sesiones_caja WHERE cerrada_en IS NULL").fetchone()
+        return fila["id"] if fila else f.turno()
+
+    @pytest.fixture
     def crear_usuario(bd):
         """crear_usuario(rol="vendedor") → (id, nombre) con contraseña CONTRASENA."""
         def _crear(rol="vendedor", activo=True):

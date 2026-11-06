@@ -13,6 +13,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from db.migrar import migraciones_disponibles
+from pos_api.config import ZONA_HORARIA
 
 # Si un cierre de turno tiene bloqueado el turno, una venta espera hasta esto y
 # luego falla con LockNotAvailable (503 "intenta de nuevo") en vez de colgarse.
@@ -27,7 +28,10 @@ def abrir_pool(url: str) -> None:
         url,
         min_size=1,
         max_size=10,
-        kwargs={"row_factory": dict_row, "options": f"-c lock_timeout={LOCK_TIMEOUT_MS}"},
+        kwargs={
+            "row_factory": dict_row,
+            "options": f"-c lock_timeout={LOCK_TIMEOUT_MS} -c TimeZone={ZONA_HORARIA}",
+        },
         open=True,
     )
 

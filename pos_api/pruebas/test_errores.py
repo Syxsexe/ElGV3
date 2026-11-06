@@ -55,8 +55,8 @@ def test_check_y_fk_salen_con_mensaje_generico(ejecutar):
     assert (r.status_code, r.json()["detail"]) == (400, "Uno de los registros indicados no existe.")
 
 
-def test_cuadre_diferido_falla_dentro_del_endpoint(ejecutar, f):
-    s = f.turno()
+def test_cuadre_diferido_falla_dentro_del_endpoint(ejecutar, turno):
+    s = turno
     r = ejecutar(f"INSERT INTO ventas (sesion_id, usuario_id) VALUES ('{s}', (SELECT abierta_por FROM sesiones_caja WHERE id = '{s}'))")
     assert r.status_code == 400
     assert r.json()["detail"].endswith("no tiene líneas")

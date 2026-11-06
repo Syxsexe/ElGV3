@@ -10,6 +10,10 @@ import os
 # porque esa la usan el backend DIAN y sus pruebas.
 DATABASE_URL = os.environ.get("ELG_DATABASE_URL", "")
 
+# Zona horaria de las conexiones: fechas de reportes y filtros "desde/hasta"
+# se interpretan en la hora del negocio, no en UTC.
+ZONA_HORARIA = os.environ.get("ELG_ZONA_HORARIA", "America/Bogota")
+
 # Clave para firmar los JWT de sesión. En producción se debe fijar con la
 # variable de entorno ELG_JWT_SECRET (ej. en el .env del servidor).
 JWT_SECRET = os.environ.get("ELG_JWT_SECRET", "dev-secret-cambiar-en-produccion")

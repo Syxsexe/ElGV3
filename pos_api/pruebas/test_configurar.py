@@ -4,10 +4,11 @@ import pytest
 from psycopg.rows import dict_row
 
 from db import migrar
-from pos_api.configurar import crear_configuracion, digito_verificacion
+from pos_api.configurar import crear_configuracion
 from pos_api.db import migraciones_pendientes
 from pos_api.errores import ErrorNegocio
 from pos_api.seguridad import verificar_credenciales
+from pos_api.servicios.comun import digito_verificacion
 
 NEGOCIO = {
     "tipo_identificacion": "31", "numero_identificacion": "900123456", "nombre": "El G SAS",
@@ -25,7 +26,7 @@ def test_digito_de_verificacion():
 
 def test_base_sin_migrar_tiene_todo_pendiente(base_nueva):
     pendientes = migraciones_pendientes(base_nueva)
-    assert pendientes[0] == "0001_terceros" and pendientes[-1] == "0015_fase3"
+    assert pendientes == [a.stem for a in migrar.migraciones_disponibles()]
     migrar.aplicar(base_nueva, verbose=False)
     assert migraciones_pendientes(base_nueva) == []
 

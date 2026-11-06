@@ -119,3 +119,14 @@ def test_no_hay_via_de_escape_para_turnos_cerrados(db, f):
     f.cerrar_turno(s, {}, digital=0)
     with falla(db, "ya está cerrado"):
         f.venta(s, [(f.producto(precio=1000), 1, 1000)], pagos=[("efectivo", 1000)])
+
+
+def test_metodo_con_pagos_no_cambia_de_caja(db, f):
+    efectivo, digital = f.caja("Efectivo"), f.caja("Digital")
+    db.execute("UPDATE metodos_pago SET caja_id = %s WHERE codigo = 'tarjeta'", (efectivo,))  # sin pagos: sí
+    db.execute("UPDATE metodos_pago SET caja_id = %s WHERE codigo = 'tarjeta'", (digital,))
+    s = f.turno()
+    f.venta(s, [(f.producto(precio=1000), 1, 1000)], pagos=[("nequi", 1000)])
+    with falla(db, "no puede cambiar de caja"):
+        db.execute("UPDATE metodos_pago SET caja_id = %s WHERE codigo = 'nequi'", (efectivo,))
+    db.execute("UPDATE metodos_pago SET nombre = 'Nequi QR', activo = false WHERE codigo = 'nequi'")

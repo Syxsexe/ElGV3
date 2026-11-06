@@ -43,8 +43,9 @@ export const SIDEBAR_GROUPS = [
   {
     name: "Administración",
     items: [
-      { label: "Usuarios", path: null, d: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.5-6 8-6s8 2 8 6" },
-      { label: "Auditoría", path: null, d: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5" },
+      { label: "Usuarios", path: "/usuarios", permiso: "usuarios.gestionar", d: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.5-6 8-6s8 2 8 6" },
+      { label: "Auditoría", path: "/auditoria", permiso: "auditoria.ver", d: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5" },
+      { label: "Configuración", path: "/configuracion", permiso: "configuracion.editar", d: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" },
     ],
   },
 ];
@@ -54,5 +55,5 @@ export const TABBAR_ITEMS = [
   { label: "Vender", path: null, d: "M3 4h2l2.4 11h11l2-8H6.2M9 20h.01M17 20h.01" },
   { label: "Cuentas", path: null, d: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6" },
   { label: "Caja", path: null, d: "M3 7h18v12H3zM3 7l3-4h12l3 4M16 13h2" },
-  { label: "Más", path: null, d: "M4 6h16M4 12h16M4 18h16" },
+  { label: "Más", path: "/mas", d: "M4 6h16M4 12h16M4 18h16" },
 ];

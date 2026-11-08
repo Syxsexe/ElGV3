@@ -130,3 +130,23 @@ def test_metodo_con_pagos_no_cambia_de_caja(db, f):
     with falla(db, "no puede cambiar de caja"):
         db.execute("UPDATE metodos_pago SET caja_id = %s WHERE codigo = 'nequi'", (efectivo,))
     db.execute("UPDATE metodos_pago SET nombre = 'Nequi QR', activo = false WHERE codigo = 'nequi'")
+
+
+def test_el_desglose_de_flujos_suma_el_esperado(db, f):
+    s = f.turno(base_efectivo=10000, base_digital=5000)
+    cliente = f.cliente()
+    deuda = f.cargo(cliente, 4000)
+    f.venta(s, [(f.producto(precio=6000), 1, 6000)], pagos=[("efectivo", 1000), ("nequi", 5000)])
+    f.abono(cliente, [(deuda, 4000)], sesion_id=s)
+    gasto = f.gasto(s, [("efectivo", 2000)])
+    db.execute("INSERT INTO anulaciones_egreso (egreso_id, sesion_id, usuario_id, motivo) "
+               "VALUES (%s, %s, %s, 'Repetido')", (gasto, s, f.usuario()))
+    confirmar(db)
+    flujos = {(r["caja"], r["concepto"]): r["monto"] for r in db.execute(
+        "SELECT c.nombre AS caja, fc.concepto, sum(fc.monto) AS monto FROM v_flujos_caja fc "
+        "JOIN cajas c ON c.id = fc.caja_id WHERE fc.sesion_id = %s GROUP BY 1, 2", (s,))}
+    assert flujos == {("Efectivo", "venta"): 1000, ("Digital", "venta"): 5000, ("Efectivo", "abono"): 4000,
+                      ("Efectivo", "egreso"): -2000, ("Efectivo", "anulacion_egreso"): 2000}
+    for caja, base in (("Efectivo", 10000), ("Digital", 5000)):
+        neto = sum(m for (c, _), m in flujos.items() if c == caja)
+        assert _caja(db, s, caja)["esperado"] == base + neto

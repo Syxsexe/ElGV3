@@ -139,6 +139,17 @@ export const api = {
   crearTercero: (body) => request("/terceros", { method: "POST", body }),
   editarTercero: (id, body) => request(`/terceros/${id}`, { method: "PATCH", body }),
 
+  turnoCaja: () => request("/caja/turno"),
+  denominaciones: () => request("/caja/denominaciones"),
+  // bases: {caja_id: monto} con todas las cajas activas
+  abrirTurno: (bases, notas) => request("/caja/turnos", { method: "POST", body: { bases, notas } }),
+  movimientoCaja: (turnoId, body) => request(`/caja/turnos/${turnoId}/movimientos`, { method: "POST", body }),
+  // contados: {caja_id: monto} (cajas sin billetes); conteo: {denominacion_id: cantidad}
+  cerrarTurno: (id, body) => request(`/caja/turnos/${id}/cerrar`, { method: "POST", body }),
+  historialCaja: (filtros = {}) =>
+    request(`/caja/turnos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  detalleTurno: (id) => request(`/caja/turnos/${id}`),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

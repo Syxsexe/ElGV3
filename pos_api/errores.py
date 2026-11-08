@@ -30,6 +30,8 @@ class SinPermiso(Exception):
 
 MENSAJES = {
     "sesiones_caja_un_turno_abierto": "Ya hay un turno de caja abierto.",
+    "movimientos_caja_cajas_segun_tipo":
+        "Un retiro sale de una caja, un ingreso entra a una caja y un traslado va de una caja a otra distinta.",
     "cuentas_una_abierta_por_mesa": "Esa mesa ya tiene una cuenta abierta.",
     "usuarios_usuario_key": "Ya existe un usuario con ese nombre.",
     "usuarios_tercero_id_key": "Esa persona ya tiene un usuario.",

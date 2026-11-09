@@ -11,10 +11,19 @@ from decimal import Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
+from pos_api.servicios.comun import pesos
 
 
-def _pesos(monto) -> str:
-    return "$" + f"{Decimal(monto):,.0f}".replace(",", ".")
+def exigir_turno_abierto(conn, sesion_id) -> int:
+    """El turno que el cajero tiene en pantalla, si sigue abierto (retorna su
+    número). Si mientras tanto se cerró, falla en vez de caer en el siguiente.
+    Los triggers lo vuelven a revisar con bloqueo, por si se cierra justo ahora."""
+    turno = conn.execute("SELECT numero, cerrada_en FROM sesiones_caja WHERE id = %s", (sesion_id,)).fetchone()
+    if turno is None:
+        raise NoEncontrado("El turno de caja no existe.")
+    if turno["cerrada_en"] is not None:
+        raise ErrorNegocio(f"El turno #{turno['numero']} ya está cerrado.")
+    return turno["numero"]
 
 
 def _id_turno_abierto(conn):
@@ -154,7 +163,7 @@ def abrir_turno(conn, actor: Usuario, bases: dict, notas: str | None) -> dict:
             "INSERT INTO sesion_cajas (sesion_id, caja_id, base) VALUES (%s, %s, %s)",
             [(turno["id"], caja_id, base) for caja_id, base in bases.items()],
         )
-    detalle = ", ".join(f"{activas[c]} {_pesos(b)}" for c, b in sorted(bases.items(), key=lambda x: activas[x[0]]))
+    detalle = ", ".join(f"{activas[c]} {pesos(b)}" for c, b in sorted(bases.items(), key=lambda x: activas[x[0]]))
     auditar(conn, actor.id, "caja", f"Abrió el turno #{turno['numero']} (bases: {detalle})",
             "sesiones_caja", turno["id"])
     return detalle_turno(conn, turno["id"])
@@ -168,24 +177,19 @@ def registrar_movimiento(conn, actor: Usuario, sesion_id, tipo: str, caja_origen
     caja a otra, ej. consignar el efectivo). Va al turno que el cajero tiene en
     pantalla: si mientras tanto se cerró, falla en vez de caer en el siguiente.
     Un error se corrige con el movimiento contrario."""
-    turno = conn.execute("SELECT numero, cerrada_en FROM sesiones_caja WHERE id = %s", (sesion_id,)).fetchone()
-    if turno is None:
-        raise NoEncontrado("El turno de caja no existe.")
-    if turno["cerrada_en"] is not None:
-        raise ErrorNegocio(f"El turno #{turno['numero']} ya está cerrado.")
+    exigir_turno_abierto(conn, sesion_id)
     indicadas = [c for c in (caja_origen_id, caja_destino_id) if c is not None]
     nombres = {c["id"]: c["nombre"] for c in conn.execute(
         "SELECT id, nombre FROM cajas WHERE id = ANY(%s)", (indicadas,))}
     if len(nombres) != len(set(indicadas)):
         raise NoEncontrado("La caja indicada no existe.")
-    # El trigger vuelve a revisar el turno con bloqueo (por si se cierra ahora).
     fila = conn.execute(
         """INSERT INTO movimientos_caja (sesion_id, tipo, caja_origen_id, caja_destino_id, monto, motivo, usuario_id)
            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (sesion_id, tipo, caja_origen_id, caja_destino_id, monto, motivo, actor.id),
     ).fetchone()
     auditar(conn, actor.id, "caja",
-            f"Registró un {tipo} de {_pesos(monto)} ({' → '.join(nombres[c] for c in indicadas)}): {motivo}",
+            f"Registró un {tipo} de {pesos(monto)} ({' → '.join(nombres[c] for c in indicadas)}): {motivo}",
             "movimientos_caja", fila["id"])
     return detalle_turno(conn, sesion_id)
 
@@ -261,4 +265,4 @@ def cerrar_turno(conn, actor: Usuario, sesion_id, contados: dict, conteo: dict, 
 def _describir_diferencia(diferencia) -> str:
     if diferencia == 0:
         return "cuadra"
-    return f"{'sobran' if diferencia > 0 else 'faltan'} {_pesos(abs(diferencia))}"
+    return f"{'sobran' if diferencia > 0 else 'faltan'} {pesos(abs(diferencia))}"

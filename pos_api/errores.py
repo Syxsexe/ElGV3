@@ -33,6 +33,7 @@ MENSAJES = {
     "movimientos_caja_cajas_segun_tipo":
         "Un retiro sale de una caja, un ingreso entra a una caja y un traslado va de una caja a otra distinta.",
     "cuentas_una_abierta_por_mesa": "Esa mesa ya tiene una cuenta abierta.",
+    "cuentas_cliente_o_alias": "La cuenta va a nombre de un cliente o de un alias (uno de los dos).",
     "usuarios_usuario_key": "Ya existe un usuario con ese nombre.",
     "usuarios_tercero_id_key": "Esa persona ya tiene un usuario.",
     "terceros_identificacion_unica": "Ya existe un tercero con ese tipo y número de documento.",

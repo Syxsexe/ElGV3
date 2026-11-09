@@ -121,9 +121,10 @@ def _lineas(lista: list[BaseModel] | None) -> list[dict] | None:
 
 @router.get("/vendibles")
 def get_vendibles(q: str | None = None, tipo: TipoArticulo | None = None,
+                  categoria_tipo: Literal["tienda", "cocina"] | None = None,
                   limite: int = Query(60, ge=1, le=200), _: Usuario = Depends(usuario_actual)):
     with transaccion() as conn:
-        return servicio.vendibles(conn, q, tipo, limite)
+        return servicio.vendibles(conn, q, tipo, limite, categoria_tipo)
 
 
 @router.get("/categorias")

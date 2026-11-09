@@ -101,6 +101,7 @@ export const api = {
   tiposIdentificacion: () => request("/config/tipos-identificacion"),
   municipios: (q) => request(`/config/municipios?q=${encodeURIComponent(q)}`),
   cajas: () => request("/config/cajas"),
+  metodosPago: () => request("/config/metodos-pago"),
   crearCaja: (body) => request("/config/cajas", { method: "POST", body }),
   editarCaja: (id, body) => request(`/config/cajas/${id}`, { method: "PATCH", body }),
   crearMetodoPago: (body) => request("/config/metodos-pago", { method: "POST", body }),
@@ -110,7 +111,9 @@ export const api = {
   crearEnCatalogo: (catalogo, nombre) => request(`/config/${catalogo}`, { method: "POST", body: { nombre } }),
   editarEnCatalogo: (catalogo, id, body) => request(`/config/${catalogo}/${id}`, { method: "PATCH", body }),
 
-  vendibles: (q, tipo) => request(`/catalogo/vendibles?${new URLSearchParams(Object.entries({ q, tipo }).filter(([, v]) => v))}`),
+  // filtros: {q, tipo, categoria_tipo}
+  vendibles: (q, tipo, filtros = {}) =>
+    request(`/catalogo/vendibles?${new URLSearchParams(Object.entries({ q, tipo, ...filtros }).filter(([, v]) => v))}`),
   categorias: () => request("/catalogo/categorias"),
   crearCategoria: (body) => request("/catalogo/categorias", { method: "POST", body }),
   editarCategoria: (id, body) => request(`/catalogo/categorias/${id}`, { method: "PATCH", body }),
@@ -149,6 +152,21 @@ export const api = {
   historialCaja: (filtros = {}) =>
     request(`/caja/turnos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
   detalleTurno: (id) => request(`/caja/turnos/${id}`),
+
+  // cobro: {sesion_id, descuento, pagos: [{metodo_pago_id, monto}], fiado, cliente_id, notas}
+  vender: (lineas, cobro) => request("/ventas", { method: "POST", body: { lineas, ...cobro } }),
+  cupoCliente: (id) => request(`/clientes/${id}/cupo`),
+  cuentas: () => request("/cuentas"),
+  cuenta: (id) => request(`/cuentas/${id}`),
+  abrirCuenta: (body) => request("/cuentas", { method: "POST", body }),
+  editarCuenta: (id, body) => request(`/cuentas/${id}`, { method: "PATCH", body }),
+  agregarACuenta: (id, articuloId, cantidad = 1) =>
+    request(`/cuentas/${id}/items`, { method: "POST", body: { articulo_id: articuloId, cantidad } }),
+  cantidadEnCuenta: (id, itemId, cantidad) =>
+    request(`/cuentas/${id}/items/${itemId}`, { method: "PATCH", body: { cantidad } }),
+  quitarDeCuenta: (id, itemId) => request(`/cuentas/${id}/items/${itemId}`, { method: "DELETE" }),
+  cobrarCuenta: (id, cobro) => request(`/cuentas/${id}/cobrar`, { method: "POST", body: cobro }),
+  cancelarCuenta: (id, motivo) => request(`/cuentas/${id}/cancelar`, { method: "POST", body: { motivo } }),
 
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));

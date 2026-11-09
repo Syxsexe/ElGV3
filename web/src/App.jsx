@@ -11,6 +11,8 @@ import Preparaciones from "./pages/Preparaciones";
 import ConsultaPrecios from "./pages/ConsultaPrecios";
 import Terceros from "./pages/Terceros";
 import Caja from "./pages/Caja";
+import Venta from "./pages/Venta";
+import Cuentas from "./pages/Cuentas";
 
 export default function App() {
   return (
@@ -26,6 +28,8 @@ export default function App() {
         <Route path="/preparaciones" element={<Preparaciones />} />
         <Route path="/precios" element={<ConsultaPrecios />} />
         <Route path="/caja" element={<Caja />} />
+        <Route path="/venta" element={<Venta />} />
+        <Route path="/cuentas" element={<Cuentas />} />
         <Route path="/clientes" element={<Terceros key="cliente" rol="cliente" />} />
         <Route path="/proveedores" element={<Terceros key="proveedor" rol="proveedor" />} />
       </Route>

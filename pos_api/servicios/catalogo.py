@@ -111,18 +111,22 @@ def listar_articulos(conn, *, tipo=None, texto=None, categoria_id=None, solo_act
     ).fetchall()
 
 
-def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: int = 60) -> list[dict]:
-    """Artículos activos para vender o consultar precio (sin costos)."""
+def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: int = 60,
+              categoria_tipo: str | None = None) -> list[dict]:
+    """Artículos activos para vender o consultar precio (sin costos).
+    categoria_tipo: "tienda" o "cocina" (las pestañas de la venta)."""
     return conn.execute(
         """SELECT id, tipo, nombre, precio_venta, categoria_id, categoria, categoria_tipo,
                   impuesto, codigo, stock, stock_minimo
              FROM v_articulos
             WHERE activo
               AND (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
+              AND (%(categoria_tipo)s::text IS NULL OR categoria_tipo = %(categoria_tipo)s)
               AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
             ORDER BY nombre
             LIMIT %(limite)s""",
-        {"tipo": tipo, "patron": literal_like(texto), "texto": (texto or "").strip(), "limite": limite},
+        {"tipo": tipo, "categoria_tipo": categoria_tipo, "patron": literal_like(texto),
+         "texto": (texto or "").strip(), "limite": limite},
     ).fetchall()
 
 

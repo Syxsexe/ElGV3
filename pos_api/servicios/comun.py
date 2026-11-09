@@ -1,9 +1,15 @@
 """pos_api/servicios/comun.py — Atajos compartidos por los servicios."""
 import unicodedata
+from decimal import Decimal
 
 from psycopg import sql
 
 from pos_api.errores import ErrorNegocio, NoEncontrado
+
+
+def pesos(monto) -> str:
+    """Plata para mensajes y auditoría: 60000 → "$60.000"."""
+    return "$" + f"{Decimal(monto):,.0f}".replace(",", ".")
 
 
 def actualizar(conn, tabla: str, id_, cambios: dict, *, pk: str = "id", no_existe: str = "No existe.") -> dict:

@@ -173,7 +173,7 @@ def editar_metodo(conn, actor: Usuario, metodo_id, cambios: dict) -> dict:
 def metodos_activos(conn) -> list[dict]:
     """Los métodos que se ofrecen al cobrar, con su caja."""
     return conn.execute(
-        """SELECT m.id, m.codigo, m.nombre, m.caja_id, c.nombre AS caja
+        """SELECT m.id, m.codigo, m.nombre, m.caja_id, c.nombre AS caja, c.usa_denominaciones
              FROM metodos_pago m JOIN cajas c ON c.id = m.caja_id
             WHERE m.activo AND c.activo
             ORDER BY c.usa_denominaciones DESC, m.nombre"""

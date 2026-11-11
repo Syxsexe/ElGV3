@@ -130,6 +130,10 @@ export const api = {
   insumos: (q) => request(`/catalogo/insumos${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   crearInsumo: (body) => request("/catalogo/insumos", { method: "POST", body }),
   editarInsumo: (id, body) => request(`/catalogo/insumos/${id}`, { method: "PATCH", body }),
+  ajustarStockInsumo: (id, contado, motivo) =>
+    request(`/catalogo/insumos/${id}/ajuste-stock`, { method: "POST", body: { contado, motivo } }),
+  producir: (id, lotes, notas) => request(`/catalogo/preparaciones/${id}/producir`, { method: "POST", body: { lotes, notas } }),
+  producciones: (id) => request(`/catalogo/preparaciones/${id}/producciones`),
   preparaciones: () => request("/catalogo/preparaciones"),
   crearPreparacion: (body) => request("/catalogo/preparaciones", { method: "POST", body }),
   guardarPreparacion: (id, body) => request(`/catalogo/preparaciones/${id}`, { method: "PUT", body }),

@@ -134,14 +134,15 @@ export default function Inicio() {
 
           <Tarjeta titulo="Stock bajo"
             enlace={puede(["inventario.editar", "compras.registrar"]) ? [puede("compras.registrar") ? "/proveedores" : "/inventario", puede("compras.registrar") ? "Comprar" : "Inventario"] : null}>
-            {Number(datos.bajo_minimo.total) === 0 ? <span className="muted">Ningún producto de tienda tiene stock bajo.</span> : (
+            {Number(datos.bajo_minimo.total) === 0 ? <span className="muted">Nada en stock bajo, ni en la tienda ni en la cocina.</span> : (
               <>
                 <span className="muted" style={{ fontSize: 13 }}>
-                  {datos.bajo_minimo.total} {Number(datos.bajo_minimo.total) === 1 ? "producto" : "productos"}
+                  {datos.bajo_minimo.total} {Number(datos.bajo_minimo.total) === 1 ? "artículo" : "artículos"}
                   {Number(datos.bajo_minimo.total) > datos.bajo_minimo.productos.length && ` (se ven ${datos.bajo_minimo.productos.length})`}
                 </span>
                 {datos.bajo_minimo.productos.map((p) => (
-                  <Fila key={p.id} izquierda={p.nombre} derecha={`${fmtCant(p.stock)} / mín. ${fmtCant(p.stock_minimo)}`} peligro={Number(p.stock) <= 0} />
+                  <Fila key={p.id} izquierda={<>{p.nombre}{p.clase === "insumo" && <span className="muted" style={{ fontSize: 12 }}> · insumo</span>}</>}
+                    derecha={`${fmtCant(p.stock)}${p.unidad ? ` ${p.unidad}` : ""} / mín. ${fmtCant(p.stock_minimo)}`} peligro={Number(p.stock) <= 0} />
                 ))}
               </>
             )}

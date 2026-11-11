@@ -8,7 +8,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from pos_api.db import transaccion
 from pos_api.modelos import (Cantidad, CantidadNoNegativa, CostoUnitario, Dinero, Stock, Texto,
@@ -21,6 +21,7 @@ inventario = requiere_permiso(servicio.PERMISO_INVENTARIO)
 preparaciones = requiere_permiso(servicio.PERMISO_PREPARACIONES)
 lector = requiere_alguno(servicio.PERMISO_INVENTARIO, servicio.PERMISO_COMBOS, servicio.PERMISO_PREPARACIONES)
 editor_articulos = requiere_alguno(servicio.PERMISO_INVENTARIO, servicio.PERMISO_COMBOS)
+productor = requiere_alguno(servicio.PERMISO_INVENTARIO, servicio.PERMISO_PREPARACIONES)
 
 TipoArticulo = Literal["producto", "combo", "adicional", "servicio"]
 
@@ -30,9 +31,22 @@ class Componente(BaseModel):
     cantidad: Cantidad
 
 
-class LineaReceta(BaseModel):
+class LineaPreparacion(BaseModel):
     insumo_id: uuid.UUID
     cantidad: Cantidad
+
+
+class LineaReceta(BaseModel):
+    """Una línea de la receta de un plato: un insumo (o preparación) o un producto de tienda."""
+    insumo_id: uuid.UUID | None = None
+    producto_id: uuid.UUID | None = None
+    cantidad: Cantidad
+
+    @model_validator(mode="after")
+    def _uno_de_los_dos(self):
+        if (self.insumo_id is None) == (self.producto_id is None):
+            raise ValueError("Cada línea de la receta es un insumo o un producto (uno de los dos).")
+        return self
 
 
 class CrearArticulo(BaseModel):
@@ -94,18 +108,26 @@ class CrearInsumo(BaseModel):
     nombre: Texto
     unidad_medida_id: uuid.UUID
     costo_unitario: CostoUnitario = 0
+    stock: Stock | None = None
+    stock_minimo: CantidadNoNegativa | None = None
 
 
 class EditarInsumo(BaseModel):
     nombre: Texto | None = None
     unidad_medida_id: uuid.UUID | None = None
     costo_unitario: CostoUnitario | None = None
+    stock_minimo: CantidadNoNegativa | None = None
     activo: bool | None = None
 
 
 class GuardarPreparacion(BaseModel):
     rendimiento: Cantidad
-    receta: list[LineaReceta]
+    receta: list[LineaPreparacion]
+
+
+class Produccion(BaseModel):
+    lotes: Cantidad
+    notas: TextoOpcional = None
 
 
 class CrearPreparacion(GuardarPreparacion):
@@ -218,13 +240,20 @@ def get_insumos(activos: bool = False, q: str | None = None, _: Usuario = Depend
 @router.post("/insumos", status_code=status.HTTP_201_CREATED)
 def post_insumo(body: CrearInsumo, actor: Usuario = Depends(inventario)):
     with transaccion() as conn:
-        return servicio.crear_insumo(conn, actor, body.nombre, body.unidad_medida_id, body.costo_unitario)
+        return servicio.crear_insumo(conn, actor, body.nombre, body.unidad_medida_id, body.costo_unitario,
+                                     body.stock, body.stock_minimo)
 
 
 @router.patch("/insumos/{insumo_id}")
 def patch_insumo(insumo_id: uuid.UUID, body: EditarInsumo, actor: Usuario = Depends(inventario)):
     with transaccion() as conn:
         return servicio.editar_insumo(conn, actor, insumo_id, cambios_enviados(body))
+
+
+@router.post("/insumos/{insumo_id}/ajuste-stock")
+def post_ajuste_stock_insumo(insumo_id: uuid.UUID, body: AjusteStock, actor: Usuario = Depends(inventario)):
+    with transaccion() as conn:
+        return servicio.ajustar_stock_insumo(conn, actor, insumo_id, body.contado, body.motivo)
 
 
 @router.get("/preparaciones")
@@ -244,6 +273,19 @@ def post_preparacion(body: CrearPreparacion, actor: Usuario = Depends(preparacio
 def put_preparacion(insumo_id: uuid.UUID, body: GuardarPreparacion, actor: Usuario = Depends(preparaciones)):
     with transaccion() as conn:
         return servicio.guardar_preparacion(conn, actor, insumo_id, body.rendimiento, _lineas(body.receta))
+
+
+# Producir lo hace la cocina: basta con poder editar preparaciones o inventario.
+@router.post("/preparaciones/{insumo_id}/producir", status_code=status.HTTP_201_CREATED)
+def post_producir(insumo_id: uuid.UUID, body: Produccion, actor: Usuario = Depends(productor)):
+    with transaccion() as conn:
+        return servicio.producir(conn, actor, insumo_id, body.lotes, body.notas)
+
+
+@router.get("/preparaciones/{insumo_id}/producciones")
+def get_producciones(insumo_id: uuid.UUID, _: Usuario = Depends(lector)):
+    with transaccion() as conn:
+        return servicio.listar_producciones(conn, insumo_id)
 
 
 @router.delete("/preparaciones/{insumo_id}")

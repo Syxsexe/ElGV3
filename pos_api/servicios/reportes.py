@@ -69,11 +69,21 @@ def inicio(conn, actor: Usuario) -> dict:
              FROM v_cuentas WHERE estado = 'abierta'"""
     ).fetchone()
 
+    # Productos de tienda e insumos de cocina en su mínimo o por debajo (un
+    # insumo en negativo también: la cocina vende y avisa). Primero los negativos
+    # y después los que tienen menos frente a su mínimo, en proporción (gramos y
+    # unidades no se comparan restando).
     bajo_minimo = conn.execute(
-        """SELECT a.id, a.nombre, p.stock, p.stock_minimo, count(*) OVER () AS total
-             FROM productos p JOIN articulos a ON a.id = p.articulo_id JOIN categorias c ON c.id = a.categoria_id
-            WHERE a.activo AND c.tipo = 'tienda' AND p.stock_minimo > 0 AND p.stock <= p.stock_minimo
-            ORDER BY p.stock - p.stock_minimo, a.nombre
+        """WITH bajos AS (
+               SELECT a.id, a.nombre, p.stock, p.stock_minimo, NULL::text AS unidad, 'producto' AS clase
+                 FROM productos p JOIN articulos a ON a.id = p.articulo_id JOIN categorias c ON c.id = a.categoria_id
+                WHERE a.activo AND c.tipo = 'tienda' AND p.stock_minimo > 0 AND p.stock <= p.stock_minimo
+               UNION ALL
+               SELECT i.id, i.nombre, i.stock, i.stock_minimo, u.simbolo, 'insumo'
+                 FROM insumos i JOIN unidades_medida u ON u.id = i.unidad_medida_id
+                WHERE i.activo AND (i.stock < 0 OR (i.stock_minimo > 0 AND i.stock <= i.stock_minimo)))
+           SELECT *, count(*) OVER () AS total FROM bajos
+            ORDER BY stock < 0 DESC, stock / NULLIF(stock_minimo, 0) NULLS FIRST, nombre
             LIMIT 20"""
     ).fetchall()
     total_bajo = bajo_minimo[0]["total"] if bajo_minimo else 0

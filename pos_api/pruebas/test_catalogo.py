@@ -199,3 +199,67 @@ def test_quitar_una_preparacion_conserva_su_costo(api, admin, cat, unidad):
     assert plato["costo"] == 150
     api.delete(f"/catalogo/preparaciones/{salsa['id']}", headers=admin)
     assert api.get(f"/catalogo/articulos/{plato['id']}", headers=admin).json()["costo"] == 150
+
+
+def test_plato_con_insumos_y_productos_de_tienda(api, admin, cat, unidad, bd):
+    carne = _insumo(api, admin, unidad, "20")
+    pan = _articulo(api, admin, tipo="producto", nombre=_u("Pan"), categoria_id=cat("tienda"), precio_venta="1500",
+                    precio_costo="800", stock="4")
+    plato = _articulo(api, admin, tipo="producto", nombre=_u("Hamburguesa"), categoria_id=cat("cocina"), precio_venta="18000",
+                      receta=[{"insumo_id": carne, "cantidad": "150"}, {"producto_id": pan["id"], "cantidad": "1"}])
+    assert (plato["costo"], plato["tiene_receta"]) == (3800, True)  # 150 × 20 + 1 × 800
+    lineas = {("insumo" if r["insumo_id"] else "producto"): r for r in plato["receta"]}
+    assert (lineas["insumo"]["subtotal"], lineas["producto"]["subtotal"], lineas["producto"]["stock"]) == (3000, 800, 4)
+    # Sin stock de carne, alcanza para 0 aunque haya pan.
+    assert plato["alcanza"] == 0
+    api.post(f"/catalogo/insumos/{carne}/ajuste-stock", headers=admin, json={"contado": "1000", "motivo": "conteo"})
+    assert api.get(f"/catalogo/articulos/{plato['id']}", headers=admin).json()["alcanza"] == 4  # el pan limita
+
+    # La misma receta en otro orden no es un cambio; un producto repetido sí se rechaza.
+    n = lambda: bd.execute("SELECT count(*) AS c FROM auditoria WHERE entidad_id = %s", (plato["id"],)).fetchone()["c"]
+    antes = n()
+    api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin,
+              json={"receta": [{"producto_id": pan["id"], "cantidad": "1"}, {"insumo_id": carne, "cantidad": "150"}]})
+    assert n() == antes
+    r = api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin,
+                  json={"receta": [{"producto_id": pan["id"], "cantidad": "1"}, {"producto_id": pan["id"], "cantidad": "2"}]})
+    assert r.status_code == 400 and "repetido" in r.json()["detail"]
+    # Una línea es insumo o producto, no ambos ni ninguno; un plato no va en otro plato.
+    r = api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin,
+                  json={"receta": [{"insumo_id": carne, "producto_id": pan["id"], "cantidad": "1"}]})
+    assert r.status_code == 422
+    otro = _articulo(api, admin, tipo="producto", nombre=_u("Papas"), categoria_id=cat("cocina"), precio_venta="5000")
+    r = api.patch(f"/catalogo/articulos/{otro['id']}", headers=admin, json={"receta": [{"producto_id": plato["id"], "cantidad": "1"}]})
+    assert r.status_code == 400 and "solo van productos de la tienda" in r.json()["detail"]
+    # Ya no se compra: tiene receta.
+    assert plato["id"] not in [i["id"] for i in api.get("/compras/items", headers=admin, params={"q": plato["nombre"]}).json()]
+
+
+def test_insumo_con_stock_ajuste_y_produccion(api, admin, cat, unidad, bd):
+    tomate = api.post("/catalogo/insumos", headers=admin, json={
+        "nombre": _u("Tomate"), "unidad_medida_id": unidad["g"], "costo_unitario": "4", "stock": "5000", "stock_minimo": "1000"}).json()
+    assert (tomate["stock"], tomate["stock_minimo"]) == (5000, 1000)
+    assert api.patch(f"/catalogo/insumos/{tomate['id']}", headers=admin, json={"stock_minimo": "500"}).json()["stock_minimo"] == 500
+    r = api.post(f"/catalogo/insumos/{tomate['id']}/ajuste-stock", headers=admin, json={"contado": "4800", "motivo": "merma"})
+    assert r.json()["stock"] == 4800
+    assert "4800" in bd.execute("SELECT detalle FROM auditoria WHERE entidad_id = %s ORDER BY id DESC LIMIT 1",
+                                (tomate["id"],)).fetchone()["detalle"]
+
+    salsa = api.post("/catalogo/preparaciones", headers=admin, json={
+        "nombre": _u("Salsa"), "unidad_medida_id": unidad["g"], "rendimiento": "2000",
+        "receta": [{"insumo_id": tomate["id"], "cantidad": "2500"}]}).json()
+    r = api.post(f"/catalogo/preparaciones/{salsa['id']}/producir", headers=admin, json={"lotes": "1.5", "notas": "mañana"})
+    assert r.status_code == 201, r.text
+    assert r.json()["stock"] == 3000 and r.json()["receta"][0]["stock"] == 1050  # 4800 − 1,5 × 2500
+    hechas = api.get(f"/catalogo/preparaciones/{salsa['id']}/producciones", headers=admin).json()
+    assert [(p["lotes"], p["cantidad"], p["notas"]) for p in hechas] == [(1.5, 3000, "mañana")]
+    assert api.post(f"/catalogo/preparaciones/{tomate['id']}/producir", headers=admin, json={"lotes": "1"}).status_code == 404
+    assert api.post(f"/catalogo/preparaciones/{salsa['id']}/producir", headers=admin, json={"lotes": "0"}).status_code == 422
+
+
+def test_inicio_avisa_insumos_bajos(api, admin, sesion, unidad):
+    queso = api.post("/catalogo/insumos", headers=admin, json={
+        "nombre": _u("Queso"), "unidad_medida_id": unidad["g"], "stock": "200", "stock_minimo": "500"}).json()
+    bajos = api.get("/inicio", headers=sesion("vendedor")).json()["bajo_minimo"]["productos"]
+    fila = next(p for p in bajos if p["id"] == queso["id"])
+    assert (fila["clase"], fila["unidad"], fila["stock"]) == ("insumo", "g", 200)

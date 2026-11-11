@@ -119,7 +119,7 @@ def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: i
     categoria_tipo: "tienda" o "cocina" (las pestañas de la venta)."""
     return conn.execute(
         """SELECT id, tipo, nombre, precio_venta, categoria_id, categoria, categoria_tipo,
-                  impuesto, codigo, stock, stock_minimo
+                  impuesto, codigo, stock, stock_minimo, alcanza
              FROM v_articulos
             WHERE activo
               AND (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
@@ -146,12 +146,21 @@ def obtener_articulo(conn, articulo_id) -> dict:
             (articulo_id,),
         ).fetchall()
     if fila["tipo"] == "producto":
+        # Receta: insumos (o preparaciones) y productos de tienda, cada uno con
+        # su costo unitario, su subtotal y su stock (para ver qué limita el plato).
         fila["receta"] = conn.execute(
-            """SELECT r.insumo_id, i.nombre, i.unidad, r.cantidad, i.costo AS costo_unit,
-                      round(r.cantidad * i.costo, 2) AS subtotal
+            """SELECT r.insumo_id, NULL::uuid AS producto_id, i.nombre, i.unidad, r.cantidad, i.costo AS costo_unit,
+                      round(r.cantidad * i.costo, 2) AS subtotal, i.stock
                  FROM receta_insumos r JOIN v_insumos i ON i.id = r.insumo_id
-                WHERE r.producto_id = %s ORDER BY i.nombre""",
-            (articulo_id,),
+                WHERE r.producto_id = %(id)s
+               UNION ALL
+               SELECT NULL, r.producto_id, a.nombre, 'und', r.cantidad, p.precio_costo,
+                      round(r.cantidad * p.precio_costo, 2), p.stock
+                 FROM receta_productos r JOIN productos p ON p.articulo_id = r.producto_id
+                 JOIN articulos a ON a.id = r.producto_id
+                WHERE r.plato_id = %(id)s
+                ORDER BY nombre""",
+            {"id": articulo_id},
         ).fetchall()
     return fila
 
@@ -169,17 +178,49 @@ def _guardar_componentes_combo(conn, combo_id, productos: list[dict]) -> None:
     )
 
 
+def _clave_receta(linea: dict) -> tuple:
+    return ("insumo", linea["insumo_id"]) if linea.get("insumo_id") else ("producto", linea["producto_id"])
+
+
+def _receta_sin_duplicados(receta: list[dict]) -> None:
+    claves = [_clave_receta(r) for r in receta]
+    if len(claves) != len(set(claves)):
+        raise ErrorNegocio("La receta tiene un componente repetido: junta las cantidades en una sola línea.")
+
+
+def _receta_actual(conn, producto_id) -> dict:
+    """{(clase, id): cantidad} de la receta guardada, para saber si cambió."""
+    return {(r["clase"], r["id"]): r["cantidad"] for r in conn.execute(
+        """SELECT 'insumo' AS clase, insumo_id AS id, cantidad FROM receta_insumos WHERE producto_id = %(p)s
+           UNION ALL
+           SELECT 'producto', producto_id, cantidad FROM receta_productos WHERE plato_id = %(p)s""",
+        {"p": producto_id})}
+
+
 def _guardar_receta(conn, producto_id, receta: list[dict]) -> None:
-    """Reemplaza la receta del plato. Vacía = sin receta (conserva su último
+    """Reemplaza la receta del plato: líneas de insumo (insumo_id) o de
+    producto de tienda (producto_id). Vacía = sin receta (conserva su último
     costo, que pasa a editarse a mano). La base recalcula el costo."""
-    _sin_duplicados(receta, "insumo_id", "La receta")
+    _receta_sin_duplicados(receta)
+    insumos = [r for r in receta if r.get("insumo_id")]
+    productos = [r for r in receta if not r.get("insumo_id")]
+    if any(r["producto_id"] == producto_id for r in productos):
+        raise ErrorNegocio("Un plato no puede llevarse a sí mismo en la receta.")
     conn.execute("DELETE FROM receta_insumos WHERE producto_id = %s", (producto_id,))
-    if receta:
+    conn.execute("DELETE FROM receta_productos WHERE plato_id = %s", (producto_id,))
+    if insumos:
         conn.execute(
             """INSERT INTO receta_insumos (producto_id, insumo_id, cantidad)
                SELECT %s, x.insumo_id, x.cantidad
                  FROM unnest(%s::uuid[], %s::numeric[]) AS x(insumo_id, cantidad)""",
-            (producto_id, [r["insumo_id"] for r in receta], [r["cantidad"] for r in receta]),
+            (producto_id, [r["insumo_id"] for r in insumos], [r["cantidad"] for r in insumos]),
+        )
+    if productos:
+        conn.execute(
+            """INSERT INTO receta_productos (plato_id, producto_id, cantidad)
+               SELECT %s, x.producto_id, x.cantidad
+                 FROM unnest(%s::uuid[], %s::numeric[]) AS x(producto_id, cantidad)""",
+            (producto_id, [r["producto_id"] for r in productos], [r["cantidad"] for r in productos]),
         )
 
 
@@ -249,13 +290,12 @@ def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
         subtipo = {k: v for k, v in subtipo.items() if antes[k] != v}
     # Repetidos se rechazan siempre, cambie o no la receta.
     if cambios.get("receta"):
-        _sin_duplicados(cambios["receta"], "insumo_id", "La receta")
+        _receta_sin_duplicados(cambios["receta"])
     if cambios.get("productos"):
         _sin_duplicados(cambios["productos"], "producto_id", "El combo")
     # La pantalla manda la receta / los productos completos: solo cuentan si cambian.
     receta_nueva = (tipo == "producto" and "receta" in cambios
-                    and _lineas_actuales(conn, "receta_insumos", "producto_id", "insumo_id", articulo_id)
-                    != {r["insumo_id"]: r["cantidad"] for r in cambios["receta"]})
+                    and _receta_actual(conn, articulo_id) != {_clave_receta(r): r["cantidad"] for r in cambios["receta"]})
     combo_nuevo = (tipo == "combo" and "productos" in cambios
                    and _lineas_actuales(conn, "combo_productos", "combo_id", "producto_id", articulo_id)
                    != {p["producto_id"]: p["cantidad"] for p in cambios["productos"]})
@@ -305,18 +345,23 @@ def listar_insumos(conn, solo_activos: bool = False, texto: str | None = None) -
     ).fetchall()
 
 
-def crear_insumo(conn, actor: Usuario, nombre: str, unidad_medida_id, costo_unitario: Decimal) -> dict:
+def crear_insumo(conn, actor: Usuario, nombre: str, unidad_medida_id, costo_unitario: Decimal,
+                 stock: Decimal | None = None, stock_minimo: Decimal | None = None) -> dict:
     fila = conn.execute(
-        "INSERT INTO insumos (nombre, unidad_medida_id, costo_unitario) VALUES (%s, %s, %s) RETURNING id",
-        (nombre, unidad_medida_id, costo_unitario),
+        """INSERT INTO insumos (nombre, unidad_medida_id, costo_unitario, stock, stock_minimo)
+           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+        (nombre, unidad_medida_id, costo_unitario, stock or 0, stock_minimo or 0),
     ).fetchone()
-    auditar(conn, actor.id, "inventario", f"Creó el insumo {nombre} a ${costo_unitario} por unidad", "insumos", fila["id"])
+    inicial = f", stock inicial {stock}" if stock else ""
+    auditar(conn, actor.id, "inventario", f"Creó el insumo {nombre} a ${costo_unitario} por unidad{inicial}",
+            "insumos", fila["id"])
     return conn.execute("SELECT * FROM v_insumos WHERE id = %s", (fila["id"],)).fetchone()
 
 
 def editar_insumo(conn, actor: Usuario, insumo_id, cambios: dict) -> dict:
-    """cambios: nombre, unidad_medida_id, costo_unitario y/o activo. Cambiar el
-    costo recalcula (en la base) el costo de los platos que lo usan."""
+    """cambios: nombre, unidad_medida_id, costo_unitario, stock_minimo y/o
+    activo. Cambiar el costo recalcula (en la base) el costo de los platos que
+    lo usan. El stock no se edita aquí: se ajusta con ajustar_stock_insumo."""
     if conn.execute("SELECT 1 FROM insumos WHERE id = %s FOR UPDATE", (insumo_id,)).fetchone() is None:
         raise NoEncontrado("El insumo no existe.")
     antes = conn.execute("SELECT * FROM v_insumos WHERE id = %s", (insumo_id,)).fetchone()
@@ -330,12 +375,58 @@ def editar_insumo(conn, actor: Usuario, insumo_id, cambios: dict) -> dict:
     return conn.execute("SELECT * FROM v_insumos WHERE id = %s", (insumo_id,)).fetchone()
 
 
+def ajustar_stock_insumo(conn, actor: Usuario, insumo_id, contado: Decimal, motivo: str) -> dict:
+    """Fija el stock del insumo al conteo físico; el antes y el después quedan en auditoría."""
+    fila = conn.execute("SELECT nombre, stock FROM insumos WHERE id = %s FOR UPDATE", (insumo_id,)).fetchone()
+    if fila is None:
+        raise NoEncontrado("El insumo no existe.")
+    conn.execute("UPDATE insumos SET stock = %s WHERE id = %s", (contado, insumo_id))
+    auditar(conn, actor.id, "inventario",
+            f"Ajustó el stock de {fila['nombre']}: {fila['stock']} → {contado} ({motivo})", "insumos", insumo_id)
+    return conn.execute("SELECT * FROM v_insumos WHERE id = %s", (insumo_id,)).fetchone()
+
+
+def producir(conn, actor: Usuario, insumo_id, lotes: Decimal, notas: str | None = None) -> dict:
+    """Produce lotes de una preparación: descuenta sus ingredientes (receta ×
+    lotes) y suma lotes × rendimiento a su stock (lo hace la base). Un
+    ingrediente puede quedar en negativo: la cocina produce y avisa."""
+    prep = conn.execute(
+        """SELECT i.nombre, i.activo, p.rendimiento, u.simbolo AS unidad
+             FROM preparaciones p JOIN insumos i ON i.id = p.insumo_id
+             JOIN unidades_medida u ON u.id = i.unidad_medida_id
+            WHERE p.insumo_id = %s FOR UPDATE OF p""", (insumo_id,)).fetchone()
+    if prep is None:
+        raise NoEncontrado("La preparación no existe.")
+    if not prep["activo"]:
+        raise ErrorNegocio(f"{prep['nombre']} está inactiva.")
+    cantidad = (lotes * prep["rendimiento"]).quantize(Decimal("0.001"))
+    if cantidad <= 0:
+        raise ErrorNegocio("Lo producido debe ser mayor que cero.")
+    conn.execute(
+        "INSERT INTO producciones (preparacion_id, lotes, cantidad, usuario_id, notas) VALUES (%s, %s, %s, %s, %s)",
+        (insumo_id, lotes, cantidad, actor.id, notas),
+    )
+    auditar(conn, actor.id, "inventario",
+            f"Produjo {lotes.normalize():f} lote(s) de {prep['nombre']}: {cantidad.normalize():f} {prep['unidad']}",
+            "insumos", insumo_id)
+    return listar_preparaciones(conn, insumo_id)[0]
+
+
+def listar_producciones(conn, insumo_id) -> list[dict]:
+    return conn.execute(
+        """SELECT pr.id, pr.lotes, pr.cantidad, pr.creada_en, pr.notas, u.usuario
+             FROM producciones pr JOIN usuarios u ON u.id = pr.usuario_id
+            WHERE pr.preparacion_id = %s ORDER BY pr.creada_en DESC LIMIT 20""",
+        (insumo_id,),
+    ).fetchall()
+
+
 def listar_preparaciones(conn, insumo_id=None) -> list[dict]:
     return conn.execute(
         """SELECT i.*,
                   COALESCE((SELECT json_agg(json_build_object(
                                 'insumo_id', c.id, 'nombre', c.nombre, 'unidad', c.unidad,
-                                'cantidad', r.cantidad, 'costo_unit', c.costo) ORDER BY c.nombre)
+                                'cantidad', r.cantidad, 'costo_unit', c.costo, 'stock', c.stock) ORDER BY c.nombre)
                               FROM receta_preparacion r JOIN v_insumos c ON c.id = r.insumo_id
                              WHERE r.preparacion_id = i.id), '[]') AS receta
              FROM v_insumos i

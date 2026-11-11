@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import EditorLineas from "../components/EditorLineas";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { fmt, fmtCant, fmtCosto, margen } from "../format";
+import { useIsMobile } from "../useMediaQuery";
 
 // Productos de tienda y platos de cocina son el mismo tipo de artículo
 // (producto); los separa el tipo de su categoría.
@@ -59,7 +60,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       codigo: a.codigo || "", descripcion: a.descripcion || "",
       precio_costo: a.precio_costo ?? "", stock_minimo: a.stock_minimo ?? "",
       insumo_id: a.adicional_insumo_id || "", cantidad: a.adicional_cantidad ?? "",
-      receta: (a.receta || []).map((r) => ({ id: r.insumo_id, cantidad: String(r.cantidad) })),
+      receta: (a.receta || []).map((r) => ({ id: r.insumo_id || r.producto_id, clase: r.insumo_id ? "insumo" : "producto", cantidad: String(r.cantidad) })),
       productos: (a.productos || []).map((p) => ({ id: p.producto_id, cantidad: String(p.cantidad) })),
     })).catch((err) => setError(err.message));
   }, [articuloId, nuevo]);
@@ -87,8 +88,12 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
     if (tipo === "producto") {
       Object.assign(body, { codigo: opcional(f.codigo), stock_minimo: opcional(f.stock_minimo) || "0" });
       if (!f.receta.length) body.precio_costo = opcional(f.precio_costo) || "0";
-      if (conReceta || !nuevo) body.receta = f.receta.map((r) => ({ insumo_id: r.id, cantidad: r.cantidad }));
-      if (nuevo) body.stock = opcional(f.stock);
+      if (conReceta || !nuevo) {
+        body.receta = f.receta.map((r) => (r.clase === "producto"
+          ? { producto_id: r.id, cantidad: r.cantidad } : { insumo_id: r.id, cantidad: r.cantidad }));
+      }
+      if (nuevo && !esCocina) body.stock = opcional(f.stock);
+      if (esCocina) { delete body.codigo; body.stock_minimo = "0"; }
     }
     if (tipo === "combo") {
       body.descripcion = opcional(f.descripcion);
@@ -142,7 +147,12 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
           </Campo>
         </div>
 
-        {tipo === "producto" && (
+        {tipo === "producto" && esCocina && !f.receta.length && (
+          <Campo etiqueta="Costo (a mano, sin receta)" ayuda="Con receta, el costo lo calcula la suma de sus ingredientes.">
+            <input className="inp num" inputMode="decimal" value={f.precio_costo} onChange={cambiar("precio_costo")} style={{ maxWidth: 200 }} />
+          </Campo>
+        )}
+        {tipo === "producto" && !esCocina && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
             <Campo etiqueta="Código (opcional)">
               <input className="inp" value={f.codigo} onChange={cambiar("codigo")} />
@@ -163,9 +173,9 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
         )}
         {conReceta && (
           <Seccion etiqueta="Receta (por plato)">
-            <EditorLineas opciones={insumos} lineas={f.receta} unidad={unidadDe}
-              onChange={(receta) => setF((x) => ({ ...x, receta }))}
-              etiquetaVacia="Sin receta: el costo se escribe a mano." />
+            <RecetaPlato lineas={f.receta} insumos={insumos} precio={Number(f.precio_venta) || 0}
+              productos={productos.filter((p) => p.categoria_tipo === "tienda" && p.id !== articuloId)}
+              onChange={(receta) => setF((x) => ({ ...x, receta }))} />
           </Seccion>
         )}
 
@@ -231,22 +241,97 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
   );
 }
 
+// Receta de un plato: insumos, preparaciones o productos de la tienda, cada uno
+// con su costo por cantidad. Abajo, el costo total, el margen con el precio de
+// venta y cuántos platos alcanzan con el stock de hoy.
+function RecetaPlato({ lineas, insumos, productos, precio, onChange }) {
+  const isMobile = useIsMobile();
+  const opciones = [
+    ...insumos.filter((i) => !i.es_preparacion).map((i) => ({ ...i, clase: "insumo", grupo: "Insumos", costoUnit: Number(i.costo) })),
+    ...insumos.filter((i) => i.es_preparacion).map((i) => ({ ...i, clase: "insumo", grupo: "Preparaciones", costoUnit: Number(i.costo) })),
+    ...productos.map((p) => ({ id: p.id, nombre: p.nombre, activo: p.activo, unidad: "und", stock: p.stock,
+      clase: "producto", grupo: "Productos de la tienda", costoUnit: Number(p.precio_costo) })),
+  ];
+  const deId = new Map(opciones.map((o) => [o.id, o]));
+  const usados = new Set(lineas.map((l) => l.id));
+  const disponible = (o) => o.activo !== false && !usados.has(o.id);
+  const cambiar = (i, cambios) => onChange(lineas.map((l, j) => (j === i ? { ...l, ...cambios } : l)));
+  const libre = opciones.find(disponible);
+  const filas = lineas.map((l) => {
+    const o = deId.get(l.id);
+    const cant = Number(l.cantidad) || 0;
+    return { ...l, o, subtotal: o ? cant * o.costoUnit : 0, alcanza: o && cant > 0 ? Math.floor(Math.max(Number(o.stock), 0) / cant) : null };
+  });
+  const costo = Math.round(filas.reduce((s, f) => s + f.subtotal, 0) * 100) / 100;
+  const alcanza = filas.length ? Math.min(...filas.map((f) => (f.alcanza == null ? Infinity : f.alcanza))) : null;
+  const grupos = ["Insumos", "Preparaciones", "Productos de la tienda"];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {lineas.length === 0 && <span className="muted" style={{ fontSize: 13 }}>Sin receta: el costo se escribe a mano.</span>}
+      {filas.map((l, i) => (
+        <div key={i} style={{ display: "grid", gap: 8, alignItems: "center",
+          gridTemplateColumns: isMobile ? "84px 36px minmax(0, 1fr) 32px" : "minmax(0, 1fr) 84px 36px 90px 32px",
+          ...(isMobile && { paddingBottom: 8, borderBottom: "1px solid var(--border-2)" }) }}>
+          <select className="inp" aria-label={`Ingrediente ${i + 1}`} value={l.id} style={{ minWidth: 0, gridColumn: isMobile ? "1 / -1" : undefined }}
+            onChange={(e) => cambiar(i, { id: e.target.value, clase: deId.get(e.target.value)?.clase || "insumo" })}>
+            {grupos.map((g) => {
+              const lista = opciones.filter((o) => o.grupo === g && (o.id === l.id || disponible(o)));
+              return lista.length > 0 && (
+                <optgroup key={g} label={g}>
+                  {lista.map((o) => <option key={o.id} value={o.id}>{o.nombre}{o.activo === false ? " (inactivo)" : ""}</option>)}
+                </optgroup>
+              );
+            })}
+          </select>
+          <input className="inp num" inputMode="decimal" required aria-label={`Cantidad de ${l.o?.nombre || "ingrediente"}`} value={l.cantidad}
+            onChange={(e) => cambiar(i, { cantidad: e.target.value })} />
+          <span className="muted" style={{ fontSize: 13 }}>{l.o?.unidad}</span>
+          <span className="num" style={{ textAlign: "right", fontSize: 13 }} title={l.o ? `${fmtCosto(l.o.costoUnit)} por ${l.o.unidad}` : undefined}>
+            {fmt(l.subtotal)}
+          </span>
+          <button type="button" className="step" aria-label={`Quitar ${l.o?.nombre || "ingrediente"}`} onClick={() => onChange(lineas.filter((_, j) => j !== i))}>×</button>
+        </div>
+      ))}
+      {libre && (
+        <button type="button" className="btn btn-g" style={{ alignSelf: "flex-start", height: 34 }}
+          onClick={() => onChange([...lineas, { id: libre.id, clase: libre.clase, cantidad: "1" }])}>+ Agregar ingrediente</button>
+      )}
+      {lineas.length > 0 && (
+        <div role="status" aria-label="Costo del plato" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px", fontSize: 14,
+          padding: "10px 12px", borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border-2)" }}>
+          <strong>Costo del plato</strong><strong className="num">{fmt(costo)}</strong>
+          <span className="muted">Margen con el precio de venta</span><span className="num muted">{margen(precio, costo)}</span>
+          {alcanza != null && Number.isFinite(alcanza) && (
+            <><span className="muted">Alcanza hoy para</span>
+              <span className="num" style={{ color: alcanza === 0 ? "var(--danger)" : undefined }}>{alcanza} {alcanza === 1 ? "plato" : "platos"}</span></>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Insumos y categorías ───────────────────────────────────────────────────
 
-function ModalInsumo({ insumo, unidades, onClose, onGuardado }) {
+function ModalInsumo({ insumo, unidades, onClose, onGuardado, onAjustado }) {
   const nuevo = !insumo;
   const [f, setF] = useState({
     nombre: insumo?.nombre || "", unidad_medida_id: insumo?.unidad_medida_id || unidades[0]?.id || "",
     costo_unitario: insumo ? String(insumo.costo_unitario) : "", activo: insumo?.activo ?? true,
+    stock: "", stock_minimo: insumo ? String(insumo.stock_minimo) : "",
   });
+  const [stock, setStock] = useState(insumo?.stock);
+  const [ajuste, setAjuste] = useState({ contado: "", motivo: "" });
   const [error, setError] = useState("");
   const cambiar = (campo) => (e) => setF((x) => ({ ...x, [campo]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
 
   const guardar = async (e) => {
     e.preventDefault();
     setError("");
-    const body = { nombre: f.nombre, unidad_medida_id: f.unidad_medida_id };
+    const body = { nombre: f.nombre, unidad_medida_id: f.unidad_medida_id, stock_minimo: f.stock_minimo || "0" };
     if (!insumo?.es_preparacion) body.costo_unitario = f.costo_unitario || "0";
+    if (nuevo && f.stock !== "") body.stock = f.stock;
     if (!nuevo) body.activo = f.activo;
     try {
       if (nuevo) await api.crearInsumo(body); else await api.editarInsumo(insumo.id, body);
@@ -275,6 +360,39 @@ function ModalInsumo({ insumo, unidades, onClose, onGuardado }) {
               value={insumo?.es_preparacion ? String(insumo.costo) : f.costo_unitario} onChange={cambiar("costo_unitario")} />
           </Campo>
         </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {nuevo && (
+            <Campo etiqueta={`Stock inicial (${unidad})`}>
+              <input className="inp num" inputMode="decimal" value={f.stock} onChange={cambiar("stock")} />
+            </Campo>
+          )}
+          <Campo etiqueta={`Stock mínimo (${unidad})`} ayuda="Por debajo, sale en Inicio como stock bajo.">
+            <input className="inp num" inputMode="decimal" value={f.stock_minimo} onChange={cambiar("stock_minimo")} />
+          </Campo>
+        </div>
+        {!nuevo && (
+          <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "var(--surface-2)" }}>
+            <span className="lbl">
+              Stock actual: <span style={{ color: Number(stock) < 0 ? "var(--danger)" : undefined }}>{fmtCant(stock)} {unidad}</span> · ajustar por conteo físico
+            </span>
+            {insumo.es_preparacion && <span className="muted" style={{ fontSize: 12 }}>Para sumar lo que se preparó, usa Producir en Preparaciones.</span>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input className="inp num" inputMode="decimal" placeholder="Contado" aria-label="Contado" style={{ width: 110 }}
+                value={ajuste.contado} onChange={(e) => setAjuste((a) => ({ ...a, contado: e.target.value }))} />
+              <input className="inp" placeholder="Motivo (ej. conteo semanal)" aria-label="Motivo del ajuste" style={{ flexGrow: 1, width: 160 }}
+                value={ajuste.motivo} onChange={(e) => setAjuste((a) => ({ ...a, motivo: e.target.value }))} />
+              <button type="button" className="btn btn-s" disabled={!ajuste.contado || !ajuste.motivo.trim()} onClick={async () => {
+                setError("");
+                try {
+                  const r = await api.ajustarStockInsumo(insumo.id, ajuste.contado, ajuste.motivo.trim());
+                  setStock(r.stock);
+                  setAjuste({ contado: "", motivo: "" });
+                  onAjustado();
+                } catch (err) { setError(err.message); }
+              }}>Ajustar</button>
+            </div>
+          </div>
+        )}
         {!nuevo && (
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input type="checkbox" checked={f.activo} onChange={cambiar("activo")} />
@@ -310,7 +428,7 @@ function Categorias({ categorias, puedeEditar, recargar }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 640 }}>
       <p className="muted" style={{ margin: 0 }}>
-        El tipo propone el impuesto (tienda → IVA 19%, cocina → INC 8%) y define si el stock se controla: solo en tienda.
+        El tipo propone el impuesto (tienda → IVA 19%, cocina → INC 8%) y cómo se lleva el stock: en tienda, por producto; en cocina, por los insumos de la receta de cada plato.
       </p>
       <ErrorBanner mensaje={error} />
       {puedeEditar && (
@@ -431,8 +549,10 @@ export default function Inventario() {
       )}
       {pestana === "cocina" && (
         <div className="card" style={{ padding: "12px 16px", background: "var(--accent-soft)", borderColor: "transparent", fontSize: 14 }}>
-          Aquí se crean los platos que prepara la cocina (hamburguesas, salchipapas, perros…). Llevan receta con
-          insumos para calcular su costo, no manejan stock y salen en la comanda de cocina.
+          Aquí se crean los platos que prepara la cocina (hamburguesas, salchipapas, perros…). Su receta lleva insumos,
+          preparaciones o productos de la tienda: el costo es la suma de cada ingrediente por su cantidad y el precio de
+          venta lo pones tú. No llevan stock propio: al venderlos se descuentan sus ingredientes, y "Alcanza" dice cuántos
+          salen con lo que hay.
         </div>
       )}
       {sinCategoria && (
@@ -501,14 +621,19 @@ export default function Inventario() {
 
       {pestana === "insumos" && (
         <div className="card tabla">
-          <div className="th" style={{ gridTemplateColumns: "1fr 80px 130px 120px 80px" }}>
-            <span>Insumo</span><span>Unidad</span><span className="r">Costo por unidad</span><span>Tipo</span><span>Estado</span>
+          <div className="th" style={{ gridTemplateColumns: "1fr 70px 120px 110px 120px 80px" }}>
+            <span>Insumo</span><span>Unidad</span><span className="r">Costo por unidad</span><span className="r">Stock</span><span>Tipo</span><span>Estado</span>
           </div>
           {articulos.map((i) => (
-            <Fila key={i.id} columnas="1fr 80px 130px 120px 80px" onClick={puede("inventario.editar") ? () => setEditando({ insumo: i }) : undefined}>
+            <Fila key={i.id} columnas="1fr 70px 120px 110px 120px 80px" onClick={puede("inventario.editar") ? () => setEditando({ insumo: i }) : undefined}>
               <strong>{i.nombre}</strong>
               <span className="muted">{i.unidad}</span>
               <span className="r num">{fmtCosto(i.costo)}</span>
+              <span className="r">
+                <span className={`chip num ${Number(i.stock) < 0 || (Number(i.stock_minimo) > 0 && Number(i.stock) <= Number(i.stock_minimo)) ? "bad" : "ok"}`}>
+                  {fmtCant(i.stock)}
+                </span>
+              </span>
               <span>{i.es_preparacion ? <span className="chip neu">Preparación</span> : <span className="muted">Comprado</span>}</span>
               <span><Estado activo={i.activo} /></span>
             </Fila>
@@ -522,12 +647,12 @@ export default function Inventario() {
 
       {pestana === "cocina" && (
         <div className="card tabla">
-          <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 80px" }}>
+          <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 90px 80px" }}>
             <span>Plato</span><span>Categoría</span><span className="r">Precio</span><span className="r">Costo</span>
-            <span className="r">Margen</span><span>Estado</span>
+            <span className="r">Margen</span><span className="r">Alcanza</span><span>Estado</span>
           </div>
           {articulos.map((a) => (
-            <Fila key={a.id} columnas="1fr 140px 100px 100px 70px 80px" onClick={puede(permisoDe(a.tipo)) ? () => abrir(a) : undefined}>
+            <Fila key={a.id} columnas="1fr 140px 100px 100px 70px 90px 80px" onClick={puede(permisoDe(a.tipo)) ? () => abrir(a) : undefined}>
               <span>
                 <strong>{a.nombre}</strong>
                 <span className="muted" style={{ display: "block", fontSize: 12 }}>{a.tiene_receta ? "Con receta" : "Sin receta: costo a mano"}</span>
@@ -536,6 +661,10 @@ export default function Inventario() {
               <span className="r num">{fmt(a.precio_venta)}</span>
               <span className="r num">{fmt(a.costo)}</span>
               <span className="r num">{margen(a.precio_venta, a.costo)}</span>
+              <span className="r">
+                {a.alcanza == null ? <span className="muted">—</span>
+                  : <span className={`chip num ${Number(a.alcanza) === 0 ? "bad" : "ok"}`}>{fmtCant(a.alcanza)}</span>}
+              </span>
               <span><Estado activo={a.activo} /></span>
             </Fila>
           ))}
@@ -548,7 +677,8 @@ export default function Inventario() {
           onClose={() => setEditando(null)} onGuardado={alGuardar} onStockAjustado={cargarArticulos} />
       )}
       {editando && pestana === "insumos" && (
-        <ModalInsumo insumo={editando.insumo} unidades={catalogos.unidades} onClose={() => setEditando(null)} onGuardado={alGuardar} />
+        <ModalInsumo insumo={editando.insumo} unidades={catalogos.unidades} onClose={() => setEditando(null)} onGuardado={alGuardar}
+          onAjustado={() => { cargarArticulos(); cargarCatalogos(); }} />
       )}
     </div>
   );

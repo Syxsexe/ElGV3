@@ -48,6 +48,7 @@ def items_compra(conn, texto: str | None = None, limite: int = 40) -> list[dict]
                   JOIN productos p ON p.articulo_id = a.id
                   JOIN categorias c ON c.id = a.categoria_id
                  WHERE a.activo AND NOT EXISTS (SELECT 1 FROM receta_insumos r WHERE r.producto_id = a.id)
+                   AND NOT EXISTS (SELECT 1 FROM receta_productos r WHERE r.plato_id = a.id)
                 UNION ALL
                 SELECT 'insumo', i.id, i.nombre, i.costo_unitario, NULL, u.simbolo, NULL, NULL
                   FROM insumos i JOIN unidades_medida u ON u.id = i.unidad_medida_id
@@ -150,7 +151,8 @@ def registrar_compra(conn, actor: Usuario, proveedor_id, lineas: list[dict], *, 
     # stock los calcula la base). Trae el costo de antes para decir qué cambió.
     antes = {f["id"]: f for f in conn.execute(
         """SELECT a.id, a.nombre, p.precio_costo AS costo, a.activo,
-                  EXISTS (SELECT 1 FROM receta_insumos r WHERE r.producto_id = a.id) AS calculado
+                  (EXISTS (SELECT 1 FROM receta_insumos r WHERE r.producto_id = a.id)
+                   OR EXISTS (SELECT 1 FROM receta_productos r WHERE r.plato_id = a.id)) AS calculado
              FROM articulos a JOIN productos p ON p.articulo_id = a.id
             WHERE a.id = ANY(%s)
            UNION ALL

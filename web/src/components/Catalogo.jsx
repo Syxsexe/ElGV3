@@ -107,7 +107,14 @@ export default function Catalogo({ onElegir, onCargados, cantidades = {}, versio
                   {fmt(a.precio_venta)}
                 </span>
                 {sinStock ? <span className="chip bad">Agotado</span>
-                  : esTienda(a) && <span className={`chip num ${bajo ? "warn" : "neu"}`}>{fmtCant(a.stock)}</span>}
+                  : esTienda(a) ? <span className={`chip num ${bajo ? "warn" : "neu"}`}>{fmtCant(a.stock)}</span>
+                  : a.alcanza != null && (
+                    // Un plato no se frena: si sus insumos no alcanzan se vende igual y se avisa.
+                    <span className={`chip num ${Number(a.alcanza) === 0 ? "bad" : Number(a.alcanza) <= 3 ? "warn" : "neu"}`}
+                      title="Platos que alcanzan con el stock de sus ingredientes">
+                      {Number(a.alcanza) === 0 ? "Sin insumos" : `Alcanza ${fmtCant(a.alcanza)}`}
+                    </span>
+                  )}
               </span>
             </button>
           );

@@ -201,6 +201,18 @@ export const api = {
   // body: {nombre, juego_id, sesion_id, precio, participantes: [{cliente_id | alias, forma, metodo_pago_id}], premios, notas}
   registrarTorneo: (body) => request("/torneos", { method: "POST", body }),
 
+  // filtros: {tipo, estado ("abierto" = vigente o vencida), q}
+  documentos: (filtros = {}) =>
+    request(`/documentos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  documento: (id) => request(`/documentos/${id}`),
+  // body: {tipo, cliente_id, descuento, vigente_hasta, notas, items: [{articulo_id?, descripcion, cantidad, precio_unit}]}
+  crearDocumento: (body) => request("/documentos", { method: "POST", body }),
+  editarDocumento: (id, body) => request(`/documentos/${id}`, { method: "PUT", body }),
+  convertirDocumento: (id) => request(`/documentos/${id}/convertir`, { method: "POST" }),
+  venderDocumento: (id, cobro) => request(`/documentos/${id}/vender`, { method: "POST", body: cobro }),
+  descartarDocumento: (id, motivo, explicacion) =>
+    request(`/documentos/${id}/descartar`, { method: "POST", body: { motivo, explicacion } }),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

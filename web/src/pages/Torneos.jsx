@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import BuscarArticulo from "../components/BuscarArticulo";
 import BuscarTercero from "../components/BuscarTercero";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { centavos, fmt, fmtCant, fmtFechaHora } from "../format";
@@ -11,40 +12,6 @@ const FIADO = "fiado";
 const GRATIS = "gratis";
 const haceDias = (n) => new Date(Date.now() - n * 86400000).toLocaleDateString("en-CA");
 const hoy = () => new Date().toLocaleDateString("en-CA");
-
-// Buscar un producto para entregarlo como premio.
-function BuscarPremio({ onElegir }) {
-  const [q, setQ] = useState("");
-  const [items, setItems] = useState([]);
-  const ultima = useRef(0);
-
-  useEffect(() => {
-    if (q.trim().length < 2) return undefined;
-    const mia = ++ultima.current;
-    // Solo productos de tienda: son los que tienen stock y salen del inventario.
-    const t = setTimeout(() => api.vendibles(q.trim(), "producto", { categoria_tipo: "tienda" })
-      .then((r) => mia === ultima.current && setItems(r)).catch(() => {}), 200);
-    return () => clearTimeout(t);
-  }, [q]);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <input className="inp" aria-label="Buscar premio" placeholder="Buscar producto para el premio" value={q} onChange={(e) => setQ(e.target.value)} />
-      {q.trim().length >= 2 && items.length > 0 && (
-        <div className="card" style={{ maxHeight: 200, overflowY: "auto" }}>
-          {items.map((a) => (
-            <button key={a.id} type="button" onClick={() => { onElegir(a); setQ(""); setItems([]); }}
-              style={{ width: "100%", border: 0, borderBottom: "1px solid var(--border-2)", background: "#fff", textAlign: "left",
-                font: "inherit", color: "inherit", cursor: "pointer", padding: "10px 14px", display: "flex", justifyContent: "space-between", gap: 10 }}>
-              <span style={{ overflowWrap: "anywhere" }}>{a.nombre}</span>
-              <span className="muted num">Stock {fmtCant(a.stock)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ModalTorneo({ turno, onClose, onRegistrado }) {
   const [juegos, setJuegos] = useState([]);
@@ -171,7 +138,9 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
         </Seccion>
 
         <Seccion etiqueta="Premios entregados (salen del inventario)">
-          <BuscarPremio onElegir={(a) => premios.some((p) => p.producto_id === a.id)
+          {/* Solo productos de tienda: son los que tienen stock y salen del inventario. */}
+          <BuscarArticulo tipo="producto" filtros={{ categoria_tipo: "tienda" }} etiqueta="Buscar premio" placeholder="Buscar producto para el premio"
+            derecha={(a) => `Stock ${fmtCant(a.stock)}`} onElegir={(a) => premios.some((p) => p.producto_id === a.id)
             ? setError(`${a.nombre} ya está en los premios: cambia su cantidad.`)
             : setPremios((ps) => [...ps, { producto_id: a.id, nombre: a.nombre, cantidad: "1" }])} />
           {premios.map((p, i) => (

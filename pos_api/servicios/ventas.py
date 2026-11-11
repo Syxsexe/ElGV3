@@ -124,9 +124,10 @@ def exigir_cupo(conn, cliente_id, fiado: Decimal) -> dict:
 def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, descuento: Decimal = Decimal(0),
                     pagos: list[dict] = (), fiado: Decimal = Decimal(0), cliente_id=None, notas: str | None = None,
                     origen: str | None = None, exigir_activos: bool = True) -> dict:
-    """lineas = [{articulo_id, cantidad, precio_unit?}]: sin precio_unit se usa
-    el precio actual (venta directa); una cuenta manda el que fotografió al
-    agregar cada ítem y no exige que el artículo siga activo (ya se consumió).
+    """lineas = [{articulo_id, cantidad, precio_unit?, impuesto_id?}]: sin
+    precio_unit se usa el precio actual (venta directa); una cuenta o un
+    documento mandan el que fotografiaron, y no exigen que el artículo siga
+    activo. Sin impuesto_id va el del artículo.
     pagos = [{metodo_pago_id, monto}]. origen describe de dónde viene (ej. "la
     cuenta #4") para la auditoría. Retorna el detalle."""
     numero_turno = exigir_turno_abierto(conn, sesion_id)
@@ -161,11 +162,13 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
     # y bloquea los productos en orden (ver 0015).
     conn.execute(
         """INSERT INTO detalle_venta (venta_id, articulo_id, cantidad, precio_unit, costo_unit, impuesto_id)
-           SELECT %s, a.id, x.cantidad, x.precio, COALESCE(costo_articulo(a.id), 0), a.impuesto_id
-             FROM unnest(%s::uuid[], %s::numeric[], %s::numeric[]) WITH ORDINALITY AS x(articulo, cantidad, precio, n)
+           SELECT %s, a.id, x.cantidad, x.precio, COALESCE(costo_articulo(a.id), 0), COALESCE(x.impuesto, a.impuesto_id)
+             FROM unnest(%s::uuid[], %s::numeric[], %s::numeric[], %s::uuid[])
+                  WITH ORDINALITY AS x(articulo, cantidad, precio, impuesto, n)
              JOIN articulos a ON a.id = x.articulo
             ORDER BY x.n""",
-        (venta["id"], [l["articulo_id"] for l in lineas], [l["cantidad"] for l in lineas], precios),
+        (venta["id"], [l["articulo_id"] for l in lineas], [l["cantidad"] for l in lineas], precios,
+         [l.get("impuesto_id") for l in lineas]),
     )
     if pagos:
         conn.cursor().executemany(

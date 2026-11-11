@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { fmt } from "../format";
+import { centavos, fmt } from "../format";
 import BuscarTercero from "./BuscarTercero";
 import Modal, { Campo, ErrorBanner, Seccion } from "./Modal";
 
@@ -8,8 +8,6 @@ const FIADO = "fiado";
 const DIVIDIR = "dividir";
 const BILLETES = [2000, 5000, 10000, 20000, 50000, 100000];
 
-// Plata con 2 decimales como máximo: sumar floats deja colas (0.1 + 0.2).
-const centavos = (n) => Math.round(n * 100) / 100;
 const num = (v) => centavos(Number(v) || 0);
 
 // Billetes con los que suelen pagar: el total exacto y los que lo cubren.
@@ -141,7 +139,7 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
         {efectivo && total > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <Campo etiqueta="Recibe (opcional)">
-              <input className="inp num" type="number" min="0" inputMode="numeric" value={recibido}
+              <input className="inp num" type="number" min="0" step="any" inputMode="decimal" value={recibido}
                 placeholder={String(total)} onChange={(e) => setRecibido(e.target.value)} />
             </Campo>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -170,7 +168,7 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
                   {metodos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                   <option value={FIADO}>Fiado</option>
                 </select>
-                <input className="inp num" type="number" min="0" inputMode="numeric" aria-label={`Monto del pago ${i + 1}`}
+                <input className="inp num" type="number" min="0" step="any" inputMode="decimal" aria-label={`Monto del pago ${i + 1}`}
                   value={f.monto} onChange={(e) => cambiarFila(i, { monto: e.target.value })} />
                 <button type="button" className="btn btn-g" aria-label={`Quitar el pago ${i + 1}`} disabled={filas.length === 1}
                   onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}>✕</button>

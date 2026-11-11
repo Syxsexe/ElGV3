@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
-import { digitoVerificacion } from "../format";
+import { digitoVerificacion, fmt } from "../format";
 import BuscarMunicipio from "./BuscarMunicipio";
 import Modal, { Campo, ErrorBanner, Seccion } from "./Modal";
 
@@ -23,6 +24,7 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
   const [tipos, setTipos] = useState([]);
   const [responsabilidades, setResponsabilidades] = useState([]);
   const [error, setError] = useState("");
+  const [cupo, setCupo] = useState(null); // saldo de fiado de un cliente existente
   const editaCupo = puede("clientes.editar");
   const editaProveedor = puede("compras.registrar");
 
@@ -44,6 +46,7 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
       };
       setF(datos);
       setOriginal(datos);
+      if (t.es_cliente) api.cupoCliente(terceroId).then(setCupo).catch((err) => setCupo({ error: err.message }));
     }).catch((err) => setError(err.message));
   }, [terceroId, nuevo]);
 
@@ -178,6 +181,18 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
                 </label>
               )}
             </div>
+          )}
+          {cupo?.error && <span className="muted" style={{ fontSize: 14 }}>No se pudo ver su saldo de fiado: {cupo.error}</span>}
+          {cupo && !cupo.error && (
+            <span style={{ fontSize: 14 }}>
+              {Number(cupo.saldo) > 0 ? <>Debe <strong className="num">{fmt(cupo.saldo)}</strong></> : "No debe nada"}
+              {Number(cupo.cargos_vencidos) > 0 && <span style={{ color: "var(--danger)" }}> · {cupo.cargos_vencidos} cargo(s) vencido(s)</span>}
+              {" · "}
+              {/* Ir a Créditos cierra este formulario: con cambios sin guardar, primero se guardan. */}
+              {JSON.stringify(f) === JSON.stringify(original)
+                ? <Link to={`/creditos?cliente=${terceroId}`}>Ver su crédito</Link>
+                : <span className="muted">guarda los cambios para ver su crédito</span>}
+            </span>
           )}
           {(editaProveedor || f.es_proveedor) && (
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 600 }}>

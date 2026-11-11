@@ -70,6 +70,15 @@ def literal_like(texto: str | None) -> str | None:
     return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def busqueda_tercero(texto: str | None, nombre: str = "t.nombre", numero: str = "t.numero_identificacion"):
+    """Buscar una persona por nombre (sin tildes) o por el comienzo de su
+    documento, que se busca como se guarda: sin puntos, espacios ni DV.
+    Retorna (condición SQL, parámetros); sin texto la condición es verdadera."""
+    condicion = (f"(%(patron)s::text IS NULL OR {condicion_busqueda(nombre)}"
+                 f" OR (%(doc)s <> '' AND {numero} LIKE %(doc)s || '%%'))")
+    return condicion, {"patron": literal_like(texto), "doc": literal_like(limpiar_numero(texto).split("-")[0]) or ""}
+
+
 # ── Documentos de identidad ─────────────────────────────────────────────────
 
 # Registro civil, tarjeta de identidad, cédula, NIT y NUIP llevan solo dígitos.

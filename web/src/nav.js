@@ -18,7 +18,7 @@ export const SIDEBAR_GROUPS = [
     name: "Clientes",
     items: [
       { label: "Clientes", path: "/clientes", d: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-4 3-6 7-6s7 2 7 6M17 3a4 4 0 0 1 0 8M22 21c0-3-1.5-5-4-5.6" },
-      { label: "Créditos", path: null, d: "M2 6h20v12H2zM2 10h20M6 15h4" },
+      { label: "Créditos", path: "/creditos", d: "M2 6h20v12H2zM2 10h20M6 15h4" },
     ],
   },
   {

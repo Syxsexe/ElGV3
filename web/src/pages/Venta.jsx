@@ -80,7 +80,7 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
       <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--border-2)", background: "var(--surface-2)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <label className="lbl" htmlFor="venta-descuento">Descuento</label>
-          <input className="inp num" id="venta-descuento" type="number" min="0" inputMode="numeric" value={descuento}
+          <input className="inp num" id="venta-descuento" type="number" min="0" step="any" inputMode="decimal" value={descuento}
             placeholder="0" style={{ width: 130, textAlign: "right" }} onChange={(e) => setDescuento(e.target.value)} />
         </div>
         {descuentoInvalido && <span className="muted" role="status" style={{ fontSize: 13 }}>El descuento supera el subtotal.</span>}

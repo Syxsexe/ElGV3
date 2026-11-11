@@ -14,8 +14,8 @@ rol de proveedor exige compras.registrar.
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado, SinPermiso
 from pos_api.seguridad import Usuario
-from pos_api.servicios.comun import (actualizar, condicion_busqueda, digito_verificacion, limpiar_numero,
-                                     literal_like, normalizar_documento, tipo_identificacion_id)
+from pos_api.servicios.comun import (actualizar, busqueda_tercero, digito_verificacion, normalizar_documento,
+                                     tipo_identificacion_id)
 
 PERMISO_CLIENTES = "clientes.editar"
 PERMISO_PROVEEDORES = "compras.registrar"
@@ -46,7 +46,7 @@ _SELECT = """
 _PROTEGIDOS = "(NOT t.es_consumidor_final AND t.id NOT IN (SELECT tercero_id FROM empresa))"
 
 
-def _con_dv(fila: dict) -> dict:
+def con_dv(fila: dict) -> dict:
     nit = fila["tipo_identificacion"] == "31" and fila["numero_identificacion"]
     fila["dv"] = digito_verificacion(fila["numero_identificacion"]) if nit else None
     return fila
@@ -85,21 +85,19 @@ def listar_terceros(conn, *, rol: str | None = None, texto: str | None = None,
                     solo_activos: bool = False, limite: int = 200) -> list[dict]:
     """rol: "cliente" o "proveedor" (None = todos). Busca por nombre (sin
     tildes) o por el comienzo del número de documento."""
+    buscar, params = busqueda_tercero(texto)
     filas = conn.execute(
         _SELECT + f"""
          WHERE {_PROTEGIDOS}
            AND (%(rol)s::text IS NULL
                 OR (%(rol)s = 'cliente' AND cl.tercero_id IS NOT NULL AND (NOT %(activos)s OR cl.activo))
                 OR (%(rol)s = 'proveedor' AND pr.tercero_id IS NOT NULL AND (NOT %(activos)s OR pr.activo)))
-           AND (%(patron)s::text IS NULL OR {condicion_busqueda("t.nombre")}
-                OR (%(doc)s <> '' AND t.numero_identificacion LIKE %(doc)s || '%%'))
+           AND {buscar}
          ORDER BY t.nombre
          LIMIT %(limite)s""",
-        {"rol": rol, "activos": solo_activos, "patron": literal_like(texto), "limite": limite,
-         # El documento se busca como se guarda: sin puntos, espacios ni DV.
-         "doc": literal_like(limpiar_numero(texto).split("-")[0]) or ""},
+        {"rol": rol, "activos": solo_activos, "limite": limite, **params},
     ).fetchall()
-    return [_con_dv(f) for f in filas]
+    return [con_dv(f) for f in filas]
 
 
 def obtener_tercero(conn, tercero_id) -> dict:
@@ -110,7 +108,7 @@ def obtener_tercero(conn, tercero_id) -> dict:
         """SELECT rf.codigo FROM tercero_responsabilidades tr
              JOIN responsabilidades_fiscales rf ON rf.id = tr.responsabilidad_id
             WHERE tr.tercero_id = %s ORDER BY rf.codigo""", (tercero_id,))]
-    return _con_dv(fila)
+    return con_dv(fila)
 
 
 def listar_responsabilidades(conn) -> list[dict]:

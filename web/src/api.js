@@ -168,6 +168,14 @@ export const api = {
   cobrarCuenta: (id, cobro) => request(`/cuentas/${id}/cobrar`, { method: "POST", body: cobro }),
   cancelarCuenta: (id, motivo) => request(`/cuentas/${id}/cancelar`, { method: "POST", body: { motivo } }),
 
+  creditos: (q) => request(`/creditos${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  credito: (clienteId) => request(`/creditos/${clienteId}`),
+  // body: {sesion_id, metodo_pago_id, monto, aplicaciones?: [{cargo_id, monto}], notas}
+  abonar: (clienteId, body) => request(`/creditos/${clienteId}/abonos`, { method: "POST", body }),
+  cargoManual: (clienteId, body) => request(`/creditos/${clienteId}/cargos`, { method: "POST", body }),
+  condonar: (cargoId, monto, motivo) =>
+    request(`/creditos/cargos/${cargoId}/condonar`, { method: "POST", body: { monto, motivo } }),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

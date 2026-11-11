@@ -96,8 +96,9 @@ def _articulos(conn, ids: list, exigir_activos: bool) -> dict:
     return filas
 
 
-def _metodos(conn, pagos: list[dict]) -> dict:
-    ids = [p["metodo_pago_id"] for p in pagos]
+def nombres_metodos(conn, ids: list) -> dict:
+    """{id: nombre} de los métodos de pago indicados; falla si alguno no
+    existe o está desactivado (él o su caja)."""
     filas = {m["id"]: m["nombre"] for m in conn.execute(
         """SELECT m.id, m.nombre FROM metodos_pago m JOIN cajas c ON c.id = m.caja_id
             WHERE m.id = ANY(%s) AND m.activo AND c.activo""", (ids,))}
@@ -140,7 +141,7 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
     total = subtotal - descuento
 
     pagos = list(pagos)
-    metodos = _metodos(conn, pagos) if pagos else {}
+    metodos = nombres_metodos(conn, [p["metodo_pago_id"] for p in pagos]) if pagos else {}
     cobrado = sum((p["monto"] for p in pagos), Decimal(0)) + fiado
     if cobrado < total:
         raise ErrorNegocio(f"Falta cobrar {pesos(total - cobrado)}: el total es {pesos(total)}.")

@@ -36,7 +36,7 @@ export const SIDEBAR_GROUPS = [
       { label: "Torneos", path: "/torneos", d: "M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8" },
       { label: "Documentos", path: "/documentos", d: "M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" },
       { label: "Doc. fiscales", path: null, d: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4" },
-      { label: "Reportes", path: null, d: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
+      { label: "Reportes", path: "/reportes", permiso: "reportes.ver", d: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
       { label: "Libros", path: null, d: "M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21a2 2 0 0 1 2-2h13" },
     ],
   },

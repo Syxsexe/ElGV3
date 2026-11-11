@@ -213,6 +213,9 @@ export const api = {
   descartarDocumento: (id, motivo, explicacion) =>
     request(`/documentos/${id}/descartar`, { method: "POST", body: { motivo, explicacion } }),
 
+  inicio: () => request("/inicio"),
+  reporte: (desde, hasta) => request(`/reportes?desde=${desde}&hasta=${hasta}`),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

@@ -18,6 +18,7 @@ import Proveedores from "./pages/Proveedores";
 import Gastos from "./pages/Gastos";
 import Torneos from "./pages/Torneos";
 import Documentos from "./pages/Documentos";
+import Reportes from "./pages/Reportes";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/gastos" element={<Gastos />} />
         <Route path="/torneos" element={<Torneos />} />
         <Route path="/documentos" element={<Documentos />} />
+        <Route path="/reportes" element={<Reportes />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

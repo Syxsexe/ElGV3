@@ -98,15 +98,17 @@ def _impuesto_por_defecto(conn, tipo: str, categoria_id) -> object:
 
 # ── Artículos ───────────────────────────────────────────────────────────────
 
-def listar_articulos(conn, *, tipo=None, texto=None, categoria_id=None, solo_activos=False) -> list[dict]:
+def listar_articulos(conn, *, tipo=None, texto=None, categoria_id=None, solo_activos=False,
+                     categoria_tipo=None) -> list[dict]:
     return conn.execute(
         """SELECT * FROM v_articulos
             WHERE (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
               AND (%(categoria)s::uuid IS NULL OR categoria_id = %(categoria)s)
+              AND (%(categoria_tipo)s::text IS NULL OR categoria_tipo = %(categoria_tipo)s)
               AND (NOT %(solo_activos)s OR activo)
               AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
             ORDER BY activo DESC, nombre""",
-        {"tipo": tipo, "categoria": categoria_id, "solo_activos": solo_activos,
+        {"tipo": tipo, "categoria": categoria_id, "solo_activos": solo_activos, "categoria_tipo": categoria_tipo,
          "patron": literal_like(texto), "texto": (texto or "").strip()},
     ).fetchall()
 

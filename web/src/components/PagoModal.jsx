@@ -79,9 +79,9 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
   if (pendiente > 0) bloqueo = `Falta asignar ${fmt(pendiente)}.`;
   else if (pendiente < 0) bloqueo = `Sobran ${fmt(-pendiente)}: los pagos suman más que el total.`;
   else if (efectivo && recibido !== "" && cambio < 0) bloqueo = `Con ${fmt(num(recibido))} faltan ${fmt(-cambio)}.`;
-  else if (fiado > 0 && !clienteFiado) bloqueo = "Elige a quién se le fía.";
+  else if (fiado > 0 && !clienteFiado) bloqueo = "Elige a quién se le da el crédito.";
   else if (fiado > 0 && cupoActual && fiado > Number(cupoActual.disponible)) {
-    bloqueo = `${cupoActual.nombre} solo tiene ${fmt(cupoActual.disponible)} disponibles de fiado.`;
+    bloqueo = `${cupoActual.nombre} solo tiene ${fmt(cupoActual.disponible)} disponibles de crédito.`;
   }
 
   const elegirModo = (m) => {
@@ -110,7 +110,7 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
 
   const opciones = [
     ...(metodos || []).map((m) => [m.id, m.nombre]),
-    [FIADO, "Fiado"],
+    [FIADO, "Crédito"],
     [DIVIDIR, "Dividir"],
   ];
 
@@ -166,7 +166,7 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
                 <select className="inp" aria-label={`Método del pago ${i + 1}`} value={f.metodo}
                   onChange={(e) => cambiarFila(i, { metodo: e.target.value })}>
                   {metodos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                  <option value={FIADO}>Fiado</option>
+                  <option value={FIADO}>Crédito</option>
                 </select>
                 <input className="inp num" type="number" min="0" step="any" inputMode="decimal" aria-label={`Monto del pago ${i + 1}`}
                   value={f.monto} onChange={(e) => cambiarFila(i, { monto: e.target.value })} />
@@ -185,7 +185,7 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
         )}
 
         {fiado > 0 && (
-          <Seccion etiqueta={`Fiado a (${fmt(fiado)})`}>
+          <Seccion etiqueta={`Crédito a (${fmt(fiado)})`}>
             {clienteFiado ? (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                 <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>

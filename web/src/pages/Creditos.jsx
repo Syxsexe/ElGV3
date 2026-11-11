@@ -232,7 +232,7 @@ function ModalCondonar({ cargo, onClose, onHecho }) {
           <input className="inp num" type="number" min="0.01" step="any" max={Number(cargo.pendiente)} inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} />
         </Campo>
         <Campo etiqueta="Motivo">
-          <input className="inp" autoFocus value={motivo} placeholder="Ej.: error al fiar, descuento acordado" onChange={(e) => setMotivo(e.target.value)} />
+          <input className="inp" autoFocus value={motivo} placeholder="Ej.: error al cargar, descuento acordado" onChange={(e) => setMotivo(e.target.value)} />
         </Campo>
         <ErrorBanner mensaje={error} />
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -470,7 +470,7 @@ export default function Creditos() {
 
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
         {mostrarLista && (
-          <section aria-label="Clientes con fiado" style={{ width: isMobile ? "100%" : 440, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          <section aria-label="Clientes con crédito" style={{ width: isMobile ? "100%" : 440, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
             <input className="inp" type="search" placeholder="Buscar cliente por nombre o documento" value={q} onChange={(e) => setQ(e.target.value)} />
             <span className="muted" style={{ fontSize: 13 }}>
               {q.trim() ? "Clientes que coinciden, deban o no." : "Clientes que deben, primero los que tienen deuda vencida."}

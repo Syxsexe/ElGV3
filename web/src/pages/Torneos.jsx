@@ -19,7 +19,7 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
   const [datos, setDatos] = useState({ nombre: "", juego_id: "", precio: "", notas: "" });
   const [jugadores, setJugadores] = useState([]); // [{clave, cliente_id?, alias?, nombre, forma}]
   const [alias, setAlias] = useState("");
-  const [premios, setPremios] = useState([]); // [{producto_id, nombre, cantidad}]
+  const [premios, setPremios] = useState([]); // [{producto_id, nombre, cantidad, costo, precio}]
   const [error, setError] = useState("");
   const [enviando, setEnviando] = useState(false);
   const turnoInicial = useRef(turno);
@@ -60,9 +60,14 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
   const pagan = jugadores.filter((j) => j.forma !== GRATIS);
   const porForma = {};
   pagan.forEach((j) => {
-    const nombre = j.forma === FIADO ? "Fiado" : metodos.find((m) => m.id === j.forma)?.nombre;
+    const nombre = j.forma === FIADO ? "Crédito" : metodos.find((m) => m.id === j.forma)?.nombre;
     porForma[nombre] = (porForma[nombre] || 0) + precio;
   });
+
+  const premiacion = premios.reduce((s, p) => {
+    const n = Number(p.cantidad) || 0;
+    return { costo: s.costo + n * p.costo, venta: s.venta + n * p.precio };
+  }, { costo: 0, venta: 0 });
 
   let bloqueo = "";
   if (!datos.nombre.trim()) bloqueo = "Escribe el nombre del torneo.";
@@ -129,7 +134,7 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
               </span>
               <select className="inp" aria-label={`Pago de ${j.nombre}`} value={j.forma} onChange={(e) => cambiarJugador(i, { forma: e.target.value })}>
                 {metodos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                {turno && j.cliente_id && <option value={FIADO}>Fiado</option>}
+                {turno && j.cliente_id && <option value={FIADO}>Crédito</option>}
                 <option value={GRATIS}>Gratis</option>
               </select>
               <button type="button" className="btn btn-g" aria-label={`Quitar a ${j.nombre}`} onClick={() => setJugadores((js) => js.filter((_, k) => k !== i))}>✕</button>
@@ -139,18 +144,28 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
 
         <Seccion etiqueta="Premios entregados (salen del inventario)">
           {/* Solo productos de tienda: son los que tienen stock y salen del inventario. */}
-          <BuscarArticulo tipo="producto" filtros={{ categoria_tipo: "tienda" }} etiqueta="Buscar premio" placeholder="Buscar producto para el premio"
-            derecha={(a) => `Stock ${fmtCant(a.stock)}`} onElegir={(a) => premios.some((p) => p.producto_id === a.id)
+          <BuscarArticulo buscar={api.premiosTorneo} etiqueta="Buscar premio" placeholder="Buscar producto para el premio"
+            derecha={(a) => `Stock ${fmtCant(a.stock)} · ${fmt(a.precio_venta)}`} onElegir={(a) => premios.some((p) => p.producto_id === a.id)
             ? setError(`${a.nombre} ya está en los premios: cambia su cantidad.`)
-            : setPremios((ps) => [...ps, { producto_id: a.id, nombre: a.nombre, cantidad: "1" }])} />
+            : setPremios((ps) => [...ps, { producto_id: a.id, nombre: a.nombre, cantidad: "1", costo: Number(a.costo), precio: Number(a.precio_venta) }])} />
           {premios.map((p, i) => (
             <div key={p.producto_id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 100px auto", gap: 8, alignItems: "center" }}>
-              <span style={{ overflowWrap: "anywhere" }}>{p.nombre}</span>
+              <span style={{ overflowWrap: "anywhere", display: "flex", flexDirection: "column" }}>
+                {p.nombre}
+                <span className="muted num" style={{ fontSize: 12 }}>costo {fmt(p.costo)} · venta {fmt(p.precio)} c/u</span>
+              </span>
               <input className="inp num" type="number" min="0" step="any" inputMode="decimal" aria-label={`Cantidad de ${p.nombre}`} value={p.cantidad}
                 onChange={(e) => setPremios((ps) => ps.map((x, k) => (k === i ? { ...x, cantidad: e.target.value } : x)))} />
               <button type="button" className="btn btn-g" aria-label={`Quitar premio ${p.nombre}`} onClick={() => setPremios((ps) => ps.filter((_, k) => k !== i))}>✕</button>
             </div>
           ))}
+          {premios.length > 0 && (
+            <div role="status" aria-label="Valor de la premiación" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px", fontSize: 14,
+              padding: "10px 12px", borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border-2)" }}>
+              <span>Premiación a costo</span><strong className="num">{fmt(premiacion.costo)}</strong>
+              <span className="muted">Valor de venta</span><span className="num muted">{fmt(premiacion.venta)}</span>
+            </div>
+          )}
         </Seccion>
         <Campo etiqueta="Notas (opcional)"><input className="inp" value={datos.notas} onChange={campo("notas")} /></Campo>
 
@@ -164,6 +179,17 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
               <span>{nombre}</span><span>{fmt(monto)}</span>
             </div>
           ))}
+          {premios.length > 0 && (
+            <>
+              <div className="num" style={{ display: "flex", justifyContent: "space-between", fontSize: 14, borderTop: "1px solid var(--border-2)", paddingTop: 6, marginTop: 2 }}>
+                <span>Premios a costo</span><span>− {fmt(premiacion.costo)}</span>
+              </div>
+              <div className="num" style={{ display: "flex", justifyContent: "space-between", fontWeight: 700,
+                color: pagan.length * precio - premiacion.costo < 0 ? "var(--danger)" : undefined }}>
+                <span>Ganancia</span><span>{fmt(pagan.length * precio - premiacion.costo)}</span>
+              </div>
+            </>
+          )}
         </div>
         {bloqueo && (datos.nombre || jugadores.length > 0) && <div className="muted" role="status" style={{ fontSize: 14 }}>{bloqueo}</div>}
         <ErrorBanner mensaje={error} />

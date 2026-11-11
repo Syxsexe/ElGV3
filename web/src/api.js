@@ -155,6 +155,7 @@ export const api = {
 
   // cobro: {sesion_id, descuento, pagos: [{metodo_pago_id, monto}], fiado, cliente_id, notas}
   vender: (lineas, cobro) => request("/ventas", { method: "POST", body: { lineas, ...cobro } }),
+  venta: (id) => request(`/ventas/${id}`),
   cupoCliente: (id) => request(`/clientes/${id}/cupo`),
   cuentas: () => request("/cuentas"),
   cuenta: (id) => request(`/cuentas/${id}`),
@@ -166,6 +167,8 @@ export const api = {
     request(`/cuentas/${id}/items/${itemId}`, { method: "PATCH", body: { cantidad } }),
   quitarDeCuenta: (id, itemId) => request(`/cuentas/${id}/items/${itemId}`, { method: "DELETE" }),
   cobrarCuenta: (id, cobro) => request(`/cuentas/${id}/cobrar`, { method: "POST", body: cobro }),
+  comandas: (id) => request(`/cuentas/${id}/comandas`),
+  crearComanda: (id, body) => request(`/cuentas/${id}/comandas`, { method: "POST", body }),
   cancelarCuenta: (id, motivo) => request(`/cuentas/${id}/cancelar`, { method: "POST", body: { motivo } }),
 
   creditos: (q) => request(`/creditos${q ? `?q=${encodeURIComponent(q)}` : ""}`),
@@ -198,6 +201,7 @@ export const api = {
     request(`/torneos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
   torneo: (id) => request(`/torneos/${id}`),
   inscripcionTorneo: () => request("/torneos/inscripcion"),
+  premiosTorneo: (q) => request(`/torneos/premios?${new URLSearchParams({ q })}`),
   // body: {nombre, juego_id, sesion_id, precio, participantes: [{cliente_id | alias, forma, metodo_pago_id}], premios, notas}
   registrarTorneo: (body) => request("/torneos", { method: "POST", body }),
 
@@ -215,6 +219,8 @@ export const api = {
 
   inicio: () => request("/inicio"),
   reporte: (desde, hasta) => request(`/reportes?desde=${desde}&hasta=${hasta}`),
+  ventasDelRango: (desde, hasta, q, desdeFila = 0) =>
+    request(`/reportes/ventas?${new URLSearchParams(Object.entries({ desde, hasta, q, desde_fila: desdeFila }).filter(([, v]) => v !== "" && v != null))}`),
 
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));

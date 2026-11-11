@@ -147,7 +147,7 @@ def post_egreso(body: NuevoEgreso, actor: Usuario = Depends(usuario_actual)):
     if body.compra_id is not None and not actor.puede(PERMISO_COMPRAS):
         raise SinPermiso("No tienes permiso para pagar compras.")
     if body.cruce > 0 and not actor.puede(PERMISO_CRUCE):
-        raise SinPermiso("Cruzar cuentas baja una deuda de fiado: necesita el permiso de condonar.")
+        raise SinPermiso("Cruzar cuentas baja una deuda de crédito: necesita el permiso de condonar.")
     with transaccion() as conn:
         return egresos.registrar_egreso(
             conn, actor, body.sesion_id, concepto=body.concepto, compra_id=body.compra_id,

@@ -48,10 +48,17 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
             <span style={{ fontSize: 14, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
               <span className="muted">Cliente: </span><strong>{cliente.nombre}</strong>
             </span>
-            <button type="button" className="btn btn-g" style={{ height: 30, fontSize: 13 }} onClick={() => setCliente(null)}>Quitar</button>
+            <button type="button" className="btn btn-g" style={{ height: 30, fontSize: 13, flexShrink: 0 }} onClick={() => setCliente(null)}>
+              Consumidor final
+            </button>
           </div>
         ) : buscando ? (
-          <BuscarTercero rol="cliente" placeholder="Buscar cliente" onElegir={(t) => { setCliente({ id: t.id, nombre: t.nombre }); setBuscando(false); }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <div style={{ flexGrow: 1, minWidth: 0 }}>
+              <BuscarTercero rol="cliente" placeholder="Buscar cliente" onElegir={(t) => { setCliente({ id: t.id, nombre: t.nombre }); setBuscando(false); }} />
+            </div>
+            <button type="button" className="btn btn-g" style={{ height: 40, fontSize: 13, flexShrink: 0 }} onClick={() => setBuscando(false)}>Cancelar</button>
+          </div>
         ) : (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <span className="muted" style={{ fontSize: 14 }}>Sin cliente — consumidor final</span>
@@ -100,7 +107,8 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
 export default function Venta() {
   const isMobile = useIsMobile();
   const { turno, error: errorTurno, recargar } = useTurno();
-  const [cart, setCart] = useState([]); // [{id, nombre, precio, cantidad}]
+  const [cart, setCart] = useState([]); // [{id, nombre, precio, cantidad, stock}] (stock solo en productos de tienda)
+  const [aviso, setAviso] = useState("");
   const [cliente, setCliente] = useState(null);
   const [descuento, setDescuento] = useState("");
   const [cobrando, setCobrando] = useState(false);
@@ -122,23 +130,40 @@ export default function Venta() {
   const unidades = cart.reduce((a, it) => a + it.cantidad, 0);
   const cantidades = Object.fromEntries(cart.map((it) => [it.id, it.cantidad]));
 
+  // Los productos de tienda no se venden por encima de su stock (el servidor
+  // lo vuelve a exigir al cobrar; los combos solo los valida el servidor).
+  const stockDe = (a) => (a.tipo === "producto" && a.categoria_tipo === "tienda" ? Number(a.stock) : null);
+  const tope = (it, cantidad) => {
+    if (it.stock == null || cantidad <= it.stock) return true;
+    setAviso(it.stock > 0 ? `De ${it.nombre} solo hay ${fmtCant(it.stock)} en stock.` : `${it.nombre} está agotado.`);
+    return false;
+  };
   const agregar = (a) => {
     setHecha(null);
+    setAviso("");
     const precio = Number(a.precio_venta);
+    const stock = stockDe(a);
+    const actual = cart.find((it) => it.id === a.id);
+    if (!tope({ nombre: a.nombre, stock }, (actual?.cantidad || 0) + 1)) return;
     setCart((c) => (c.some((it) => it.id === a.id)
-      ? c.map((it) => (it.id === a.id ? { ...it, precio, cantidad: it.cantidad + 1 } : it))
-      : [...c, { id: a.id, nombre: a.nombre, precio, cantidad: 1 }]));
+      ? c.map((it) => (it.id === a.id ? { ...it, precio, stock, cantidad: it.cantidad + 1 } : it))
+      : [...c, { id: a.id, nombre: a.nombre, precio, stock, cantidad: 1 }]));
   };
   // El servidor cobra el precio actual: si cambió, la línea se pone al día
   // cada vez que el catálogo trae ese artículo.
+  // Lo mismo con el stock, para que el tope del carrito siga al día.
   const preciosAlDia = (articulos) => setCart((c) => {
-    const precios = new Map(articulos.map((a) => [a.id, Number(a.precio_venta)]));
-    return c.some((it) => precios.has(it.id) && precios.get(it.id) !== it.precio)
-      ? c.map((it) => (precios.has(it.id) ? { ...it, precio: precios.get(it.id) } : it))
+    const porId = new Map(articulos.map((a) => [a.id, { precio: Number(a.precio_venta), stock: stockDe(a) }]));
+    return c.some((it) => porId.has(it.id) && (porId.get(it.id).precio !== it.precio || porId.get(it.id).stock !== it.stock))
+      ? c.map((it) => (porId.has(it.id) ? { ...it, ...porId.get(it.id) } : it))
       : c;
   });
-  const setCantidad = (id, cantidad) =>
-    setCart((c) => c.map((it) => (it.id === id ? { ...it, cantidad } : it)).filter((it) => it.cantidad > 0));
+  const setCantidad = (id, cantidad) => {
+    setAviso("");
+    const it = cart.find((x) => x.id === id);
+    if (it && cantidad > it.cantidad && !tope(it, cantidad)) return;
+    setCart((c) => c.map((x) => (x.id === id ? { ...x, cantidad } : x)).filter((x) => x.cantidad > 0));
+  };
   const limpiar = () => {
     setCart([]);
     setCliente(null);
@@ -171,6 +196,7 @@ export default function Venta() {
         {!isMobile && <div className="muted" style={{ fontSize: 14 }}>Turno #{turno.numero}</div>}
       </header>
       <ErrorBanner mensaje={errorTurno} />
+      <ErrorBanner mensaje={aviso} />
       {hecha && (
         <div role="status" className="card" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
           <strong>Venta #{hecha.numero} registrada · {fmt(hecha.total)}</strong>

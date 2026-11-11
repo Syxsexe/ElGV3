@@ -51,7 +51,7 @@ function DetalleEgreso({ egreso, turno, onClose, onAnulado }) {
         ))}
         {Number(egreso.cruzado) > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Cruce contra su fiado</span><span className="num">{fmt(egreso.cruzado)}</span>
+            <span>Cruce contra su crédito</span><span className="num">{fmt(egreso.cruzado)}</span>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid var(--border-2)", paddingTop: 8 }}>

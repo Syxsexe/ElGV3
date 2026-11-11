@@ -5,16 +5,19 @@ import { fmt } from "../format";
 // Buscar un artículo vendible y elegirlo de una lista desplegable.
 // tipo / filtros: los de api.vendibles (ej. tipo "producto", {categoria_tipo: "tienda"}).
 // derecha(a): lo que se muestra a la derecha de cada resultado (por defecto, el precio).
-export default function BuscarArticulo({ onElegir, tipo, filtros, etiqueta, placeholder, derecha = (a) => fmt(a.precio_venta) }) {
+// buscar(q): otra fuente de resultados en vez de api.vendibles (ej. premios con costo).
+export default function BuscarArticulo({ onElegir, tipo, filtros, etiqueta, placeholder, derecha = (a) => fmt(a.precio_venta), buscar }) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
   const ultima = useRef(0);
   const clave = JSON.stringify(filtros ?? {}); // los filtros llegan como objeto nuevo en cada render
+  const fuente = useRef(buscar);
+  useEffect(() => { fuente.current = buscar; }, [buscar]);
 
   useEffect(() => {
     if (q.trim().length < 2) return undefined;
     const mia = ++ultima.current; // una respuesta de una búsqueda anterior se descarta
-    const t = setTimeout(() => api.vendibles(q.trim(), tipo, JSON.parse(clave))
+    const t = setTimeout(() => (fuente.current ? fuente.current(q.trim()) : api.vendibles(q.trim(), tipo, JSON.parse(clave)))
       .then((r) => mia === ultima.current && setItems(r)).catch(() => {}), 200);
     return () => clearTimeout(t);
   }, [q, tipo, clave]);

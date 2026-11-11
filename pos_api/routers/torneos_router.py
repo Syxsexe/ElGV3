@@ -6,7 +6,7 @@ import uuid
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 
 from pos_api.db import transaccion
@@ -51,6 +51,12 @@ def get_torneos(desde: date | None = None, hasta: date | None = None, juego_id: 
 def get_inscripcion(_: Usuario = Depends(usuario_actual)):
     with transaccion() as conn:
         return servicio.inscripcion(conn)
+
+
+@router.get("/premios")
+def get_premios(q: Annotated[str, Query(min_length=2, max_length=100)], _: Usuario = Depends(usuario_actual)):
+    with transaccion() as conn:
+        return servicio.premios_disponibles(conn, q)
 
 
 @router.get("/{torneo_id}")

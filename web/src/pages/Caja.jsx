@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
+import ConteoBilletes from "../components/ConteoBilletes";
+import { totalConteo } from "../conteo";
 import Modal, { Campo, ErrorBanner } from "../components/Modal";
 import { fmt, fmtFechaHora } from "../format";
 import { useIsMobile } from "../useMediaQuery";
@@ -9,7 +12,7 @@ import { useIsMobile } from "../useMediaQuery";
 // que se muestran: primero lo que entra, después lo que sale.
 const CONCEPTOS = [
   ["venta", "Ventas"],
-  ["abono", "Abonos de fiado"],
+  ["abono", "Abonos de crédito"],
   ["ingreso", "Ingresos"],
   ["traslado_entrada", "Traslados recibidos"],
   ["anulacion_egreso", "Gastos anulados"],
@@ -114,18 +117,30 @@ function ListaMovimientos({ movimientos }) {
 
 // ── Apertura ───────────────────────────────────────────────────────────────
 
+// La caja de billetes (el cajón) se abre contando billetes y monedas: la
+// base es el total contado. Las demás cajas llevan su base escrita.
 function Apertura({ cajas, onAbierta }) {
+  const isMobile = useIsMobile();
   const [bases, setBases] = useState({});
+  const [denominaciones, setDenominaciones] = useState([]);
+  const [cantidades, setCantidades] = useState({});
   const [notas, setNotas] = useState("");
   const [error, setError] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const conBilletes = cajas.find((c) => c.usa_denominaciones);
+  const otras = cajas.filter((c) => !c.usa_denominaciones);
+  const totalBilletes = totalConteo(denominaciones, cantidades);
+
+  useEffect(() => {
+    if (conBilletes) api.denominaciones().then(setDenominaciones).catch((err) => setError(err.message));
+  }, [conBilletes]);
 
   const abrir = async (e) => {
     e.preventDefault();
     setError("");
     setEnviando(true);
     try {
-      const montos = Object.fromEntries(cajas.map((c) => [c.id, Number(bases[c.id]) || 0]));
+      const montos = Object.fromEntries(cajas.map((c) => [c.id, c.usa_denominaciones ? totalBilletes : Number(bases[c.id]) || 0]));
       onAbierta(await api.abrirTurno(montos, notas || null));
     } catch (err) {
       setError(err.message);
@@ -137,24 +152,47 @@ function Apertura({ cajas, onAbierta }) {
   if (cajas.length === 0) {
     return <ErrorBanner mensaje="No hay cajas activas: un administrador debe crearlas en Configuración." />;
   }
+  const anterior = conBilletes?.contado_anterior;
   return (
-    <form onSubmit={abrir} className="card" style={{ maxWidth: 440, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-      <h2 style={{ fontSize: 22 }}>Abrir turno</h2>
-      {cajas.map((c) => (
-        <Campo key={c.id} etiqueta={`Base ${c.nombre} ($)`}
-          ayuda={c.contado_anterior != null ? `Al cerrar el turno anterior se contaron ${fmt(c.contado_anterior)}.` : undefined}>
-          <input className="inp num" type="number" min="0" inputMode="numeric" required={c.usa_denominaciones}
-            value={bases[c.id] ?? ""} onChange={(e) => setBases((b) => ({ ...b, [c.id]: e.target.value }))} />
+    <form onSubmit={abrir} style={{ display: "grid", gap: 16, alignItems: "start",
+      gridTemplateColumns: conBilletes && !isMobile ? "minmax(0, 1.6fr) minmax(280px, 1fr)" : "minmax(0, 560px)" }}>
+      {conBilletes && (
+        <ConteoBilletes titulo={`Base ${conBilletes.nombre}: billetes y monedas`} denominaciones={denominaciones}
+          cantidades={cantidades} setCantidades={setCantidades}
+          pie={anterior != null && (
+            <div className="muted" style={{ fontSize: 13 }}>
+              Al cerrar el turno anterior se contaron {fmt(anterior)}.
+              {totalBilletes > 0 && totalBilletes !== Number(anterior) && <strong style={{ color: "var(--warn-text)" }}> No coincide con lo que estás contando.</strong>}
+            </div>
+          )} />
+      )}
+      <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+        <h2 style={{ fontSize: 22 }}>Abrir turno</h2>
+        {conBilletes && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+            <span className="lbl">Base {conBilletes.nombre}</span>
+            <span className="num" style={{ fontWeight: 700, fontSize: 18 }}>{fmt(totalBilletes)}</span>
+          </div>
+        )}
+        {otras.map((c) => (
+          <Campo key={c.id} etiqueta={`Base ${c.nombre} ($)`}
+            ayuda={c.contado_anterior != null ? `Al cerrar el turno anterior se contaron ${fmt(c.contado_anterior)}.` : undefined}>
+            <input className="inp num" type="number" min="0" inputMode="numeric"
+              value={bases[c.id] ?? ""} onChange={(e) => setBases((b) => ({ ...b, [c.id]: e.target.value }))} />
+          </Campo>
+        ))}
+        <Campo etiqueta="Notas (opcional)">
+          <textarea className="inp" style={{ height: 80, padding: "10px 12px", resize: "none" }}
+            value={notas} onChange={(e) => setNotas(e.target.value)} />
         </Campo>
-      ))}
-      <Campo etiqueta="Notas (opcional)">
-        <textarea className="inp" style={{ height: 80, padding: "10px 12px", resize: "none" }}
-          value={notas} onChange={(e) => setNotas(e.target.value)} />
-      </Campo>
-      <ErrorBanner mensaje={error} />
-      <button type="submit" className="btn btn-p" disabled={enviando} style={{ height: 48 }}>
-        {enviando ? "Abriendo…" : "Abrir turno"}
-      </button>
+        {conBilletes && totalBilletes === 0 && (
+          <div className="muted" style={{ fontSize: 13 }}>Sin billetes contados, {conBilletes.nombre} abre en $ 0.</div>
+        )}
+        <ErrorBanner mensaje={error} />
+        <button type="submit" className="btn btn-p" disabled={enviando} style={{ height: 48 }}>
+          {enviando ? "Abriendo…" : "Abrir turno"}
+        </button>
+      </div>
     </form>
   );
 }
@@ -235,36 +273,6 @@ function ModalMovimiento({ turnoId, cajas, onClose, onGuardado, onFallo }) {
 
 // ── Cierre ─────────────────────────────────────────────────────────────────
 
-function ConteoBilletes({ denominaciones, cantidades, setCantidades, total }) {
-  const cambiar = (id, valor) => setCantidades((c) => ({ ...c, [id]: Math.max(0, Math.floor(Number(valor) || 0)) }));
-  return (
-    <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ fontSize: 18 }}>Conteo de billetes y monedas</h2>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", columnGap: 20, rowGap: 6 }}>
-        {denominaciones.map((d) => {
-          const n = cantidades[d.id] || 0;
-          return (
-            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--neu-bg)" }}>
-              <span className="num" style={{ fontWeight: 600, fontSize: 14, flexGrow: 1, whiteSpace: "nowrap" }}>{fmt(d.valor)}</span>
-              <button type="button" className="step" aria-label={`Quitar uno de ${fmt(d.valor)}`} onClick={() => cambiar(d.id, n - 1)}>−</button>
-              <input className="inp num" type="number" min="0" inputMode="numeric" aria-label={`Cantidad de ${fmt(d.valor)}`}
-                value={n || ""} placeholder="0" onChange={(e) => cambiar(d.id, e.target.value)}
-                style={{ width: 56, height: 34, padding: "0 6px", textAlign: "center" }} />
-              <button type="button" className="step" aria-label={`Agregar uno de ${fmt(d.valor)}`} onClick={() => cambiar(d.id, n + 1)}>+</button>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 6 }}>
-        <span style={{ fontWeight: 600 }}>Total contado</span>
-        <span className="num" style={{ fontFamily: "'Bricolage Grotesque', Figtree, sans-serif", fontSize: 26, fontWeight: 700 }}>{fmt(total)}</span>
-      </div>
-    </div>
-  );
-}
-
 function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
   const isMobile = useIsMobile();
   const [denominaciones, setDenominaciones] = useState([]);
@@ -276,6 +284,7 @@ function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
   const [notas, setNotas] = useState("");
   const [movimiento, setMovimiento] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  const [abiertas, setAbiertas] = useState([]); // cuentas sin cobrar al pedir el cierre
   const [error, setError] = useState("");
   const [enviando, setEnviando] = useState(false);
 
@@ -283,7 +292,7 @@ function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
     api.denominaciones().then(setDenominaciones).catch((err) => setError(err.message));
   }, []);
 
-  const totalBilletes = denominaciones.reduce((s, d) => s + d.valor * (cantidades[d.id] || 0), 0);
+  const totalBilletes = totalConteo(denominaciones, cantidades);
   const contadoDe = (c) => (c.usa_denominaciones ? totalBilletes : Number(contados[c.caja_id]) || 0);
   const sinContar = turno.cajas.filter((c) => !c.usa_denominaciones && String(contados[c.caja_id] ?? "").trim() === "");
 
@@ -308,7 +317,10 @@ function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
     }
     setError("");
     try {
-      if (await refrescar()) setConfirmando(true);
+      if (await refrescar()) {
+        setAbiertas(await api.cuentas().catch(() => []));
+        setConfirmando(true);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -338,7 +350,7 @@ function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
         <span className="chip ok">Turno #{turno.numero} abierto · {turno.abierta_por} · {hora(turno.abierta_en)}</span>
         <span className="muted" style={{ fontSize: 14 }}>
           {turno.ventas.cantidad} {turno.ventas.cantidad === 1 ? "venta" : "ventas"} · {fmt(turno.ventas.total)}
-          {Number(turno.ventas.fiado) > 0 && ` (fiado ${fmt(turno.ventas.fiado)})`}
+          {Number(turno.ventas.fiado) > 0 && ` (a crédito ${fmt(turno.ventas.fiado)})`}
         </span>
         <button type="button" className="btn btn-s" style={{ marginLeft: "auto" }} onClick={() => setMovimiento(true)}>
           Retiro, ingreso o traslado
@@ -346,39 +358,48 @@ function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, alignItems: "start" }}>
-        {turno.cajas.map((c) => (
-          <div key={c.caja_id} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <ResumenCaja caja={c} />
-            {!c.usa_denominaciones && (
-              <Campo etiqueta={`Contado ${c.caja} ($)`}>
-                <input className="inp num" type="number" min="0" inputMode="numeric" value={contados[c.caja_id] ?? ""}
-                  onChange={(e) => { setError(""); setContados((x) => ({ ...x, [c.caja_id]: e.target.value })); }} />
-              </Campo>
-            )}
-            {/* La diferencia aparece cuando se empieza a contar, no antes. */}
-            {(c.usa_denominaciones ? totalBilletes > 0 : String(contados[c.caja_id] ?? "").trim() !== "") && (
-              <BannerDiferencia etiqueta={`Diferencia ${c.caja}`} contado={contadoDe(c)} esperado={Number(c.esperado)} />
-            )}
-          </div>
-        ))}
+        {turno.cajas.map((c) => <ResumenCaja key={c.caja_id} caja={c} />)}
       </div>
-
-      {conBilletes && (
-        <ConteoBilletes denominaciones={denominaciones} cantidades={cantidades} setCantidades={setCantidades} total={totalBilletes} />
-      )}
 
       <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
         <h2 style={{ fontSize: 18 }}>Movimientos del turno</h2>
         <ListaMovimientos movimientos={turno.movimientos} />
       </div>
 
-      <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, maxWidth: 560 }}>
-        <Campo etiqueta="Notas del cierre (opcional)">
-          <textarea className="inp" style={{ height: 70, padding: "10px 12px", resize: "none" }}
-            value={notas} onChange={(e) => setNotas(e.target.value)} />
-        </Campo>
-        <ErrorBanner mensaje={error} />
-        <button type="button" className="btn btn-p" style={{ height: 48 }} onClick={pedirCierre}>Cerrar turno</button>
+      <h2 style={{ fontSize: 20, marginTop: 4 }}>Cierre del turno</h2>
+      <div style={{ display: "grid", gap: 16, alignItems: "start",
+        gridTemplateColumns: conBilletes && !isMobile ? "minmax(0, 1.6fr) minmax(280px, 1fr)" : "minmax(0, 560px)" }}>
+        {conBilletes && (
+          <ConteoBilletes titulo={`${conBilletes.caja}: billetes y monedas`} denominaciones={denominaciones}
+            cantidades={cantidades} setCantidades={setCantidades} />
+        )}
+        <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          {turno.cajas.map((c) => (
+            <div key={c.caja_id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {c.usa_denominaciones ? (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                  <span className="lbl">Contado {c.caja}</span>
+                  <span className="num" style={{ fontWeight: 700, fontSize: 18 }}>{fmt(totalBilletes)}</span>
+                </div>
+              ) : (
+                <Campo etiqueta={`Contado ${c.caja} ($)`} ayuda={`Esperado ${fmt(c.esperado)}: escribe lo que de verdad hay.`}>
+                  <input className="inp num" type="number" min="0" inputMode="numeric" value={contados[c.caja_id] ?? ""}
+                    onChange={(e) => { setError(""); setContados((x) => ({ ...x, [c.caja_id]: e.target.value })); }} />
+                </Campo>
+              )}
+              {/* La diferencia aparece cuando se empieza a contar, no antes. */}
+              {(c.usa_denominaciones ? totalBilletes > 0 : String(contados[c.caja_id] ?? "").trim() !== "") && (
+                <BannerDiferencia etiqueta={`Diferencia ${c.caja}`} contado={contadoDe(c)} esperado={Number(c.esperado)} />
+              )}
+            </div>
+          ))}
+          <Campo etiqueta="Notas del cierre (opcional)">
+            <textarea className="inp" style={{ height: 70, padding: "10px 12px", resize: "none" }}
+              value={notas} onChange={(e) => setNotas(e.target.value)} />
+          </Campo>
+          <ErrorBanner mensaje={error} />
+          <button type="button" className="btn btn-p" style={{ height: 48 }} onClick={pedirCierre}>Cerrar turno</button>
+        </div>
       </div>
 
       {movimiento && (
@@ -398,6 +419,22 @@ function TurnoAbierto({ turno, setTurno, onCerrado, onCambio }) {
               </div>
             ))}
           </div>
+          {abiertas.length > 0 && (
+            <div role="alert" style={{ display: "flex", flexDirection: "column", gap: 4, padding: "12px 14px", borderRadius: 12,
+              background: "var(--warn-bg)", color: "var(--warn-text)", fontSize: 14 }}>
+              <strong>
+                {abiertas.length === 1 ? "Hay 1 cuenta abierta" : `Hay ${abiertas.length} cuentas abiertas`} por{" "}
+                {fmt(abiertas.reduce((s, c) => s + Number(c.total), 0))} sin cobrar.
+              </strong>
+              <span style={{ fontSize: 13 }}>
+                {abiertas.slice(0, 5).map((c) => c.mesa ? `Mesa ${c.mesa}${c.nombre && c.nombre !== c.mesa ? ` (${c.nombre})` : ""}` : c.nombre).join(" · ")}
+                {abiertas.length > 5 && " · …"}
+              </span>
+              <span style={{ fontSize: 13 }}>
+                Quedan abiertas para el siguiente turno. Si ya se fueron, <Link to="/cuentas">cóbralas en Cuentas</Link> antes de cerrar.
+              </span>
+            </div>
+          )}
           {conBilletes && totalBilletes === 0 && (
             <div role="alert" className="error-banner">
               No contaste billetes ni monedas: {conBilletes.caja} se cerrará en $ 0.
@@ -424,7 +461,7 @@ function DetalleTurno({ turno }) {
         {turno.cerrada_en && ` · cerrado por ${turno.cerrada_por} el ${fmtFechaHora(turno.cerrada_en)}`}
         <br />
         {turno.ventas.cantidad} {turno.ventas.cantidad === 1 ? "venta" : "ventas"} por {fmt(turno.ventas.total)}
-        {Number(turno.ventas.fiado) > 0 && ` (fiado ${fmt(turno.ventas.fiado)})`}
+        {Number(turno.ventas.fiado) > 0 && ` (a crédito ${fmt(turno.ventas.fiado)})`}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
         {turno.cajas.map((c) => <ResumenCaja key={c.caja_id} caja={c} />)}

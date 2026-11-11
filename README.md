@@ -55,7 +55,7 @@ Pruebas del backend DIAN:
 
 ## Base de datos Postgres (`db/`)
 
-El modelo relacional (59 tablas, Postgres 18) vive en `db/migraciones/` como
+El modelo relacional (61 tablas, Postgres 18) vive en `db/migraciones/` como
 archivos SQL numerados. No hay migración de datos desde la versión SQLite: el
 negocio se carga desde cero en la app.
 
@@ -79,24 +79,27 @@ se genera con `db/datos/generar_divipola.py` desde el CSV oficial del DANE.
 
 La fase 3 (la API y la web sobre Postgres) está completa. Módulos:
 
-- **Operación:** Inicio (turno, ventas del día, cuentas abiertas, fiado
-  vencido, productos bajo mínimo), Nueva venta (catálogo táctil, lector de
-  códigos, cobro en uno o varios métodos con cambio, fiado dentro del cupo),
-  Cuentas por mesa o nombre, Caja (turnos con base por caja, retiros,
-  ingresos y traslados, cierre con billetes y monedas, historial) y Consulta
-  de precios.
+- **Operación:** Inicio (turno, ventas del día, cuentas abiertas, abonos
+  del día, créditos vencidos, stock bajo), Nueva venta (catálogo táctil, lector de
+  códigos, cobro en uno o varios métodos con cambio, crédito dentro del cupo;
+  no vende por encima del stock), Cuentas por mesa o nombre (con comandas
+  de cocina impresas en tirilla de 80 mm, solo lo nuevo y con comentarios),
+  Caja (apertura y cierre contando billetes y monedas, retiros, ingresos y
+  traslados, aviso de cuentas abiertas al cerrar, historial) y Consulta de
+  precios.
 - **Clientes:** datos con documento, DV y municipio; Créditos (saldos,
   abonos aplicados a cargos, cargos manuales, condonaciones).
-- **Inventario:** productos con stock, platos con receta y costo calculado,
+- **Inventario:** productos de tienda con stock, platos de cocina con receta y costo calculado,
   combos, adicionales, servicios, insumos y preparaciones; Proveedores con
   compras (actualizan stock y último costo) y cuentas por pagar.
 - **Negocio:** Gastos (por categoría, nómina, cruce de cuentas, anulación),
   Torneos (inscripciones, fiado por jugador, premios), Documentos
   (cotización → orden de pedido → remisión → venta) y Reportes (ventas,
-  costo, utilidad, gastos y resultado por rango, con gráficas).
+  costo, utilidad, gastos y resultado por rango, con gráficas y la lista de
+  ventas con su detalle).
 - **Administración:** usuarios, roles y permisos, datos del negocio, cajas y
   métodos de pago, mesas, categorías de gasto, juegos y auditoría.
 
 Pendiente: documentos fiscales (integrar `backend/` con `documentos_fiscales`
-cuando se facture electrónico), Libros (por definir), impresión de tickets y
-el despliegue en el servidor del local.
+cuando se facture electrónico), Libros (por definir), impresión de tickets de
+venta y el despliegue en el servidor del local.

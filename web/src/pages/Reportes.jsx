@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Barras, Columnas } from "../components/Graficas";
-import { Campo, ErrorBanner } from "../components/Modal";
-import { fmt, fmtCant, margen } from "../format";
+import Modal, { Campo, ErrorBanner } from "../components/Modal";
+import { fmt, fmtCant, fmtFechaHora, margen } from "../format";
 import { useIsMobile } from "../useMediaQuery";
 
 const iso = (d) => d.toLocaleDateString("en-CA");
@@ -41,6 +41,130 @@ function Bloque({ titulo, nota, children }) {
   );
 }
 
+// Detalle de una venta: líneas, cómo se pagó, a quién y quién la hizo.
+function ModalVenta({ id, onClose }) {
+  const [v, setV] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => { api.venta(id).then(setV).catch((err) => setError(err.message)); }, [id]);
+  return (
+    <Modal titulo={v ? `Venta #${v.numero}` : "Venta"} onClose={onClose} ancho={520}>
+      <ErrorBanner mensaje={error} />
+      {!v && !error && <div className="muted">Cargando…</div>}
+      {v && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="muted" style={{ fontSize: 13 }}>
+            {fmtFechaHora(v.creada_en)} · vendió {v.usuario}
+            {v.mesa && ` · mesa ${v.mesa}`}{v.cuenta_numero && ` (cuenta #${v.cuenta_numero})`}
+          </div>
+          <div style={{ fontSize: 14 }}><span className="lbl">Cliente: </span>{v.cliente || <span className="muted">Consumidor final</span>}</div>
+          <div className="tabla">
+            {v.lineas.map((l, i) => (
+              <div key={i} className="tr" style={{ gridTemplateColumns: "50px 1fr 100px" }}>
+                <span className="num">{fmtCant(l.cantidad)} ×</span>
+                <span style={{ overflowWrap: "anywhere" }}>{l.nombre} <span className="muted num" style={{ fontSize: 12 }}>· {fmt(l.precio_unit)} c/u</span></span>
+                <span className="r num">{fmt(l.subtotal)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 4, fontSize: 14 }}>
+            {Number(v.descuento) > 0 && <><span className="muted">Subtotal</span><span className="num">{fmt(v.subtotal)}</span>
+              <span className="muted">Descuento</span><span className="num">− {fmt(v.descuento)}</span></>}
+            <strong>Total</strong><strong className="num">{fmt(v.total)}</strong>
+            {v.pagos.map((p, i) => <Fragment key={i}><span className="muted">{p.metodo}</span><span className="num">{fmt(p.monto)}</span></Fragment>)}
+            {Number(v.fiado) > 0 && <><span className="muted">Crédito</span><span className="num">{fmt(v.fiado)}</span></>}
+          </div>
+          {v.notas && <div className="muted" style={{ fontSize: 13 }}>Notas: {v.notas}</div>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Las ventas del rango, con cómo se pagaron y a quién; tocar una abre su detalle.
+function VentasDelRango({ desde, hasta, isMobile }) {
+  const [q, setQ] = useState("");
+  const [datos, setDatos] = useState(null); // {total, ventas}
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [abierta, setAbierta] = useState(null);
+  const ultima = useRef(0);
+
+  useEffect(() => {
+    const mia = ++ultima.current;
+    const t = setTimeout(() => api.ventasDelRango(desde, hasta, q.trim())
+      .then((r) => { if (mia === ultima.current) { setError(""); setDatos(r); } })
+      .catch((err) => { if (mia === ultima.current) { setError(err.message); setDatos(null); } }), 250);
+    return () => clearTimeout(t);
+  }, [desde, hasta, q]);
+
+  const verMas = () => {
+    const mia = ultima.current;
+    setCargando(true);
+    api.ventasDelRango(desde, hasta, q.trim(), datos.ventas.length)
+      .then((r) => {
+        if (mia !== ultima.current) return;
+        // Si hubo ventas nuevas mientras se miraba, la página siguiente repite
+        // algunas de arriba: se descartan las que ya están.
+        setDatos((d) => {
+          const vistas = new Set(d.ventas.map((v) => v.id));
+          return { total: r.total, ventas: [...d.ventas, ...r.ventas.filter((v) => !vistas.has(v.id))] };
+        });
+      })
+      .catch((err) => { if (mia === ultima.current) setError(err.message); })
+      .finally(() => setCargando(false));
+  };
+
+  const columnas = isMobile ? "1fr auto" : "130px 70px minmax(0, 1fr) minmax(0, 1fr) 110px";
+  return (
+    <Bloque titulo="Ventas del periodo" nota={datos ? `${datos.total} ${Number(datos.total) === 1 ? "venta" : "ventas"} · toca una para ver su detalle` : null}>
+      <input className="inp" type="search" aria-label="Buscar venta" placeholder="Buscar por cliente, mesa o número de venta"
+        value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 380 }} />
+      <ErrorBanner mensaje={error} />
+      {datos && datos.ventas.length === 0 && <span className="muted" style={{ fontSize: 14 }}>{q.trim() ? "Ninguna venta coincide." : "Sin ventas en el rango."}</span>}
+      {datos && datos.ventas.length > 0 && (
+        <div className="tabla" role="table" aria-label="Ventas del periodo">
+          {!isMobile && (
+            <div className="th" role="row" style={{ gridTemplateColumns: columnas }}>
+              <span>Fecha</span><span>N.º</span><span>Cliente</span><span>Método</span><span className="r">Total</span>
+            </div>
+          )}
+          {datos.ventas.map((v) => (
+            <button key={v.id} type="button" role="row" className="tr" onClick={() => setAbierta(v.id)}
+              aria-label={`Venta #${v.numero} por ${fmt(v.total)}`}
+              style={{ gridTemplateColumns: columnas, width: "100%", border: 0, background: "none", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+              {isMobile ? (
+                <>
+                  <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                    <strong style={{ overflowWrap: "anywhere" }}>{v.cliente || (v.mesa ? `Mesa ${v.mesa}` : "Consumidor final")}</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>#{v.numero} · {fmtFechaHora(v.creada_en)} · {v.metodos || "—"}</span>
+                  </span>
+                  <span className="r num" style={{ fontWeight: 600 }}>{fmt(v.total)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="num muted" style={{ fontSize: 13 }}>{fmtFechaHora(v.creada_en)}</span>
+                  <span className="num">#{v.numero}</span>
+                  <span style={{ overflowWrap: "anywhere" }}>
+                    {v.cliente || <span className="muted">Consumidor final</span>}
+                    {v.mesa && <span className="muted" style={{ fontSize: 12 }}> · mesa {v.mesa}</span>}
+                  </span>
+                  <span style={{ overflowWrap: "anywhere" }}>{v.metodos || <span className="muted">—</span>}</span>
+                  <span className="r num" style={{ fontWeight: 600 }}>{fmt(v.total)}</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {datos && datos.ventas.length < Number(datos.total) && (
+        <button type="button" className="btn btn-s" style={{ alignSelf: "center" }} disabled={cargando} onClick={verMas}>
+          {cargando ? "Cargando…" : `Ver más (${Number(datos.total) - datos.ventas.length} restantes)`}
+        </button>
+      )}
+      {abierta && <ModalVenta id={abierta} onClose={() => setAbierta(null)} />}
+    </Bloque>
+  );
+}
 
 // Reportes del negocio por rango de fechas (permiso reportes.ver).
 export default function Reportes() {
@@ -100,9 +224,9 @@ export default function Reportes() {
               negativo={Number(res.utilidad_bruta) < 0} />
             <Cifra etiqueta="Gastos" valor={fmt(res.gastos)} nota="Sin pagos de compras (van al costo)" />
             <Cifra etiqueta="Premios de torneos" valor={fmt(res.premios)} />
-            {Number(res.condonado) > 0 && <Cifra etiqueta="Fiado condonado" valor={fmt(res.condonado)} nota="Deuda perdonada: esa plata no llega" />}
+            {Number(res.condonado) > 0 && <Cifra etiqueta="Crédito condonado" valor={fmt(res.condonado)} nota="Deuda perdonada: esa plata no llega" />}
             <Cifra etiqueta="Resultado" valor={fmt(res.resultado)}
-              nota={`Ventas − costo − gastos − premios${Number(res.condonado) > 0 ? " − condonado" : ""}`} negativo={Number(res.resultado) < 0} />
+              nota={`Ventas − costo − gastos − premios${Number(res.condonado) > 0 ? " − crédito condonado" : ""}`} negativo={Number(res.resultado) < 0} />
           </div>
 
           <Bloque titulo="Ventas por día" nota="Pasa el cursor o toca una barra para ver el detalle del día.">
@@ -152,6 +276,8 @@ export default function Reportes() {
               </div>
             )}
           </Bloque>
+
+          <VentasDelRango desde={rango[0]} hasta={rango[1]} isMobile={isMobile} />
 
           <Bloque titulo="Detalle por día">
             <div className="tabla">

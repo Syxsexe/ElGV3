@@ -83,7 +83,7 @@ export default function Inicio() {
             {Number(datos.hoy.tienda) > 0 && <Fila izquierda="Tienda" derecha={fmt(datos.hoy.tienda)} />}
             {Number(datos.hoy.cocina) > 0 && <Fila izquierda="Cocina" derecha={fmt(datos.hoy.cocina)} />}
             {Number(datos.hoy.mixta) > 0 && <Fila izquierda="Tienda y cocina juntas" derecha={fmt(datos.hoy.mixta)} />}
-            {Number(datos.hoy.fiado) > 0 && <Fila izquierda="De eso, fiado" derecha={fmt(datos.hoy.fiado)} />}
+            {Number(datos.hoy.fiado) > 0 && <Fila izquierda="De eso, a crédito" derecha={fmt(datos.hoy.fiado)} />}
           </Tarjeta>
 
           <Tarjeta titulo="Cuentas abiertas" enlace={["/cuentas", "Ver cuentas"]}>
@@ -97,7 +97,25 @@ export default function Inicio() {
             )}
           </Tarjeta>
 
-          <Tarjeta titulo="Fiado vencido" enlace={["/creditos", "Créditos"]}>
+          <Tarjeta titulo="Abonos de hoy" enlace={["/creditos", "Créditos"]}>
+            {Number(datos.abonos_hoy.cantidad) === 0 ? <span className="muted">Hoy no se han recibido abonos.</span> : (
+              <>
+                <span className="num" style={{ ...GRANDE, fontSize: 26 }}>{fmt(datos.abonos_hoy.total)}</span>
+                <span className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+                  {datos.abonos_hoy.cantidad} {Number(datos.abonos_hoy.cantidad) === 1 ? "abono" : "abonos"}
+                  {Number(datos.abonos_hoy.cantidad) > datos.abonos_hoy.ultimos.length && ` (se ven los últimos ${datos.abonos_hoy.ultimos.length})`}
+                </span>
+                {datos.abonos_hoy.ultimos.map((a) => (
+                  <Link key={a.id} to={`/creditos?cliente=${a.cliente_id}`} style={{ color: "inherit", textDecoration: "none" }}>
+                    <Fila izquierda={<>{a.nombre} <span className="muted" style={{ fontSize: 12 }}>· {a.metodo} · {hora(a.creado_en)}</span></>}
+                      derecha={fmt(a.monto)} />
+                  </Link>
+                ))}
+              </>
+            )}
+          </Tarjeta>
+
+          <Tarjeta titulo="Créditos vencidos" enlace={["/creditos", "Créditos"]}>
             {Number(datos.cartera_vencida.clientes) === 0 ? <span className="muted">Nadie tiene deudas vencidas.</span> : (
               <>
                 <span className="num" style={{ ...GRANDE, fontSize: 26, color: "var(--danger)" }}>{fmt(datos.cartera_vencida.total)}</span>
@@ -114,9 +132,9 @@ export default function Inicio() {
             )}
           </Tarjeta>
 
-          <Tarjeta titulo="Por debajo del mínimo"
+          <Tarjeta titulo="Stock bajo"
             enlace={puede(["inventario.editar", "compras.registrar"]) ? [puede("compras.registrar") ? "/proveedores" : "/inventario", puede("compras.registrar") ? "Comprar" : "Inventario"] : null}>
-            {Number(datos.bajo_minimo.total) === 0 ? <span className="muted">Todo el inventario de tienda está sobre su mínimo.</span> : (
+            {Number(datos.bajo_minimo.total) === 0 ? <span className="muted">Ningún producto de tienda tiene stock bajo.</span> : (
               <>
                 <span className="muted" style={{ fontSize: 13 }}>
                   {datos.bajo_minimo.total} {Number(datos.bajo_minimo.total) === 1 ? "producto" : "productos"}

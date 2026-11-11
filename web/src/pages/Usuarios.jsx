@@ -17,12 +17,14 @@ function ModalUsuario({ usuario, roles, onClose, onGuardado }) {
   const [rolId, setRolId] = useState(usuario?.rol_id || roles.find((r) => r.nombre === "vendedor")?.id || "");
   const [activo, setActivo] = useState(usuario?.activo ?? true);
   const [contrasena, setContrasena] = useState("");
+  const [repetida, setRepetida] = useState("");
   const [persona, setPersona] = useState(usuario?.tercero_id ? { id: usuario.tercero_id, nombre: usuario.persona } : null);
   const [error, setError] = useState("");
 
   const guardar = async (e) => {
     e.preventDefault();
     setError("");
+    if (contrasena && contrasena !== repetida) return setError("Las contraseñas no coinciden.");
     try {
       if (nuevo) {
         await api.crearUsuario({ usuario: nombre, contrasena, rol_id: rolId });
@@ -59,11 +61,17 @@ function ModalUsuario({ usuario, roles, onClose, onGuardado }) {
             minLength={contrasena || nuevo ? 8 : undefined}
             value={contrasena} onChange={(e) => setContrasena(e.target.value)} />
         </Campo>
+        {(nuevo || contrasena) && (
+          <Campo etiqueta="Confirmar contraseña">
+            <input className="inp" type="password" autoComplete="new-password" required
+              value={repetida} onChange={(e) => setRepetida(e.target.value)} />
+          </Campo>
+        )}
         {!nuevo && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span className="lbl">Persona</span>
             <span className="muted" style={{ fontSize: 12 }}>
-              Si el empleado también es cliente de fiado o recibe nómina, vincúlalo con su registro.
+              Si el empleado también es cliente con crédito o recibe nómina, vincúlalo con su registro.
             </span>
             {persona ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

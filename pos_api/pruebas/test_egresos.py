@@ -74,7 +74,7 @@ def test_nomina_con_cruce_de_cuentas(api, sesion, bd, f, turno, categoria):
     assert (nomina["monto"], nomina["pagado"], nomina["cruzado"], nomina["beneficiario_id"]) == (50000, 20000, 30000, str(empleado))
     assert _saldo(bd, empleado) == 0
     detalle = bd.execute("SELECT detalle FROM auditoria WHERE entidad_id = %s", (nomina["id"],)).fetchone()["detalle"]
-    assert "cruce $30.000 contra su fiado (queda debiendo $0)" in detalle
+    assert "cruce $30.000 contra su crédito (queda debiendo $0)" in detalle
 
     # Sin a quién, o a alguien que no es cliente, no hay cruce.
     r = api.post("/egresos", headers=h, json={"sesion_id": str(turno), "concepto": "x", "categoria_gasto_id": categoria(),

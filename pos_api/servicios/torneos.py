@@ -19,11 +19,25 @@ from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
 from pos_api.servicios.caja import exigir_turno_abierto
-from pos_api.servicios.comun import pesos
+from pos_api.servicios.comun import condicion_busqueda, literal_like, pesos
 from pos_api.servicios.ventas import exigir_cupo, nombres_metodos
 
 # El servicio sembrado en 0013. Se busca por nombre si no se indica otro.
 INSCRIPCION = "Inscripción a torneo"
+
+
+def premios_disponibles(conn, texto: str) -> list[dict]:
+    """Productos de tienda activos que sirven de premio, con su costo y precio
+    de venta (el formulario suma lo que vale la premiación)."""
+    return conn.execute(
+        """SELECT id, nombre, stock, precio_venta, precio_costo AS costo
+             FROM v_articulos
+            WHERE activo AND tipo = 'producto' AND categoria_tipo = 'tienda'
+              AND (""" + condicion_busqueda("nombre") + """ OR codigo = %(texto)s)
+            ORDER BY nombre
+            LIMIT 30""",
+        {"patron": literal_like(texto), "texto": texto.strip()},
+    ).fetchall()
 
 
 def inscripcion(conn, articulo_id=None) -> dict:
@@ -70,7 +84,7 @@ def detalle_torneo(conn, torneo_id) -> dict:
     torneo["participantes"] = conn.execute(
         """SELECT tp.id, tp.cliente_id, COALESCE(t.nombre, tp.alias) AS nombre,
                   CASE WHEN tp.pago_venta_id IS NOT NULL THEN mp.nombre
-                       WHEN tp.cargo_id IS NOT NULL THEN 'Fiado' ELSE 'Gratis' END AS forma,
+                       WHEN tp.cargo_id IS NOT NULL THEN 'Crédito' ELSE 'Gratis' END AS forma,
                   COALESCE(pv.monto, c.monto, 0) AS monto
              FROM torneo_participantes tp
              LEFT JOIN terceros t ON t.id = tp.cliente_id
@@ -112,7 +126,7 @@ def registrar_torneo(conn, actor: Usuario, *, nombre: str, juego_id, participant
         if bool(p.get("cliente_id")) == bool(p.get("alias")):
             raise ErrorNegocio("Cada jugador es un cliente registrado o un nombre (uno de los dos).")
         if p["forma"] == "fiado" and not p.get("cliente_id"):
-            raise ErrorNegocio(f"{p['alias']} no es cliente registrado: no se le puede fiar.")
+            raise ErrorNegocio(f"{p['alias']} no es cliente registrado: no se le puede dar crédito.")
         if p["forma"] == "pago" and not p.get("metodo_pago_id"):
             raise ErrorNegocio("A cada jugador que paga indícale el método.")
     clientes = [p["cliente_id"] for p in participantes if p.get("cliente_id")]
@@ -209,7 +223,7 @@ def registrar_torneo(conn, actor: Usuario, *, nombre: str, juego_id, participant
     if venta:
         formas = {}
         for p in pagan:
-            clave = metodos[p["metodo_pago_id"]] if p["forma"] == "pago" else "fiado"
+            clave = metodos[p["metodo_pago_id"]] if p["forma"] == "pago" else "crédito"
             formas[clave] = formas.get(clave, 0) + precio
         texto += (f"; recaudó {pesos(detalle['recaudado'])} en la venta #{venta['numero']} del turno #{numero_turno} ("
                   + ", ".join(f"{k} {pesos(v)}" for k, v in formas.items()) + ")")

@@ -110,12 +110,12 @@ class Fabrica:
         return self.uno("INSERT INTO categorias (nombre, tipo) VALUES (%s, %s) RETURNING id",
                         (f"Cat {self._sufijo()}", tipo))["id"]
 
-    def producto(self, precio=10000, impuesto="IVA19", tipo_categoria="tienda", costo=0):
+    def producto(self, precio=10000, impuesto="IVA19", tipo_categoria="tienda", costo=0, stock=1000):
         aid = self.uno(
             "INSERT INTO articulos (tipo, nombre, categoria_id, impuesto_id, precio_venta) "
             "VALUES ('producto', %s, %s, %s, %s) RETURNING id",
             (f"Prod {self._sufijo()}", self.categoria(tipo_categoria), self.impuesto(impuesto), precio))["id"]
-        self.conn.execute("INSERT INTO productos (articulo_id, precio_costo) VALUES (%s, %s)", (aid, costo))
+        self.conn.execute("INSERT INTO productos (articulo_id, precio_costo, stock) VALUES (%s, %s, %s)", (aid, costo, stock))
         return aid
 
     def insumo(self, costo=0, unidad="g"):

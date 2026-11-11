@@ -17,6 +17,13 @@ from pos_api.seguridad import Usuario
 from pos_api.servicios.comun import pesos
 from pos_api.servicios.ventas import exigir_cliente, registrar_venta
 
+# Va a cocina (comandas): a = articulos, c = su categoría. Un combo va si
+# lleva algún producto de cocina.
+DE_COCINA = """(c.tipo = 'cocina' OR EXISTS (
+    SELECT 1 FROM combo_productos cp JOIN articulos pa ON pa.id = cp.producto_id
+      JOIN categorias pc ON pc.id = pa.categoria_id
+     WHERE cp.combo_id = a.id AND pc.tipo = 'cocina'))"""
+
 _SELECT = """
     SELECT cu.id, cu.numero, cu.mesa_id, m.nombre AS mesa, cu.cliente_id, t.nombre AS cliente, cu.alias,
            COALESCE(t.nombre, cu.alias) AS nombre, cu.abierta_en, u.usuario AS abierta_por, cu.notas,
@@ -60,9 +67,11 @@ def obtener_cuenta(conn, cuenta_id) -> dict:
     if cuenta is None:
         raise NoEncontrado("La cuenta no existe.")
     cuenta["items"] = conn.execute(
-        """SELECT ci.id, ci.articulo_id, a.nombre, ci.cantidad, ci.precio_unit,
-                  round(ci.cantidad * ci.precio_unit, 2) AS subtotal, ci.agregado_en
+        f"""SELECT ci.id, ci.articulo_id, a.nombre, ci.cantidad, ci.precio_unit,
+                  round(ci.cantidad * ci.precio_unit, 2) AS subtotal, ci.agregado_en,
+                  ci.enviado, {DE_COCINA} AS de_cocina
              FROM cuenta_items ci JOIN articulos a ON a.id = ci.articulo_id
+             JOIN categorias c ON c.id = a.categoria_id
             WHERE ci.cuenta_id = %s ORDER BY ci.agregado_en, ci.id""",
         (cuenta_id,),
     ).fetchall()
@@ -145,6 +154,35 @@ def editar_cuenta(conn, actor: Usuario, cuenta_id, cambios: dict) -> dict:
 
 # ── Consumos ────────────────────────────────────────────────────────────────
 
+def _exigir_stock(conn, cuenta_id, articulo_id) -> None:
+    """Los productos de tienda que lleva el artículo (él mismo o los de su
+    combo) deben alcanzar para todo lo que la cuenta tiene de ellos. Es un
+    aviso temprano: al cobrar, la base vuelve a exigirlo con bloqueo."""
+    falta = conn.execute(
+        """WITH tocados AS (SELECT %(articulo)s::uuid AS producto_id
+                            UNION SELECT producto_id FROM combo_productos WHERE combo_id = %(articulo)s),
+                lleva AS (SELECT ci.articulo_id AS producto_id, ci.cantidad
+                            FROM cuenta_items ci WHERE ci.cuenta_id = %(cuenta)s
+                          UNION ALL
+                          SELECT cp.producto_id, cp.cantidad * ci.cantidad
+                            FROM cuenta_items ci JOIN combo_productos cp ON cp.combo_id = ci.articulo_id
+                           WHERE ci.cuenta_id = %(cuenta)s)
+           SELECT a.nombre, p.stock, sum(l.cantidad) AS cantidad
+             FROM lleva l
+             JOIN productos p ON p.articulo_id = l.producto_id
+             JOIN articulos a ON a.id = l.producto_id
+             JOIN categorias c ON c.id = a.categoria_id
+            WHERE l.producto_id IN (SELECT producto_id FROM tocados) AND a.tipo = 'producto' AND c.tipo = 'tienda'
+            GROUP BY a.nombre, p.stock
+           HAVING sum(l.cantidad) > p.stock
+            ORDER BY a.nombre""",
+        {"cuenta": cuenta_id, "articulo": articulo_id},
+    ).fetchall()
+    if falta:
+        raise ErrorNegocio("No hay stock suficiente de " + ", ".join(
+            f"{f['nombre']} (hay {_cant(max(f['stock'], 0))}, la cuenta lleva {_cant(f['cantidad'])})" for f in falta))
+
+
 def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal) -> dict:
     """Agrega al precio actual. Si ya hay una línea del mismo artículo a ese
     mismo precio, le suma la cantidad en vez de repetirla."""
@@ -168,12 +206,13 @@ def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal
             "INSERT INTO cuenta_items (cuenta_id, articulo_id, cantidad, precio_unit) VALUES (%s, %s, %s, %s)",
             (cuenta_id, articulo_id, cantidad, articulo["precio_venta"]),
         )
+    _exigir_stock(conn, cuenta_id, articulo_id)
     return obtener_cuenta(conn, cuenta_id)
 
 
 def _item(conn, cuenta_id, item_id) -> dict:
     item = conn.execute(
-        """SELECT ci.cantidad, ci.precio_unit, a.nombre FROM cuenta_items ci JOIN articulos a ON a.id = ci.articulo_id
+        """SELECT ci.articulo_id, ci.cantidad, ci.precio_unit, a.nombre FROM cuenta_items ci JOIN articulos a ON a.id = ci.articulo_id
             WHERE ci.id = %s AND ci.cuenta_id = %s""",
         (item_id, cuenta_id),
     ).fetchone()
@@ -185,7 +224,12 @@ def _item(conn, cuenta_id, item_id) -> dict:
 def cambiar_cantidad(conn, actor: Usuario, cuenta_id, item_id, cantidad: Decimal) -> dict:
     cuenta = _tomar_abierta(conn, cuenta_id)
     item = _item(conn, cuenta_id, item_id)
-    conn.execute("UPDATE cuenta_items SET cantidad = %s WHERE id = %s", (cantidad, item_id))
+    # Si bajan por debajo de lo ya mandado a cocina, lo enviado baja con la
+    # línea: lo que se agregue después vuelve a quedar pendiente.
+    conn.execute("UPDATE cuenta_items SET cantidad = %s, enviado = LEAST(enviado, %s) WHERE id = %s",
+                 (cantidad, cantidad, item_id))
+    if cantidad > item["cantidad"]:
+        _exigir_stock(conn, cuenta_id, item["articulo_id"])
     if cantidad < item["cantidad"]:
         auditar(conn, actor.id, "cuenta",
                 f"Bajó {item['nombre']} de {_cant(item['cantidad'])} a {_cant(cantidad)} en {_nombre(cuenta)}",

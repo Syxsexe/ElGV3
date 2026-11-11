@@ -322,3 +322,5 @@ button { font-family: inherit; }
   font-size: 14px;
   font-weight: 500;
 }
+.step:disabled { opacity: .45; cursor: default; }
+.prod:disabled { cursor: not-allowed; background: var(--surface-2); opacity: .7; box-shadow: none; border-color: var(--border-2); }

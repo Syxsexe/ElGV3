@@ -48,7 +48,7 @@ def test_torneo_completo(api, sesion, bd, f, turno, juego, premio):
     assert (t["recaudado"], t["costo_premios"], t["ganancia"], t["jugadores"], t["jugadores_gratis"]) == \
         (45000, 22100, 22900, 4, 1)
     assert [(p["forma"], p["monto"]) for p in t["participantes"]] == \
-        [("Efectivo", 15000), ("Fiado", 15000), ("Nequi", 15000), ("Gratis", 0)]
+        [("Efectivo", 15000), ("Crédito", 15000), ("Nequi", 15000), ("Gratis", 0)]
     assert [p["nombre"] for p in t["participantes"]][2:] == ["Byron", "Ana"]
     assert [(p["cantidad"], p["costo_unit"]) for p in t["premios"]] == [(2, 11050)]
 
@@ -62,7 +62,7 @@ def test_torneo_completo(api, sesion, bd, f, turno, juego, premio):
     assert _esperado(bd, turno, "Digital") - antes["Digital"] == 15000
     detalle = bd.execute("SELECT detalle FROM auditoria WHERE entidad_id = %s", (t["id"],)).fetchone()["detalle"]
     assert detalle.startswith("Registró el torneo «Yugi semanal» (Yu-Gi-Oh!): 4 jugador(es), 1 gratis; recaudó $45.000")
-    assert "(Efectivo $15.000, fiado $15.000, Nequi $15.000); premios por $22.100" in detalle
+    assert "(Efectivo $15.000, crédito $15.000, Nequi $15.000); premios por $22.100" in detalle
 
     assert any(x["id"] == t["id"] for x in api.get("/torneos", headers=h, params={"juego_id": juego("Yu-Gi-Oh!")}).json())
     assert all(x["id"] != t["id"] for x in api.get("/torneos", headers=h, params={"juego_id": juego("MTG")}).json())
@@ -95,7 +95,7 @@ def test_torneo_rechazado(api, sesion, bd, f, turno, juego, premio):
     r = registrar([{"cliente_id": str(cliente), "forma": "gratis"}] * 2)
     assert (r.status_code, r.json()["detail"]) == (400, "Un cliente está inscrito dos veces.")
     r = registrar([{"alias": "Byron", "forma": "fiado"}])
-    assert (r.status_code, r.json()["detail"]) == (400, "Byron no es cliente registrado: no se le puede fiar.")
+    assert (r.status_code, r.json()["detail"]) == (400, "Byron no es cliente registrado: no se le puede dar crédito.")
     r = registrar([{"alias": "Y", "forma": "pago"}])
     assert (r.status_code, r.json()["detail"]) == (400, "A cada jugador que paga indícale el método.")
     r = registrar([{"alias": "Y", "cliente_id": str(cliente), "forma": "gratis"}])
@@ -111,7 +111,7 @@ def test_torneo_rechazado(api, sesion, bd, f, turno, juego, premio):
 
     sin_cupo = f.cliente(limite=0)
     r = registrar([pago, {"cliente_id": str(sin_cupo), "forma": "fiado"}])
-    assert r.status_code == 400 and "no tiene cupo de fiado" in r.json()["detail"]
+    assert r.status_code == 400 and "no tiene cupo de crédito" in r.json()["detail"]
     r = registrar([pago], premios=[{"producto_id": str(uuid.uuid4()), "cantidad": 1}])
     assert (r.status_code, r.json()["detail"]) == (400, "Los premios son productos de tienda activos (los que tienen stock).")
     with bd.transaction():
@@ -138,7 +138,7 @@ def test_varios_fiados_en_un_torneo(api, sesion, bd, f, turno, juego):
         "participantes": [{"cliente_id": str(c), "forma": "fiado"} for c in clientes]})
     assert r.status_code == 201, r.text
     t = r.json()
-    assert [p["forma"] for p in t["participantes"]] == ["Fiado"] * 3
+    assert [p["forma"] for p in t["participantes"]] == ["Crédito"] * 3
     cargos = bd.execute("SELECT cliente_id FROM cargos_credito WHERE venta_id = %s", (t["venta_id"],)).fetchall()
     assert sorted(c["cliente_id"] for c in cargos) == sorted(clientes)
     # Cada jugador apunta a SU cargo.
@@ -146,3 +146,12 @@ def test_varios_fiados_en_un_torneo(api, sesion, bd, f, turno, juego):
         """SELECT tp.cliente_id = c.cliente_id AS propio FROM torneo_participantes tp
              JOIN cargos_credito c ON c.id = tp.cargo_id WHERE tp.torneo_id = %s""", (t["id"],)).fetchall()
     assert [x["propio"] for x in ligados] == [True] * 3
+
+
+def test_premios_con_costo_y_precio(api, sesion, bd, premio):
+    pid = premio(costo=4000, stock=3)
+    nombre = bd.execute("SELECT nombre FROM articulos WHERE id = %s", (pid,)).fetchone()["nombre"]
+    r = api.get("/torneos/premios", headers=sesion("vendedor"), params={"q": nombre})
+    assert r.status_code == 200
+    assert [(p["id"], p["costo"], p["precio_venta"], p["stock"]) for p in r.json()] == [(pid, 4000, 20000, 3)]
+    assert api.get("/torneos/premios", headers=sesion("vendedor"), params={"q": "x"}).status_code == 422

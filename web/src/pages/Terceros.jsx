@@ -68,7 +68,7 @@ export default function Terceros({ rol, sinTitulo = false }) {
             {esCliente ? (
               <>
                 <span className="muted">{t.telefono || "—"}</span>
-                <span className="r num">{Number(t.limite_credito) > 0 ? fmt(t.limite_credito) : <span className="muted">Sin fiado</span>}</span>
+                <span className="r num">{Number(t.limite_credito) > 0 ? fmt(t.limite_credito) : <span className="muted">Sin crédito</span>}</span>
                 <span className="r num">{t.dias_credito}</span>
               </>
             ) : (

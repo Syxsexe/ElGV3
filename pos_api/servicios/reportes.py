@@ -18,6 +18,7 @@ from decimal import Decimal
 from pos_api.errores import ErrorNegocio
 from pos_api.seguridad import Usuario
 from pos_api.servicios.caja import id_turno_abierto
+from pos_api.servicios.comun import condicion_busqueda, literal_like
 
 MAX_DIAS = 400
 
@@ -48,6 +49,20 @@ def inicio(conn, actor: Usuario) -> dict:
                   COALESCE(sum(total) FILTER (WHERE tipo = 'mixta'), 0) AS mixta
              FROM v_ventas WHERE creada_en >= current_date AND creada_en < current_date + 1"""
     ).fetchone()
+
+    # Abonos de hoy (en plata o por cruce de cuentas): el total y los últimos cinco.
+    abonos = conn.execute(
+        """SELECT ab.id, ab.cliente_id, t.nombre, ab.monto, ab.creado_en,
+                  COALESCE(mp.nombre, 'Cruce de cuentas') AS metodo,
+                  sum(ab.monto) OVER () AS total, count(*) OVER () AS cantidad
+             FROM abonos_credito ab
+             JOIN terceros t ON t.id = ab.cliente_id
+             LEFT JOIN metodos_pago mp ON mp.id = ab.metodo_pago_id
+            WHERE ab.creado_en >= current_date AND ab.creado_en < current_date + 1
+              AND abono_vigente(ab.id)  -- un cruce cuyo egreso se anuló no cuenta
+            ORDER BY ab.creado_en DESC
+            LIMIT 5"""
+    ).fetchall()
 
     cuentas = conn.execute(
         """SELECT count(*) AS abiertas, COALESCE(sum(total_items), 0) AS total
@@ -83,6 +98,9 @@ def inicio(conn, actor: Usuario) -> dict:
         "cartera_vencida": {"total": vencidos[0]["total"] if vencidos else Decimal(0),
                             "clientes": vencidos[0]["clientes"] if vencidos else 0,
                             "top": [{k: x for k, x in v.items() if k not in ("total", "clientes")} for v in vencidos]},
+        "abonos_hoy": {"total": abonos[0]["total"] if abonos else Decimal(0),
+                       "cantidad": abonos[0]["cantidad"] if abonos else 0,
+                       "ultimos": [{k: x for k, x in a.items() if k not in ("total", "cantidad")} for a in abonos]},
         "por_pagar": None,
     }
     if actor.puede("compras.registrar"):
@@ -94,11 +112,48 @@ def inicio(conn, actor: Usuario) -> dict:
 
 # ── Reportes por rango ──────────────────────────────────────────────────────
 
-def reporte(conn, desde: date, hasta: date) -> dict:
+def _validar_rango(desde: date, hasta: date) -> None:
     if hasta < desde:
         raise ErrorNegocio("La fecha final es anterior a la inicial.")
     if (hasta - desde).days >= MAX_DIAS:
         raise ErrorNegocio(f"El rango máximo es de {MAX_DIAS} días.")
+
+
+def ventas_del_rango(conn, desde: date, hasta: date, *, texto: str | None = None,
+                     limite: int = 100, desplazamiento: int = 0) -> dict:
+    """Las ventas del rango, la más reciente primero, con cómo se pagaron y a
+    quién. texto busca por cliente, mesa o número de venta."""
+    _validar_rango(desde, hasta)
+    texto = (texto or "").strip()
+    digitos = texto.lstrip("#")
+    numero = int(digitos) if digitos.isascii() and digitos.isdigit() and len(digitos) <= 18 else None
+    filas = conn.execute(
+        """SELECT v.id, v.numero, v.creada_en, v.total, v.fiado, t.nombre AS cliente, u.usuario, m.nombre AS mesa,
+                  concat_ws(' + ',
+                      (SELECT string_agg(mp.nombre, ' + ' ORDER BY pv.monto DESC, mp.nombre)
+                         FROM pagos_venta pv JOIN metodos_pago mp ON mp.id = pv.metodo_pago_id
+                        WHERE pv.venta_id = v.id),
+                      CASE WHEN v.fiado > 0 THEN 'Crédito' END) AS metodos,
+                  count(*) OVER () AS total_filas
+             FROM v_ventas v
+             JOIN usuarios u ON u.id = v.usuario_id
+             LEFT JOIN terceros t ON t.id = v.cliente_id
+             LEFT JOIN cuentas cu ON cu.venta_id = v.id
+             LEFT JOIN mesas m ON m.id = cu.mesa_id
+            WHERE v.creada_en >= %(desde)s::date AND v.creada_en < %(hasta)s::date + 1
+              AND (%(patron)s::text IS NULL OR """ + condicion_busqueda("t.nombre") + """
+                   OR """ + condicion_busqueda("m.nombre") + """ OR v.numero = %(numero)s)
+            ORDER BY v.creada_en DESC, v.numero DESC
+            LIMIT %(limite)s OFFSET %(desplazamiento)s""",
+        {"desde": desde, "hasta": hasta, "patron": literal_like(texto), "numero": numero,
+         "limite": limite, "desplazamiento": desplazamiento},
+    ).fetchall()
+    return {"total": filas[0]["total_filas"] if filas else 0,
+            "ventas": [{k: x for k, x in f.items() if k != "total_filas"} for f in filas]}
+
+
+def reporte(conn, desde: date, hasta: date) -> dict:
+    _validar_rango(desde, hasta)
     r = {"desde": desde, "hasta": hasta}
     rango = {"desde": desde, "hasta": hasta}
 
@@ -170,7 +225,7 @@ def reporte(conn, desde: date, hasta: date) -> dict:
              WHERE {en_rango('v.creada_en')}
              GROUP BY mp.nombre ORDER BY sum(pv.monto) DESC""", rango).fetchall()
     if ventas["fiado"]:
-        metodos.append({"metodo": "Fiado", "monto": ventas["fiado"]})
+        metodos.append({"metodo": "Crédito", "monto": ventas["fiado"]})
     r["por_metodo"] = metodos
 
     r["gastos_por_categoria"] = conn.execute(

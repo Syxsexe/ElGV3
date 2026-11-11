@@ -5,7 +5,8 @@ import BuscarTercero from "../components/BuscarTercero";
 import Catalogo from "../components/Catalogo";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import PagoModal from "../components/PagoModal";
-import { fmt, fmtCant } from "../format";
+import { fmt, fmtCant, fmtFechaHora } from "../format";
+import { imprimirComanda } from "../imprimir";
 import { useIsMobile } from "../useMediaQuery";
 import { useTurno } from "../useTurno";
 
@@ -136,8 +137,119 @@ function ModalCancelar({ cuenta, onClose, onCancelada }) {
   );
 }
 
+const pendienteCocina = (it) => (it.de_cocina ? Math.max(Number(it.cantidad) - Number(it.enviado), 0) : 0);
+
+// Mandar a cocina lo pendiente (solo artículos de cocina), con comentarios, e
+// imprimir la comanda. Abajo, las anteriores para reimprimirlas.
+function ModalComanda({ cuenta, onClose, onEnviada }) {
+  const pendientes = cuenta.items.filter((it) => pendienteCocina(it) > 0);
+  // Lo que se edita por consumo; si llega uno nuevo con el modal abierto, arranca marcado.
+  const [editadas, setFilas] = useState({});
+  const filas = Object.fromEntries(pendientes.map((it) => [it.id,
+    editadas[it.id] || { incluir: true, cantidad: String(pendienteCocina(it)), comentario: "" }]));
+  const [notas, setNotas] = useState("");
+  const [anteriores, setAnteriores] = useState(null);
+  const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    api.comandas(cuenta.id).then(setAnteriores).catch(() => setAnteriores([]));
+  }, [cuenta.id]);
+
+  const cambiar = (id, cambios) => setFilas((f) => ({ ...f, [id]: { ...filas[id], ...f[id], ...cambios } }));
+  const elegidas = pendientes.filter((it) => filas[it.id]?.incluir);
+  let bloqueo = "";
+  if (pendientes.length === 0) bloqueo = "No hay nada de cocina pendiente.";
+  else if (elegidas.length === 0) bloqueo = "Marca lo que vas a mandar a cocina.";
+  else {
+    const mala = elegidas.find((it) => !(Number(filas[it.id].cantidad) > 0) || Number(filas[it.id].cantidad) > pendienteCocina(it));
+    if (mala) bloqueo = `La cantidad de ${mala.nombre} va de 1 a ${fmtCant(pendienteCocina(mala))}.`;
+  }
+
+  const enviar = async (e) => {
+    e.preventDefault();
+    if (bloqueo) return;
+    setEnviando(true);
+    setError("");
+    try {
+      const comanda = await api.crearComanda(cuenta.id, {
+        items: elegidas.map((it) => ({ cuenta_item_id: it.id, cantidad: Number(filas[it.id].cantidad), comentario: filas[it.id].comentario.trim() || null })),
+        notas: notas.trim() || null,
+      });
+      imprimirComanda(comanda);
+      onEnviada(comanda);
+    } catch (err) {
+      setError(err.message);
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Modal titulo={`Comanda para cocina`} onClose={() => !enviando && onClose()} ancho={620}>
+      <form onSubmit={enviar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {pendientes.length === 0 ? (
+          <span className="muted">Todo lo de cocina de esta cuenta ya se mandó. Agrega consumos o reimprime una comanda anterior.</span>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {pendientes.map((it) => {
+              const fila = filas[it.id];
+              return (
+                <div key={it.id} className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8,
+                  background: fila.incluir ? "#fff" : "var(--surface-2)", opacity: fila.incluir ? 1 : 0.7 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <input type="checkbox" checked={fila.incluir} aria-label={`Mandar ${it.nombre}`}
+                      onChange={(e) => cambiar(it.id, { incluir: e.target.checked })} style={{ width: 18, height: 18, flexShrink: 0 }} />
+                    <span style={{ flexGrow: 1, minWidth: 0, fontWeight: 600, overflowWrap: "anywhere" }}>
+                      {it.nombre}
+                      {Number(it.enviado) > 0 && <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}> · ya se mandaron {fmtCant(it.enviado)}</span>}
+                    </span>
+                    <input className="inp num" type="number" min="1" max={pendienteCocina(it)} step="any" inputMode="decimal" disabled={!fila.incluir}
+                      aria-label={`Cantidad de ${it.nombre}`} value={fila.cantidad} onChange={(e) => cambiar(it.id, { cantidad: e.target.value })}
+                      style={{ width: 70, height: 36, textAlign: "center", flexShrink: 0 }} />
+                  </div>
+                  {fila.incluir && (
+                    <input className="inp" aria-label={`Comentario para ${it.nombre}`} placeholder="Comentario (ej.: sin cebolla, término medio)"
+                      value={fila.comentario} onChange={(e) => cambiar(it.id, { comentario: e.target.value })} style={{ height: 36 }} />
+                  )}
+                </div>
+              );
+            })}
+            <Campo etiqueta="Nota para cocina (opcional)">
+              <input className="inp" value={notas} placeholder="Ej.: para llevar, sale con la entrada" onChange={(e) => setNotas(e.target.value)} />
+            </Campo>
+          </div>
+        )}
+        {bloqueo && pendientes.length > 0 && <div className="muted" role="status" style={{ fontSize: 14 }}>{bloqueo}</div>}
+        <ErrorBanner mensaje={error} />
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button type="button" className="btn btn-s" onClick={onClose} disabled={enviando}>Volver</button>
+          {pendientes.length > 0 && (
+            <button type="submit" className="btn btn-p" disabled={!!bloqueo || enviando}>{enviando ? "Enviando…" : "Imprimir comanda"}</button>
+          )}
+        </div>
+        {anteriores?.length > 0 && (
+          <Seccion etiqueta="Comandas anteriores">
+            {anteriores.map((c) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--border-2)" }}>
+                <span style={{ flexGrow: 1, minWidth: 0, fontSize: 14 }}>
+                  <strong>#{c.numero}</strong> <span className="muted">· {fmtFechaHora(c.creada_en)} · {c.usuario}</span>
+                  <span style={{ display: "block", fontSize: 13, overflowWrap: "anywhere" }}>
+                    {c.items.map((it) => `${fmtCant(it.cantidad)} × ${it.nombre}`).join(", ")}
+                  </span>
+                </span>
+                <button type="button" className="btn btn-s" style={{ height: 34, fontSize: 13, flexShrink: 0 }}
+                  onClick={() => imprimirComanda(c, { reimpresion: true })}>Reimprimir</button>
+              </div>
+            ))}
+          </Seccion>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
 function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver, onFallo, abiertas }) {
-  const [modal, setModal] = useState(null); // "agregar" | "editar" | "cancelar" | "cobrar"
+  const [modal, setModal] = useState(null); // "agregar" | "editar" | "cancelar" | "cobrar" | "comanda"
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [titulo, subtitulo] = titulos(cuenta);
@@ -156,6 +268,9 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
       setOcupado(false);
     }
   };
+
+  const porMandar = cuenta.items.reduce((s, it) => s + pendienteCocina(it), 0);
+  const conCocina = cuenta.items.some((it) => it.de_cocina);
 
   const cantidades = {};
   cuenta.items.forEach((it) => { cantidades[it.articulo_id] = (cantidades[it.articulo_id] || 0) + Number(it.cantidad); });
@@ -189,8 +304,14 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
         <button type="button" className="btn btn-g" style={{ flexShrink: 0 }} onClick={() => setModal("editar")}>Editar</button>
       </div>
 
-      <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-2)", background: "var(--surface-2)" }}>
-        <button type="button" className="btn btn-p" style={{ width: "100%" }} onClick={() => setModal("agregar")}>Agregar consumos</button>
+      <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-2)", background: "var(--surface-2)", display: "flex", gap: 10 }}>
+        <button type="button" className="btn btn-p" style={{ flexGrow: 1 }} onClick={() => setModal("agregar")}>Agregar consumos</button>
+        {conCocina && (
+          <button type="button" className="btn btn-s" style={{ flexShrink: 0 }} onClick={() => setModal("comanda")}
+            aria-label={porMandar > 0 ? `Comanda: ${fmtCant(porMandar)} por mandar a cocina` : "Comanda"}>
+            Comanda{porMandar > 0 && <span className="chip warn num" style={{ marginLeft: 8 }}>{fmtCant(porMandar)}</span>}
+          </button>
+        )}
       </div>
       {error && <div style={{ margin: "12px 18px 0" }}><ErrorBanner mensaje={error} /></div>}
 
@@ -201,7 +322,12 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
           <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 18px", borderBottom: "1px solid var(--border-2)" }}>
             <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{it.nombre}</span>
-              <span className="muted num" style={{ fontSize: 12 }}>{fmt(it.precio_unit)} c/u · {hora(it.agregado_en)}</span>
+              <span className="muted num" style={{ fontSize: 12 }}>
+                {fmt(it.precio_unit)} c/u · {hora(it.agregado_en)}
+                {it.de_cocina && (pendienteCocina(it) > 0
+                  ? <span style={{ color: "var(--warn-text)" }}> · por mandar a cocina: {fmtCant(pendienteCocina(it))}</span>
+                  : <span style={{ color: "var(--ok-text)" }}> · en cocina</span>)}
+              </span>
             </div>
             <button type="button" className="step" disabled={ocupado} aria-label={`Quitar uno de ${it.nombre}`}
               onClick={() => accion(Number(it.cantidad) > 1
@@ -216,25 +342,26 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
       </div>
 
       <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--border-2)", background: "var(--surface-2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Total</span>
-            <span className="num" style={{ ...GRANDE, fontSize: 30 }}>{fmt(cuenta.total)}</span>
-          </div>
-          <button type="button" className="btn btn-p" style={{ height: 52, padding: "0 28px", fontSize: 16 }}
-            disabled={cuenta.items.length === 0 || !turno} onClick={() => setModal("cobrar")}>
-            Cobrar cuenta
-          </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+          <span className="muted" style={{ fontSize: 14, fontWeight: 600 }}>Total</span>
+          <span className="num" style={{ ...GRANDE, fontSize: 30 }}>{fmt(cuenta.total)}</span>
         </div>
         {turno === null && (
           <span className="muted" style={{ fontSize: 13 }}>
             Para cobrar abre el turno en <Link to="/caja">Caja</Link>.
           </span>
         )}
-        <button type="button" className="btn btn-d" style={{ alignSelf: isMobile ? "stretch" : "flex-start" }}
-          onClick={() => setModal("cancelar")}>
-          Cancelar cuenta
-        </button>
+        {/* Los botones del pie van en una sola fila y con la misma altura. */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-d" style={{ height: 52, flex: isMobile ? "1 1 100%" : "0 0 auto", order: isMobile ? 2 : 0 }}
+            onClick={() => setModal("cancelar")}>
+            Cancelar cuenta
+          </button>
+          <button type="button" className="btn btn-p" style={{ height: 52, padding: "0 28px", fontSize: 16, flex: "1 1 auto", marginLeft: isMobile ? 0 : "auto" }}
+            disabled={cuenta.items.length === 0 || !turno} onClick={() => setModal("cobrar")}>
+            Cobrar cuenta
+          </button>
+        </div>
       </div>
 
       {modal === "agregar" && (
@@ -255,6 +382,10 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
       {modal === "cancelar" && (
         <ModalCancelar cuenta={cuenta} onClose={() => setModal(null)}
           onCancelada={() => { setModal(null); onCerrada(`Cuenta #${cuenta.numero} cancelada.`); }} />
+      )}
+      {modal === "comanda" && (
+        <ModalComanda cuenta={cuenta} onClose={() => setModal(null)}
+          onEnviada={() => { setModal(null); api.cuenta(cuenta.id).then(onCambio).catch(onFallo); }} />
       )}
       {modal === "cobrar" && (
         <PagoModal total={Number(cuenta.total)} cliente={cuenta.cliente_id ? { id: cuenta.cliente_id, nombre: cuenta.cliente } : null}

@@ -13,7 +13,7 @@ from pos_api.pruebas.test_caja import _abrir
 @pytest.fixture
 def producto(bd, f):
     """producto(precio, costo, stock) → id de un producto de tienda activo."""
-    def _crear(precio=10000, costo=0, stock=0, tipo_categoria="tienda"):
+    def _crear(precio=10000, costo=0, stock=100, tipo_categoria="tienda"):
         with bd.transaction():
             pid = f.producto(precio=precio, costo=costo, tipo_categoria=tipo_categoria)
             bd.execute("UPDATE productos SET stock = %s WHERE articulo_id = %s", (stock, pid))
@@ -62,7 +62,7 @@ def test_venta_mixta_con_fiado(api, sesion, bd, f, turno, producto):
     assert esperado - esperado_antes == 10000
     detalle = bd.execute("SELECT detalle FROM auditoria WHERE entidad_id = %s", (venta["id"],)).fetchone()["detalle"]
     assert detalle.startswith(f"Venta #{venta['numero']} por $17.000")
-    assert "Efectivo $10.000, Nequi $3.000, fiado $4.000 a" in detalle and "(descuento $1.000)" in detalle
+    assert "Efectivo $10.000, Nequi $3.000, crédito $4.000 a" in detalle and "(descuento $1.000)" in detalle
 
     assert api.get(f"/ventas/{venta['id']}", headers=h).json()["numero"] == venta["numero"]
     assert api.get(f"/ventas/{uuid.uuid4()}", headers=h).status_code == 404
@@ -122,11 +122,11 @@ def test_fiado_exige_cliente_con_cupo(api, sesion, bd, f, turno, producto):
     vender = lambda **cambios: api.post("/ventas", headers=h, json=base | cambios)
 
     r = vender()
-    assert (r.status_code, r.json()["detail"]) == (400, "Para fiar elige el cliente.")
+    assert (r.status_code, r.json()["detail"]) == (400, "Para vender a crédito elige el cliente.")
     r = vender(cliente_id=str(sin_cupo))
-    assert r.status_code == 400 and "no tiene cupo de fiado" in r.json()["detail"]
+    assert r.status_code == 400 and "no tiene cupo de crédito" in r.json()["detail"]
     r = vender(cliente_id=str(con_cupo))
-    assert r.status_code == 400 and "tiene disponible $15.000 de fiado (cupo $30.000, debe $15.000)" in r.json()["detail"]
+    assert r.status_code == 400 and "tiene disponible $15.000 de crédito (cupo $30.000, debe $15.000)" in r.json()["detail"]
     r = vender(cliente_id=str(uuid.uuid4()))
     assert (r.status_code, r.json()["detail"]) == (404, "El cliente no existe.")
     bd.execute("UPDATE clientes SET activo = false WHERE tercero_id = %s", (con_cupo,))

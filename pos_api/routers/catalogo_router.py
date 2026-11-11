@@ -170,9 +170,11 @@ def delete_categoria(categoria_id: uuid.UUID, actor: Usuario = Depends(inventari
 
 @router.get("/articulos")
 def get_articulos(tipo: TipoArticulo | None = None, q: str | None = None, categoria_id: uuid.UUID | None = None,
-                  activos: bool = False, _: Usuario = Depends(lector)):
+                  activos: bool = False, categoria_tipo: Literal["tienda", "cocina"] | None = None,
+                  _: Usuario = Depends(lector)):
     with transaccion() as conn:
-        return servicio.listar_articulos(conn, tipo=tipo, texto=q, categoria_id=categoria_id, solo_activos=activos)
+        return servicio.listar_articulos(conn, tipo=tipo, texto=q, categoria_id=categoria_id, solo_activos=activos,
+                                         categoria_tipo=categoria_tipo)
 
 
 @router.get("/articulos/{articulo_id}")

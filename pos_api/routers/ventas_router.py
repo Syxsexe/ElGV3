@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from pos_api.db import transaccion
 from pos_api.modelos import Cantidad, Dinero, DineroPositivo, TextoOpcional, cambios_enviados
 from pos_api.seguridad import Usuario, usuario_actual
-from pos_api.servicios import cuentas, ventas
+from pos_api.servicios import comandas, cuentas, ventas
 
 router = APIRouter(tags=["ventas"])
 
@@ -57,6 +57,17 @@ class NuevoItem(BaseModel):
 
 class CambiarItem(BaseModel):
     cantidad: Cantidad
+
+
+class ItemComanda(BaseModel):
+    cuenta_item_id: uuid.UUID
+    cantidad: Cantidad
+    comentario: TextoOpcional = None
+
+
+class NuevaComanda(BaseModel):
+    items: Annotated[list[ItemComanda], Field(min_length=1, max_length=200)]
+    notas: TextoOpcional = None
 
 
 class Cancelar(BaseModel):
@@ -132,6 +143,18 @@ def patch_item(cuenta_id: uuid.UUID, item_id: uuid.UUID, body: CambiarItem, acto
 def delete_item(cuenta_id: uuid.UUID, item_id: uuid.UUID, actor: Usuario = Depends(usuario_actual)):
     with transaccion() as conn:
         return cuentas.quitar_item(conn, actor, cuenta_id, item_id)
+
+
+@router.get("/cuentas/{cuenta_id}/comandas")
+def get_comandas(cuenta_id: uuid.UUID, _: Usuario = Depends(usuario_actual)):
+    with transaccion() as conn:
+        return comandas.listar_comandas(conn, cuenta_id)
+
+
+@router.post("/cuentas/{cuenta_id}/comandas", status_code=status.HTTP_201_CREATED)
+def post_comanda(cuenta_id: uuid.UUID, body: NuevaComanda, actor: Usuario = Depends(usuario_actual)):
+    with transaccion() as conn:
+        return comandas.crear_comanda(conn, actor, cuenta_id, [i.model_dump() for i in body.items], body.notas)
 
 
 @router.post("/cuentas/{cuenta_id}/cobrar", status_code=status.HTTP_201_CREATED)

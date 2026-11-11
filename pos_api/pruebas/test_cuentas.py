@@ -180,3 +180,32 @@ def test_cobrar_con_fiado_al_cliente_de_la_cuenta(api, sesion, bd, f, turno, art
     r = api.post(f"/cuentas/{cuenta['id']}/cobrar", headers=h, json={"sesion_id": str(turno), "fiado": 9000})
     assert r.status_code == 201, r.text
     assert (r.json()["cliente_id"], r.json()["fiado"], r.json()["metodo"]) == (str(cliente), 9000, "credito")
+
+
+def test_no_se_agrega_mas_de_lo_que_hay_en_stock(api, sesion, bd, f, turno):
+    h = sesion("vendedor")
+    with bd.transaction():
+        cerveza = f.producto(precio=6000, stock=2)
+        plato = f.producto(precio=12000, tipo_categoria="cocina", impuesto="INC8", stock=0)
+    cuenta = api.post("/cuentas", headers=h, json={"alias": "Stock"}).json()
+    agregar = lambda art, cant=1: api.post(f"/cuentas/{cuenta['id']}/items", headers=h,
+                                           json={"articulo_id": str(art), "cantidad": cant})
+    assert agregar(cerveza, 2).status_code == 201
+    r = agregar(cerveza)
+    assert (r.status_code, r.json()["detail"]) == (400, f"No hay stock suficiente de {_nombre(bd, cerveza)} (hay 2, la cuenta lleva 3)")
+    assert agregar(plato, 5).status_code == 201  # la cocina no lleva stock
+    item = api.get(f"/cuentas/{cuenta['id']}", headers=h).json()["items"][0]
+    assert api.patch(f"/cuentas/{cuenta['id']}/items/{item['id']}", headers=h, json={"cantidad": 3}).status_code == 400
+    assert api.patch(f"/cuentas/{cuenta['id']}/items/{item['id']}", headers=h, json={"cantidad": 1}).status_code == 200
+
+    # Si otra venta se lleva el stock, el cobro falla con el faltante.
+    bd.execute("UPDATE productos SET stock = 0 WHERE articulo_id = %s", (cerveza,))
+    efectivo = str(f.metodo("efectivo"))
+    total = api.get(f"/cuentas/{cuenta['id']}", headers=h).json()["total"]
+    r = api.post(f"/cuentas/{cuenta['id']}/cobrar", headers=h,
+                 json={"sesion_id": str(turno), "pagos": [{"metodo_pago_id": efectivo, "monto": total}]})
+    assert (r.status_code, r.json()["detail"]) == (400, f"No hay stock suficiente de {_nombre(bd, cerveza)} (hay 0, se necesitan 1)")
+
+
+def _nombre(bd, articulo):
+    return bd.execute("SELECT nombre FROM articulos WHERE id = %s", (articulo,)).fetchone()["nombre"]

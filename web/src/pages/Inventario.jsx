@@ -5,8 +5,11 @@ import EditorLineas from "../components/EditorLineas";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { fmt, fmtCant, fmtCosto, margen } from "../format";
 
+// Productos de tienda y platos de cocina son el mismo tipo de artículo
+// (producto); los separa el tipo de su categoría.
 const PESTANAS = [
-  ["producto", "Productos"],
+  ["tienda", "Productos de tienda"],
+  ["cocina", "Platos de cocina"],
   ["combo", "Combos"],
   ["adicional", "Adicionales"],
   ["servicio", "Servicios"],
@@ -14,6 +17,7 @@ const PESTANAS = [
   ["categorias", "Categorías"],
 ];
 const PERMISO_TIPO = { combo: "combos.editar" };
+const tipoDePestana = (p) => (p === "tienda" || p === "cocina" ? "producto" : p);
 const permisoDe = (tipo) => PERMISO_TIPO[tipo] || "inventario.editar";
 
 // "" en un campo opcional → null (la API lo toma como "sin dato").
@@ -33,9 +37,11 @@ function Estado({ activo }) {
 
 // ── Modal de artículo (los cuatro tipos) ───────────────────────────────────
 
-function ModalArticulo({ tipo, articuloId, catalogos, onClose, onGuardado, onStockAjustado }) {
-  const { categorias, impuestos, insumos, productos } = catalogos;
+// categoriaTipo (al crear un producto): "tienda" o "cocina", según la pestaña.
+function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, onGuardado, onStockAjustado }) {
+  const { impuestos, insumos, productos } = catalogos;
   const nuevo = !articuloId;
+  const categorias = nuevo && categoriaTipo ? catalogos.categorias.filter((c) => c.tipo === categoriaTipo) : catalogos.categorias;
   // Nuevo: el formulario arranca vacío; editar: se llena con el detalle del servidor.
   const [f, setF] = useState(() => (nuevo ? {
     nombre: "", categoria_id: categorias[0]?.id || "", impuesto_id: "", precio_venta: "", activo: true,
@@ -110,7 +116,9 @@ function ModalArticulo({ tipo, articuloId, catalogos, onClose, onGuardado, onSto
     }
   };
 
-  const titulo = `${nuevo ? "Nuevo" : "Editar"} ${{ producto: "producto", combo: "combo", adicional: "adicional", servicio: "servicio" }[tipo]}`;
+  const nombreTipo = tipo === "producto" ? (esCocina ? "plato de cocina" : "producto de tienda")
+    : { combo: "combo", adicional: "adicional", servicio: "servicio" }[tipo];
+  const titulo = `${nuevo ? "Nuevo" : "Editar"} ${nombreTipo}`;
   return (
     <Modal titulo={titulo} onClose={onClose} ancho={560}>
       <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -351,7 +359,7 @@ function Categorias({ categorias, puedeEditar, recargar }) {
 
 export default function Inventario() {
   const { puede } = useAuth();
-  const [pestana, setPestana] = useState("producto");
+  const [pestana, setPestana] = useState("tienda");
   const [busqueda, setBusqueda] = useState("");
   const [articulos, setArticulos] = useState([]);
   const [catalogos, setCatalogos] = useState({ categorias: [], impuestos: [], insumos: [], productos: [], unidades: [] });
@@ -370,7 +378,8 @@ export default function Inventario() {
   const cargarArticulos = useCallback(() => {
     if (pestana === "categorias") return Promise.resolve();
     const mia = ++ultimaBusqueda.current;
-    const pedido = pestana === "insumos" ? api.insumos(busqueda.trim()) : api.articulos({ tipo: pestana, q: busqueda.trim() });
+    const pedido = pestana === "insumos" ? api.insumos(busqueda.trim())
+      : api.articulos({ tipo: tipoDePestana(pestana), q: busqueda.trim(), categoria_tipo: ["tienda", "cocina"].includes(pestana) ? pestana : undefined });
     return pedido.then((lista) => {
       if (mia !== ultimaBusqueda.current) return;
       setError("");
@@ -393,7 +402,9 @@ export default function Inventario() {
   };
 
   const esArticulo = !["insumos", "categorias"].includes(pestana);
-  const puedeCrear = esArticulo ? puede(permisoDe(pestana)) : puede("inventario.editar");
+  const puedeCrear = esArticulo ? puede(permisoDe(tipoDePestana(pestana))) : puede("inventario.editar");
+  // Productos de tienda y platos se crean en una categoría de su tipo: sin ninguna, primero hay que crearla.
+  const sinCategoria = ["tienda", "cocina"].includes(pestana) && !catalogos.categorias.some((c) => c.tipo === pestana);
   // El modal usa el tipo del artículo, no el de la pestaña.
   const abrir = (a) => setEditando({ id: a.id, tipo: a.tipo });
 
@@ -411,15 +422,27 @@ export default function Inventario() {
           <input className="inp" placeholder="Buscar por nombre o código" value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)} style={{ maxWidth: 360 }} />
           {puedeCrear && (
-            <button type="button" className="btn btn-p" style={{ marginLeft: "auto" }} onClick={() => setEditando({ nuevo: true })}>
-              + Nuevo
+            <button type="button" className="btn btn-p" style={{ marginLeft: "auto" }} disabled={sinCategoria}
+              onClick={() => setEditando({ nuevo: true })}>
+              {{ tienda: "+ Nuevo producto", cocina: "+ Nuevo plato" }[pestana] || "+ Nuevo"}
             </button>
           )}
         </div>
       )}
+      {pestana === "cocina" && (
+        <div className="card" style={{ padding: "12px 16px", background: "var(--accent-soft)", borderColor: "transparent", fontSize: 14 }}>
+          Aquí se crean los platos que prepara la cocina (hamburguesas, salchipapas, perros…). Llevan receta con
+          insumos para calcular su costo, no manejan stock y salen en la comanda de cocina.
+        </div>
+      )}
+      {sinCategoria && (
+        <div className="muted" role="status" style={{ fontSize: 14 }}>
+          Para crear {pestana === "cocina" ? "platos" : "productos de tienda"}, primero crea una categoría de {pestana} en la pestaña Categorías.
+        </div>
+      )}
       <ErrorBanner mensaje={error} />
 
-      {pestana === "producto" && (
+      {pestana === "tienda" && (
         <div className="card tabla">
           <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 90px 80px" }}>
             <span>Producto</span><span>Categoría</span><span className="r">Precio</span><span className="r">Costo</span>
@@ -497,8 +520,31 @@ export default function Inventario() {
         <Categorias categorias={catalogos.categorias} puedeEditar={puede("inventario.editar")} recargar={cargarCatalogos} />
       )}
 
+      {pestana === "cocina" && (
+        <div className="card tabla">
+          <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 80px" }}>
+            <span>Plato</span><span>Categoría</span><span className="r">Precio</span><span className="r">Costo</span>
+            <span className="r">Margen</span><span>Estado</span>
+          </div>
+          {articulos.map((a) => (
+            <Fila key={a.id} columnas="1fr 140px 100px 100px 70px 80px" onClick={puede(permisoDe(a.tipo)) ? () => abrir(a) : undefined}>
+              <span>
+                <strong>{a.nombre}</strong>
+                <span className="muted" style={{ display: "block", fontSize: 12 }}>{a.tiene_receta ? "Con receta" : "Sin receta: costo a mano"}</span>
+              </span>
+              <span className="muted">{a.categoria}</span>
+              <span className="r num">{fmt(a.precio_venta)}</span>
+              <span className="r num">{fmt(a.costo)}</span>
+              <span className="r num">{margen(a.precio_venta, a.costo)}</span>
+              <span><Estado activo={a.activo} /></span>
+            </Fila>
+          ))}
+        </div>
+      )}
+
       {editando && esArticulo && (
-        <ModalArticulo tipo={editando.tipo || pestana} articuloId={editando.id} catalogos={catalogos}
+        <ModalArticulo tipo={editando.tipo || tipoDePestana(pestana)} articuloId={editando.id} catalogos={catalogos}
+          categoriaTipo={["tienda", "cocina"].includes(pestana) ? pestana : undefined}
           onClose={() => setEditando(null)} onGuardado={alGuardar} onStockAjustado={cargarArticulos} />
       )}
       {editando && pestana === "insumos" && (

@@ -109,14 +109,14 @@ def nombres_metodos(conn, ids: list) -> dict:
 
 def exigir_cupo(conn, cliente_id, fiado: Decimal) -> dict:
     if cliente_id is None:
-        raise ErrorNegocio("Para fiar elige el cliente.")
+        raise ErrorNegocio("Para vender a crédito elige el cliente.")
     cupo = cupo_cliente(conn, cliente_id, bloquear=True)
     if not cupo["activo"]:
-        raise ErrorNegocio(f"{cupo['nombre']} está desactivado como cliente: no se le fía.")
+        raise ErrorNegocio(f"{cupo['nombre']} está desactivado como cliente: no se le vende a crédito.")
     if cupo["limite_credito"] == 0:
-        raise ErrorNegocio(f"{cupo['nombre']} no tiene cupo de fiado: asígnaselo en Clientes.")
+        raise ErrorNegocio(f"{cupo['nombre']} no tiene cupo de crédito: asígnaselo en Clientes.")
     if fiado > cupo["disponible"]:
-        raise ErrorNegocio(f"{cupo['nombre']} tiene disponible {pesos(cupo['disponible'])} de fiado "
+        raise ErrorNegocio(f"{cupo['nombre']} tiene disponible {pesos(cupo['disponible'])} de crédito "
                            f"(cupo {pesos(cupo['limite_credito'])}, debe {pesos(cupo['saldo'])}).")
     return cupo
 
@@ -184,7 +184,7 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
 
     partes = [f"{metodos[p['metodo_pago_id']]} {pesos(p['monto'])}" for p in pagos]
     if cupo is not None:
-        partes.append(f"fiado {pesos(fiado)} a {cupo['nombre']}")
+        partes.append(f"crédito {pesos(fiado)} a {cupo['nombre']}")
     detalle = f"Venta #{venta['numero']} por {pesos(total)} en el turno #{numero_turno}"
     if origen:
         detalle += f", de {origen}"

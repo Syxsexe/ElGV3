@@ -127,7 +127,7 @@ def registrar_egreso(conn, actor: Usuario, sesion_id, *, concepto: str, compra_i
         if beneficiario is None:
             raise ErrorNegocio("Para cruzar cuentas indica a quién se le paga.")
         if conn.execute("SELECT 1 FROM clientes WHERE tercero_id = %s", (beneficiario,)).fetchone() is None:
-            raise ErrorNegocio(f"{nombre} no es cliente: no tiene fiado contra el cual cruzar.")
+            raise ErrorNegocio(f"{nombre} no es cliente: no tiene crédito contra el cual cruzar.")
 
     egreso = conn.execute(
         """INSERT INTO egresos (sesion_id, usuario_id, compra_id, categoria_gasto_id, tercero_id, concepto, notas)
@@ -142,7 +142,7 @@ def registrar_egreso(conn, actor: Usuario, sesion_id, *, concepto: str, compra_i
     partes = [f"{metodos[p['metodo_pago_id']]} {pesos(p['monto'])}" for p in pagos]
     if cruce > 0:
         abono = aplicar_abono(conn, actor, beneficiario, cruce, egreso_id=egreso["id"], notas=f"Cruce: {concepto}")
-        partes.append(f"cruce {pesos(cruce)} contra su fiado (queda debiendo {pesos(abono['deuda'] - cruce)})")
+        partes.append(f"cruce {pesos(cruce)} contra su crédito (queda debiendo {pesos(abono['deuda'] - cruce)})")
 
     if compra_id is not None:
         texto = f"Pagó {pesos(total)} de la compra #{compra['numero']} a {nombre}"

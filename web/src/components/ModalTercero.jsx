@@ -159,30 +159,35 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
           </div>
         </details>
 
-        <div className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10, background: "var(--surface-2)" }}>
+        <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, background: "var(--surface-2)" }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 600 }}>
             <input type="checkbox" checked={f.es_cliente} disabled={!nuevo && original?.es_cliente} onChange={cambiar("es_cliente")} />
             <span>Cliente</span>
           </label>
           {f.es_cliente && (
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
-              <Campo etiqueta="Cupo de crédito (fiado)" ayuda={editaCupo ? "0 = sin fiado" : "Solo quien administra clientes lo cambia"}>
-                <input className="inp num" type="number" min="0" step="any" required disabled={!editaCupo}
-                  value={f.limite_credito} onChange={cambiar("limite_credito")} style={{ width: 160 }} />
-              </Campo>
-              <Campo etiqueta="Días para pagar">
-                <input className="inp num" type="number" min="1" max="365" step="1" required disabled={!editaCupo}
-                  value={f.dias_credito} onChange={cambiar("dias_credito")} style={{ width: 110 }} />
-              </Campo>
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, alignItems: "start" }}>
+                <Campo etiqueta="Cupo de crédito ($)">
+                  <input className="inp num" type="number" min="0" step="any" required disabled={!editaCupo}
+                    value={f.limite_credito} onChange={cambiar("limite_credito")} />
+                </Campo>
+                <Campo etiqueta="Días para pagar">
+                  <input className="inp num" type="number" min="1" max="365" step="1" required disabled={!editaCupo}
+                    value={f.dias_credito} onChange={cambiar("dias_credito")} />
+                </Campo>
+              </div>
+              <span className="muted" style={{ fontSize: 12, marginTop: -4 }}>
+                {editaCupo ? "Con cupo en $ 0 no se le vende a crédito." : "Solo quien administra clientes cambia el cupo."}
+              </span>
               {!nuevo && original?.es_cliente && (
-                <label style={{ display: "flex", gap: 8, alignItems: "center", height: 40 }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" disabled={!editaCupo} checked={f.cliente_activo} onChange={cambiar("cliente_activo")} />
-                  <span>Activo</span>
+                  <span>Cliente activo</span>
                 </label>
               )}
-            </div>
+            </>
           )}
-          {cupo?.error && <span className="muted" style={{ fontSize: 14 }}>No se pudo ver su saldo de fiado: {cupo.error}</span>}
+          {cupo?.error && <span className="muted" style={{ fontSize: 14 }}>No se pudo ver su saldo de crédito: {cupo.error}</span>}
           {cupo && !cupo.error && (
             <span style={{ fontSize: 14 }}>
               {Number(cupo.saldo) > 0 ? <>Debe <strong className="num">{fmt(cupo.saldo)}</strong></> : "No debe nada"}
@@ -194,6 +199,7 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
                 : <span className="muted">guarda los cambios para ver su crédito</span>}
             </span>
           )}
+          {(editaProveedor || f.es_proveedor) && <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />}
           {(editaProveedor || f.es_proveedor) && (
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 600 }}>
               <input type="checkbox" checked={f.es_proveedor} disabled={!editaProveedor || (!nuevo && original?.es_proveedor)}
@@ -202,17 +208,17 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
             </label>
           )}
           {f.es_proveedor && (
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+            <>
               <Campo etiqueta="Persona de contacto">
-                <input className="inp" disabled={!editaProveedor} value={f.contacto} onChange={cambiar("contacto")} style={{ width: 240 }} />
+                <input className="inp" disabled={!editaProveedor} value={f.contacto} onChange={cambiar("contacto")} />
               </Campo>
               {!nuevo && original?.es_proveedor && (
-                <label style={{ display: "flex", gap: 8, alignItems: "center", height: 40 }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" disabled={!editaProveedor} checked={f.proveedor_activo} onChange={cambiar("proveedor_activo")} />
-                  <span>Activo</span>
+                  <span>Proveedor activo</span>
                 </label>
               )}
-            </div>
+            </>
           )}
         </div>
 

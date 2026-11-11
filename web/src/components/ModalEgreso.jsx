@@ -71,7 +71,7 @@ export default function ModalEgreso({ turno, compra, onClose, onHecho }) {
   else if (!compra && nombreCategoria === "Nómina" && !tercero) bloqueo = "Elige a quién se le paga la nómina.";
   else if (filas.some((f) => Number(f.monto) < 0) || Number(cruce) < 0) bloqueo = "Hay un monto negativo.";
   else if (total <= 0) bloqueo = "Escribe cuánto se paga.";
-  else if (valorCruce > saldo) bloqueo = `Solo debe ${fmt(saldo)} de fiado.`;
+  else if (valorCruce > saldo) bloqueo = `Solo debe ${fmt(saldo)} de crédito.`;
   else if (compra && total > Number(compra.pendiente)) bloqueo = `A la compra le quedan ${fmt(compra.pendiente)} por pagar.`;
 
   const cambiarFila = (i, cambios) => setFilas((fs) => fs.map((f, j) => (j === i ? { ...f, ...cambios } : f)));
@@ -145,7 +145,7 @@ export default function ModalEgreso({ turno, compra, onClose, onHecho }) {
         </Seccion>
 
         {saldo > 0 && (
-          <Campo etiqueta={`Descontar de su fiado (debe ${fmt(saldo)})`} ayuda="Cruce de cuentas: se abona a su deuda en vez de pagarle esa parte.">
+          <Campo etiqueta={`Descontar de su crédito (debe ${fmt(saldo)})`} ayuda="Cruce de cuentas: se abona a su deuda en vez de pagarle esa parte.">
             <input className="inp num" type="number" min="0" step="any" inputMode="decimal" value={cruce} placeholder="0"
               onChange={(e) => setCruce(e.target.value)} />
           </Campo>

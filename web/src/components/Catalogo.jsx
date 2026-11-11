@@ -13,6 +13,7 @@ const PESTANAS = [
 ];
 
 const esTienda = (a) => a.tipo === "producto" && a.categoria_tipo === "tienda";
+const agotado = (a) => esTienda(a) && Number(a.stock) <= 0;
 
 // Artículos para tocar y agregar (venta directa y consumos de una cuenta).
 // cantidades: {articulo_id: n} para marcar lo ya agregado. version: cambiarla
@@ -60,7 +61,9 @@ export default function Catalogo({ onElegir, onCargados, cantidades = {}, versio
     api.vendibles(texto, undefined, { limite: 200 })
       .then((r) => {
         const elegido = r.find((a) => a.codigo === texto) || (r.length === 1 ? r[0] : null);
-        if (elegido) {
+        if (elegido && agotado(elegido)) {
+          setError(`${elegido.nombre} está agotado: no hay stock para venderlo.`);
+        } else if (elegido) {
           onElegir(elegido);
           setQ((actual) => (actual.trim() === texto ? "" : actual));
         } else {
@@ -91,8 +94,10 @@ export default function Catalogo({ onElegir, onCargados, cantidades = {}, versio
         {articulos.map((a) => {
           const n = cantidades[a.id] || 0;
           const bajo = esTienda(a) && Number(a.stock) <= Number(a.stock_minimo);
+          const sinStock = agotado(a);
           return (
-            <button key={a.id} type="button" className="prod" onClick={() => onElegir(a)} aria-label={`Agregar ${a.nombre}`}>
+            <button key={a.id} type="button" className="prod" onClick={() => onElegir(a)} disabled={sinStock}
+              aria-label={sinStock ? `${a.nombre}, agotado` : `Agregar ${a.nombre}`}>
               {n > 0 && <span className="qty num">{fmtCant(n)}</span>}
               <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, paddingRight: n > 0 ? 26 : 0, overflowWrap: "anywhere" }}>
                 {a.nombre}
@@ -101,7 +106,8 @@ export default function Catalogo({ onElegir, onCargados, cantidades = {}, versio
                 <span className="num" style={{ fontFamily: "'Bricolage Grotesque', Figtree, sans-serif", fontSize: 17, fontWeight: 700, color: "var(--accent-hover)", whiteSpace: "nowrap" }}>
                   {fmt(a.precio_venta)}
                 </span>
-                {esTienda(a) && <span className={`chip num ${bajo ? "warn" : "neu"}`}>{fmtCant(a.stock)}</span>}
+                {sinStock ? <span className="chip bad">Agotado</span>
+                  : esTienda(a) && <span className={`chip num ${bajo ? "warn" : "neu"}`}>{fmtCant(a.stock)}</span>}
               </span>
             </button>
           );

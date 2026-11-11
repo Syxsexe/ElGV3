@@ -26,7 +26,7 @@ def exigir_turno_abierto(conn, sesion_id) -> int:
     return turno["numero"]
 
 
-def _id_turno_abierto(conn):
+def id_turno_abierto(conn):
     fila = conn.execute("SELECT id FROM sesiones_caja WHERE cerrada_en IS NULL").fetchone()
     return fila["id"] if fila else None
 
@@ -95,7 +95,7 @@ def turno_actual(conn) -> dict:
     """{"turno": detalle del turno abierto} o, sin turno, {"turno": None,
     "cajas": las cajas activas para abrir, con lo que se contó al cerrar el
     turno anterior (la base que debería declararse)}."""
-    sesion_id = _id_turno_abierto(conn)
+    sesion_id = id_turno_abierto(conn)
     if sesion_id is not None:
         return {"turno": detalle_turno(conn, sesion_id)}
     cajas = conn.execute(

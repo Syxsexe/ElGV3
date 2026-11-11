@@ -176,6 +176,23 @@ export const api = {
   condonar: (cargoId, monto, motivo) =>
     request(`/creditos/cargos/${cargoId}/condonar`, { method: "POST", body: { monto, motivo } }),
 
+  itemsCompra: (q) => request(`/compras/items${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  // filtros: {proveedor_id, pendientes, desde, hasta}
+  compras: (filtros = {}) =>
+    request(`/compras?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  compra: (id) => request(`/compras/${id}`),
+  porPagar: () => request("/compras/por-pagar"),
+  registrarCompra: (body) => request("/compras", { method: "POST", body }),
+  borrarCompra: (id) => request(`/compras/${id}`, { method: "DELETE" }),
+  // filtros: {desde, hasta, tipo: "gasto" | "compra", categoria_gasto_id}
+  egresos: (filtros = {}) =>
+    request(`/egresos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  egreso: (id) => request(`/egresos/${id}`),
+  // body: {sesion_id, concepto, compra_id | categoria_gasto_id, tercero_id, pagos, cruce, notas}
+  registrarEgreso: (body) => request("/egresos", { method: "POST", body }),
+  anularEgreso: (id, sesionId, motivo) =>
+    request(`/egresos/${id}/anular`, { method: "POST", body: { sesion_id: sesionId, motivo } }),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

@@ -32,7 +32,7 @@ export const SIDEBAR_GROUPS = [
   {
     name: "Negocio",
     items: [
-      { label: "Gastos", path: null, d: "M12 3v14M6 11l6 6 6-6M4 21h16" },
+      { label: "Gastos", path: "/gastos", d: "M12 3v14M6 11l6 6 6-6M4 21h16" },
       { label: "Torneos", path: null, d: "M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8" },
       { label: "Documentos", path: null, d: "M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" },
       { label: "Doc. fiscales", path: null, d: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4" },

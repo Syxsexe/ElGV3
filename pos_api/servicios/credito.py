@@ -153,15 +153,15 @@ def registrar_cargo(conn, actor: Usuario, cliente_id, monto: Decimal, notas: str
     return detalle_credito(conn, cliente_id)
 
 
-def registrar_abono(conn, actor: Usuario, cliente_id, sesion_id, metodo_pago_id, monto: Decimal,
-                    aplicaciones: list[dict] | None = None, notas: str | None = None) -> dict:
-    """Plata que el cliente paga, en el turno que el cajero tiene en pantalla.
-    aplicaciones = [{cargo_id, monto}] dice qué cargos paga; sin ellas paga
-    primero los que vencen antes. Todo el abono queda aplicado: no puede
-    superar lo que el cliente debe."""
-    numero_turno = exigir_turno_abierto(conn, sesion_id)
+def aplicar_abono(conn, actor: Usuario, cliente_id, monto: Decimal, aplicaciones: list[dict] | None = None, *,
+                  sesion_id=None, metodo_pago_id=None, egreso_id=None, notas: str | None = None) -> dict:
+    """Inserta un abono y lo reparte entre cargos pendientes del cliente: con
+    plata (sesion_id + metodo_pago_id) o con un cruce de cuentas (egreso_id:
+    se le descuenta la deuda de lo que el negocio le paga). aplicaciones =
+    [{cargo_id, monto}] dice qué cargos paga; sin ellas paga primero los que
+    vencen antes. No puede superar lo que debe. Retorna {id, nombre, cargos,
+    deuda} (deuda = lo que debía antes del abono)."""
     cliente = _tomar_cliente(conn, cliente_id)
-    metodo = nombres_metodos(conn, [metodo_pago_id])[metodo_pago_id]
     pendientes = {c["id"]: c["pendiente"] for c in conn.execute(
         f"SELECT id, pendiente FROM v_cargos_credito WHERE cliente_id = %s AND pendiente > 0 ORDER BY {ORDEN_PAGO}",
         (cliente_id,))}
@@ -194,17 +194,27 @@ def registrar_abono(conn, actor: Usuario, cliente_id, sesion_id, metodo_pago_id,
             resto -= repartido[cargo_id]
 
     abono = conn.execute(
-        """INSERT INTO abonos_credito (cliente_id, sesion_id, metodo_pago_id, usuario_id, monto, notas)
-           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-        (cliente_id, sesion_id, metodo_pago_id, actor.id, monto, notas),
+        """INSERT INTO abonos_credito (cliente_id, sesion_id, metodo_pago_id, egreso_id, usuario_id, monto, notas)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (cliente_id, sesion_id, metodo_pago_id, egreso_id, actor.id, monto, notas),
     ).fetchone()
     conn.cursor().executemany(
         "INSERT INTO abono_aplicaciones (abono_id, cargo_id, monto) VALUES (%s, %s, %s)",
         [(abono["id"], cargo_id, m) for cargo_id, m in repartido.items()],
     )
+    return {"id": abono["id"], "nombre": cliente["nombre"], "cargos": len(repartido), "deuda": deuda}
+
+
+def registrar_abono(conn, actor: Usuario, cliente_id, sesion_id, metodo_pago_id, monto: Decimal,
+                    aplicaciones: list[dict] | None = None, notas: str | None = None) -> dict:
+    """Plata que el cliente paga, en el turno que el cajero tiene en pantalla."""
+    numero_turno = exigir_turno_abierto(conn, sesion_id)
+    metodo = nombres_metodos(conn, [metodo_pago_id])[metodo_pago_id]
+    abono = aplicar_abono(conn, actor, cliente_id, monto, aplicaciones,
+                          sesion_id=sesion_id, metodo_pago_id=metodo_pago_id, notas=notas)
     auditar(conn, actor.id, "credito",
-            f"Abono de {pesos(monto)} de {cliente['nombre']} ({metodo}) en el turno #{numero_turno}, "
-            f"aplicado a {len(repartido)} cargo(s); queda debiendo {pesos(deuda - monto)}",
+            f"Abono de {pesos(monto)} de {abono['nombre']} ({metodo}) en el turno #{numero_turno}, "
+            f"aplicado a {abono['cargos']} cargo(s); queda debiendo {pesos(abono['deuda'] - monto)}",
             "abonos_credito", abono["id"])
     return detalle_credito(conn, cliente_id)
 

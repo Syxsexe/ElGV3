@@ -14,6 +14,8 @@ import Caja from "./pages/Caja";
 import Venta from "./pages/Venta";
 import Cuentas from "./pages/Cuentas";
 import Creditos from "./pages/Creditos";
+import Proveedores from "./pages/Proveedores";
+import Gastos from "./pages/Gastos";
 
 export default function App() {
   return (
@@ -33,7 +35,8 @@ export default function App() {
         <Route path="/cuentas" element={<Cuentas />} />
         <Route path="/creditos" element={<Creditos />} />
         <Route path="/clientes" element={<Terceros key="cliente" rol="cliente" />} />
-        <Route path="/proveedores" element={<Terceros key="proveedor" rol="proveedor" />} />
+        <Route path="/proveedores" element={<Proveedores />} />
+        <Route path="/gastos" element={<Gastos />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -25,7 +25,7 @@ from pos_api import errores
 from pos_api.config import CORS_ORIGINS, DATABASE_URL
 from pos_api.db import abrir_pool, cerrar_pool, migraciones_pendientes
 from pos_api.routers import (auditoria_router, auth_router, caja_router, catalogo_router, configuracion_router,
-                             credito_router, terceros_router, usuarios_router, ventas_router)
+                             compras_router, credito_router, terceros_router, usuarios_router, ventas_router)
 
 
 @asynccontextmanager
@@ -62,6 +62,7 @@ app.include_router(terceros_router.router)
 app.include_router(caja_router.router)
 app.include_router(ventas_router.router)
 app.include_router(credito_router.router)
+app.include_router(compras_router.router)
 
 
 @app.get("/salud")

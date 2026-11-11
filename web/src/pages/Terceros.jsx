@@ -6,7 +6,8 @@ import ModalTercero from "../components/ModalTercero";
 import { documento, fmt } from "../format";
 
 // Lista de clientes o proveedores (rol), con búsqueda por nombre o documento.
-export default function Terceros({ rol }) {
+// sinTitulo: cuando va dentro de otra página que ya lo pone (Proveedores).
+export default function Terceros({ rol, sinTitulo = false }) {
   const { puede } = useAuth();
   const [q, setQ] = useState("");
   const [lista, setLista] = useState([]);
@@ -36,7 +37,7 @@ export default function Terceros({ rol }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <h1 style={{ fontSize: 28 }}>{esCliente ? "Clientes" : "Proveedores"}</h1>
+      {!sinTitulo && <h1 style={{ fontSize: 28 }}>{esCliente ? "Clientes" : "Proveedores"}</h1>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <input className="inp" placeholder="Buscar por nombre o documento" value={q} onChange={(e) => setQ(e.target.value)}
           style={{ maxWidth: 360 }} />

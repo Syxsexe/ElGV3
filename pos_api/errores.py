@@ -48,6 +48,9 @@ MENSAJES = {
     "categorias_nombre_key": "Ya existe una categoría con ese nombre.",
     "insumos_nombre_key": "Ya existe un insumo con ese nombre.",
     "productos_codigo_key": "Ya existe un producto con ese código.",
+    "compras_soporte_unico": "Ya hay una compra de ese proveedor con ese número de soporte.",
+    "compras_fe_con_cufe": "Una factura electrónica lleva su CUFE.",
+    "anulaciones_egreso_pkey": "Ese egreso ya está anulado.",
     "receta_preparacion_no_se_contiene": "Una preparación no puede usarse a sí misma en su receta.",
 }
 

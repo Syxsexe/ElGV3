@@ -107,7 +107,7 @@ def nombres_metodos(conn, ids: list) -> dict:
     return filas
 
 
-def _exigir_cupo(conn, cliente_id, fiado: Decimal) -> dict:
+def exigir_cupo(conn, cliente_id, fiado: Decimal) -> dict:
     if cliente_id is None:
         raise ErrorNegocio("Para fiar elige el cliente.")
     cupo = cupo_cliente(conn, cliente_id, bloquear=True)
@@ -148,7 +148,7 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
     if cobrado > total:
         raise ErrorNegocio(f"Se está cobrando {pesos(cobrado - total)} de más: el total es {pesos(total)} "
                            "(el cambio no se registra como pago).")
-    cupo = _exigir_cupo(conn, cliente_id, fiado) if fiado > 0 else None
+    cupo = exigir_cupo(conn, cliente_id, fiado) if fiado > 0 else None
     if cliente_id is not None and cupo is None:
         exigir_cliente(conn, cliente_id)
 

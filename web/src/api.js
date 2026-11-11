@@ -193,6 +193,14 @@ export const api = {
   anularEgreso: (id, sesionId, motivo) =>
     request(`/egresos/${id}/anular`, { method: "POST", body: { sesion_id: sesionId, motivo } }),
 
+  // filtros: {desde, hasta, juego_id}
+  torneos: (filtros = {}) =>
+    request(`/torneos?${new URLSearchParams(Object.entries(filtros).filter(([, v]) => v))}`),
+  torneo: (id) => request(`/torneos/${id}`),
+  inscripcionTorneo: () => request("/torneos/inscripcion"),
+  // body: {nombre, juego_id, sesion_id, precio, participantes: [{cliente_id | alias, forma, metodo_pago_id}], premios, notas}
+  registrarTorneo: (body) => request("/torneos", { method: "POST", body }),
+
   auditoria: (filtros) => {
     const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
     return request(`/auditoria?${params}`);

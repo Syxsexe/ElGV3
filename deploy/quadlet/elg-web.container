@@ -1,0 +1,26 @@
+# Web del POS (Caddy) en el puerto 80: sirve la app y pasa /api a elg-api.
+# Se actualiza sola junto con la API.
+[Unit]
+Description=El G POS - Web
+Wants=elg-api.service
+After=elg-api.service
+
+[Container]
+ContainerName=elg-web
+Image=ghcr.io/syxsexe/elgv3-web:latest
+AutoUpdate=registry
+Network=elg.network
+PublishPort=80:80
+HealthCmd=wget -q -O /dev/null http://127.0.0.1/
+HealthInterval=15s
+HealthRetries=3
+HealthStartPeriod=20s
+Notify=healthy
+
+[Service]
+Environment=REGISTRY_AUTH_FILE=%h/.config/containers/auth.json
+Restart=always
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target

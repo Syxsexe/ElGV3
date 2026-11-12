@@ -1,0 +1,8 @@
+[Unit]
+Description=El G POS - Respaldo de la base
+Requires=elg-db.service
+After=elg-db.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/elg/respaldo.sh

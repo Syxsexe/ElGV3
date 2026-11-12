@@ -1,0 +1,13 @@
+# Contexto de build de las imágenes de deploy/ (la raíz del repo): solo entra
+# lo que los Containerfile copian. Bases locales, entornos y dependencias fuera.
+**
+!pos_api/
+!db/migrar.py
+!db/migraciones/
+!web/
+!deploy/api-entrypoint.sh
+!deploy/Caddyfile
+**/__pycache__
+**/pruebas
+web/node_modules
+web/dist

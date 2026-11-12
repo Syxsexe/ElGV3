@@ -40,7 +40,10 @@ def test_cierre_de_turno_espera_a_una_venta_en_curso(url_prueba):
         cajero_b.close()
 
 
-def test_migracion_que_falla_no_deshace_las_anteriores(tmp_path, monkeypatch):
+@pytest.mark.parametrize("todo_o_nada, quedan", [(False, ["0001_bien"]), (True, [])])
+def test_migracion_que_falla(tmp_path, monkeypatch, todo_o_nada, quedan):
+    """Normal: lo anterior a la que falla queda aplicado. Todo o nada (el
+    arranque en el servidor): la base queda como estaba."""
     (tmp_path / "0001_bien.sql").write_text("CREATE TABLE tabla_bien (id int);")
     (tmp_path / "0002_mal.sql").write_text("CREATE TABLE tabla_mal (id int); SELECT 1 / 0;")
     monkeypatch.setattr(migrar, "CARPETA", tmp_path)
@@ -52,13 +55,13 @@ def test_migracion_que_falla_no_deshace_las_anteriores(tmp_path, monkeypatch):
     url = make_conninfo(**{**conninfo_to_dict(admin), "dbname": nombre})
     try:
         with pytest.raises(psycopg.errors.DivisionByZero):
-            migrar.aplicar(url, verbose=False)
+            migrar.aplicar(url, verbose=False, todo_o_nada=todo_o_nada)
         with psycopg.connect(url) as conn:
             versiones = [r[0] for r in conn.execute("SELECT version FROM schema_migraciones")]
             tablas = {r[0] for r in conn.execute(
                 "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'tabla_%'")}
-        assert versiones == ["0001_bien"]
-        assert tablas == {"tabla_bien"}
+        assert versiones == quedan
+        assert tablas == {"tabla_bien"} if quedan else not tablas
     finally:
         with psycopg.connect(admin, autocommit=True) as conn:
             conn.execute(f'DROP DATABASE IF EXISTS "{nombre}" WITH (FORCE)')

@@ -15,6 +15,8 @@ de git hasta el commit anterior a la limpieza.
 | `db/` | Esquema Postgres 18 (migraciones SQL numeradas) y sus pruebas |
 | `backend/` | Servicio de facturación electrónica DIAN (FastAPI + Postgres, adaptador Matias) |
 | `tests/` | Pruebas del backend DIAN (CUFE, QR, XML UBL 2.1, servidor mock) |
+| `deploy/` | Despliegue en el servidor del local: imágenes, servicios podman, respaldos ([guía](deploy/README.md)) |
+| `.github/workflows/` | CI/CD: pruebas en cada push; en `main`, publica las imágenes que el servidor instala solo |
 
 ## Desarrollo
 
@@ -105,6 +107,8 @@ La fase 3 (la API y la web sobre Postgres) está completa. Módulos:
 - **Administración:** usuarios, roles y permisos, datos del negocio, cajas y
   métodos de pago, mesas, categorías de gasto, juegos y auditoría.
 
+Despliegue: contenedores con podman en el servidor del local, actualización
+automática desde `main` y respaldos diarios (ver [deploy/README.md](deploy/README.md)).
+
 Pendiente: documentos fiscales (integrar `backend/` con `documentos_fiscales`
-cuando se facture electrónico), Libros (por definir), impresión de tickets de
-venta y el despliegue en el servidor del local.
+cuando se facture electrónico) y Libros (por definir).

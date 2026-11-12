@@ -1,0 +1,3 @@
+# Datos de Postgres: sobreviven a recrear o actualizar el contenedor.
+[Volume]
+VolumeName=elg-db

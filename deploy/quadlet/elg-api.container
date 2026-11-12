@@ -1,0 +1,29 @@
+# API del POS. Al arrancar aplica las migraciones pendientes. Se actualiza
+# sola de madrugada (podman-auto-update.timer): si la imagen nueva no queda
+# sana, podman vuelve a la anterior.
+[Unit]
+Description=El G POS - API
+Requires=elg-db.service
+After=elg-db.service
+
+[Container]
+ContainerName=elg-api
+Image=ghcr.io/syxsexe/elgv3-api:latest
+AutoUpdate=registry
+Network=elg.network
+# ELG_DATABASE_URL, ELG_JWT_SECRET… (los crea instalar.sh).
+EnvironmentFile=%h/.config/elg/api.env
+HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=4)"
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=120s
+Notify=healthy
+
+[Service]
+Environment=REGISTRY_AUTH_FILE=%h/.config/containers/auth.json
+Restart=always
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target

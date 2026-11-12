@@ -1,0 +1,10 @@
+# Respaldo diario a las 2:30 a. m., antes de las actualizaciones de las 3:00.
+[Unit]
+Description=El G POS - Respaldo diario
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

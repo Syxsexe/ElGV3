@@ -1,0 +1,41 @@
+# Web del POS en el puerto 80 de la red del local (sin HTTPS: solo LAN y
+# Tailscale, que ya cifra el tráfico). La API va por /api en el mismo origen.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+
+	# /api/ventas → elg-api:8000/ventas
+	handle_path /api/* {
+		reverse_proxy elg-api:8000
+	}
+
+	# Los assets llevan hash en el nombre: se guardan un año. Uno que ya no
+	# existe (una pestaña abierta desde antes de una actualización) da 404,
+	# nunca index.html.
+	handle /assets/* {
+		root * /srv
+		@existe file
+		header @existe Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Lo demás es la app: cualquier ruta sirve index.html, siempre fresco para
+	# que una actualización se vea al recargar.
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy same-origin
+		-Server
+	}
+}

@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from pos_api import errores
 from pos_api.config import CORS_ORIGINS, DATABASE_URL
-from pos_api.db import abrir_pool, cerrar_pool, migraciones_pendientes
+from pos_api.db import abrir_pool, cerrar_pool, migraciones_pendientes, transaccion
 from pos_api.routers import (auditoria_router, auth_router, caja_router, catalogo_router, configuracion_router,
                              compras_router, credito_router, documentos_router, terceros_router, torneos_router,
                              reportes_router, usuarios_router, ventas_router)
@@ -71,4 +71,7 @@ app.include_router(reportes_router.router)
 
 @app.get("/salud")
 def salud():
+    """Para el chequeo de salud del contenedor: la API responde y llega a la base."""
+    with transaccion() as conn:
+        conn.execute("SELECT 1")
     return {"ok": True}

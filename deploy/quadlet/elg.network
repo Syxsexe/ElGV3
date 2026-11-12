@@ -1,0 +1,4 @@
+# Red privada de los contenedores del POS: se encuentran por nombre
+# (elg-db, elg-api). Solo elg-web publica un puerto hacia afuera.
+[Network]
+NetworkName=elg

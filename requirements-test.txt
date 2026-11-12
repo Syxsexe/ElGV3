@@ -12,3 +12,4 @@ pillow              # backend de imagen que usa qrcode
 pydantic-settings   # backend/config.py (Settings)
 fastapi             # servidor mock DIAN (tests/test_mock_dian.py)
 uvicorn             # runner ASGI del servidor mock
+httpx               # TestClient de FastAPI (pos_api/pruebas)

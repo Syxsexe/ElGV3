@@ -1,0 +1,28 @@
+# PostgreSQL 18 del POS. Sin puerto publicado: solo lo ven los contenedores
+# de la red elg (los respaldos usan podman exec). No se actualiza solo: un
+# cambio de versión mayor de Postgres exige migrar los datos a mano.
+[Unit]
+Description=El G POS - PostgreSQL
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=elg-db
+Image=docker.io/library/postgres:18
+Network=elg.network
+Volume=elg-db.volume:/var/lib/postgresql
+# POSTGRES_USER, POSTGRES_PASSWORD y POSTGRES_DB (los crea instalar.sh).
+EnvironmentFile=%h/.config/elg/db.env
+Environment=TZ=America/Bogota PGTZ=America/Bogota
+ShmSize=256m
+HealthCmd=pg_isready -U elg -d elg
+HealthInterval=10s
+HealthRetries=5
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target

@@ -20,6 +20,9 @@ try:
 except ImportError:
     psycopg = None
 
+if (not URL or psycopg is None) and os.environ.get("PRUEBAS_EXIGIR"):
+    # En CI faltar la base o una dependencia es un error, no un salto.
+    raise RuntimeError("PRUEBAS_EXIGIR: faltan PRUEBAS_DATABASE_URL o dependencias para las pruebas de la base.")
 if not URL or psycopg is None:
     # Sin Postgres no hay nada que probar aquí: no se recolectan estas pruebas.
     collect_ignore_glob = ["test_*.py"]

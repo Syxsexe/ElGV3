@@ -7,7 +7,9 @@ set -euo pipefail
 
 DIR="$HOME/elg/respaldos"
 REMOTO="elg-drive:respaldos"
+umask 077   # los respaldos tienen todos los datos del negocio: solo el dueño
 mkdir -p "$DIR"
+chmod 700 "$DIR"
 archivo="$DIR/elg-$(date +%F_%H%M).dump"
 
 trap 'rm -f "$archivo.tmp"' EXIT   # un volcado a medias no queda suelto

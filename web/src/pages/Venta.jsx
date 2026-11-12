@@ -80,7 +80,7 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
         ) : cart.map((it) => (
           <div key={it.key} className={recienAgregada(it) ? "linea-entrar" : undefined} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border-2)" }}>
             <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.nombre}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere" }}>{it.nombre}</span>
               {it.detalle && <span style={{ fontSize: 13, overflowWrap: "anywhere" }}>{it.detalle}</span>}
               <span className="muted num" style={{ fontSize: 12 }}>{fmt(it.precio)} c/u</span>
             </div>

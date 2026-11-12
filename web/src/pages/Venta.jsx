@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import BuscarTercero from "../components/BuscarTercero";
 import Catalogo from "../components/Catalogo";
+import ElegirCombo from "../components/ElegirCombo";
 import { ErrorBanner } from "../components/Modal";
 import PagoModal from "../components/PagoModal";
 import { fmt, fmtCant } from "../format";
@@ -77,14 +78,15 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
             Toca un artículo para agregarlo.
           </div>
         ) : cart.map((it) => (
-          <div key={it.id} className={recienAgregada(it) ? "linea-entrar" : undefined} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border-2)" }}>
+          <div key={it.key} className={recienAgregada(it) ? "linea-entrar" : undefined} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border-2)" }}>
             <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.nombre}</span>
+              {it.detalle && <span style={{ fontSize: 13, overflowWrap: "anywhere" }}>{it.detalle}</span>}
               <span className="muted num" style={{ fontSize: 12 }}>{fmt(it.precio)} c/u</span>
             </div>
-            <button type="button" className="step" aria-label={`Quitar uno de ${it.nombre}`} onClick={() => setCantidad(it.id, it.cantidad - 1)}>−</button>
+            <button type="button" className="step" aria-label={`Quitar uno de ${it.nombre}`} onClick={() => setCantidad(it.key, it.cantidad - 1)}>−</button>
             <span className="num" style={{ minWidth: 24, textAlign: "center", fontWeight: 700 }}>{fmtCant(it.cantidad)}</span>
-            <button type="button" className="step" aria-label={`Agregar uno de ${it.nombre}`} onClick={() => setCantidad(it.id, it.cantidad + 1)}>+</button>
+            <button type="button" className="step" aria-label={`Agregar uno de ${it.nombre}`} onClick={() => setCantidad(it.key, it.cantidad + 1)}>+</button>
             <span className="num" style={{ width: 84, textAlign: "right", fontWeight: 700, fontSize: 14, whiteSpace: "nowrap" }}>{fmt(it.precio * it.cantidad)}</span>
           </div>
         ))}
@@ -112,7 +114,10 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
 export default function Venta() {
   const isMobile = useIsMobile();
   const { turno, error: errorTurno, recargar } = useTurno();
-  const [cart, setCart] = useState([]); // [{id, nombre, precio, cantidad, stock}] (stock solo en productos de tienda)
+  // [{key, articulo_id, nombre, base, recargo, precio, cantidad, stock, elecciones}]: stock solo en productos
+  // de tienda; elecciones y recargo en combos con grupos (key = artículo + lo elegido).
+  const [cart, setCart] = useState([]);
+  const [eligiendo, setEligiendo] = useState(null); // combo con grupos esperando que elijan
   const [aviso, setAviso] = useState("");
   const [cliente, setCliente] = useState(null);
   const [descuento, setDescuento] = useState("");
@@ -133,7 +138,7 @@ export default function Venta() {
   const subtotal = cart.reduce((a, it) => a + it.precio * it.cantidad, 0);
   const total = Math.max(0, subtotal - Number(descuento || 0));
   const unidades = cart.reduce((a, it) => a + it.cantidad, 0);
-  const cantidades = Object.fromEntries(cart.map((it) => [it.id, it.cantidad]));
+  const cantidades = cart.reduce((m, it) => ({ ...m, [it.articulo_id]: (m[it.articulo_id] || 0) + it.cantidad }), {});
 
   // Los productos de tienda no se venden por encima de su stock (el servidor
   // lo vuelve a exigir al cobrar; los combos solo los valida el servidor).
@@ -143,31 +148,46 @@ export default function Venta() {
     setAviso(it.stock > 0 ? `De ${it.nombre} solo hay ${fmtCant(it.stock)} en stock.` : `${it.nombre} está agotado.`);
     return false;
   };
-  const agregar = (a) => {
+  // eleccion (combo con grupos): {elecciones, recargo, texto, firma} de ElegirCombo.
+  const agregarLinea = (a, eleccion = null) => {
     setHecha(null);
     setAviso("");
-    const precio = Number(a.precio_venta);
+    const key = eleccion ? `${a.id}|${eleccion.firma}` : a.id;
+    const base = Number(a.precio_venta);
+    const recargo = eleccion?.recargo || 0;
     const stock = stockDe(a);
-    const actual = cart.find((it) => it.id === a.id);
+    const actual = cart.find((it) => it.key === key);
     if (!tope({ nombre: a.nombre, stock }, (actual?.cantidad || 0) + 1)) return;
-    setCart((c) => (c.some((it) => it.id === a.id)
-      ? c.map((it) => (it.id === a.id ? { ...it, precio, stock, cantidad: it.cantidad + 1 } : it))
-      : [...c, { id: a.id, nombre: a.nombre, precio, stock, cantidad: 1, agregada: Date.now() }]));
+    setCart((c) => (c.some((it) => it.key === key)
+      ? c.map((it) => (it.key === key ? { ...it, base, precio: base + it.recargo, stock, cantidad: it.cantidad + 1 } : it))
+      : [...c, {
+        key, articulo_id: a.id, nombre: a.nombre, detalle: eleccion?.texto || "",
+        base, recargo, precio: base + recargo, stock, cantidad: 1, elecciones: eleccion?.elecciones || [], agregada: Date.now(),
+      }]));
   };
-  // El servidor cobra el precio actual: si cambió, la línea se pone al día
-  // cada vez que el catálogo trae ese artículo.
+  const agregar = (a) => {
+    if (a.tipo === "combo" && a.tiene_grupos) {
+      setAviso("");
+      setEligiendo(a);
+    } else {
+      agregarLinea(a);
+    }
+  };
+  // El servidor cobra el precio actual (más los recargos de lo elegido): si
+  // cambió, la línea se pone al día cada vez que el catálogo trae ese artículo.
   // Lo mismo con el stock, para que el tope del carrito siga al día.
   const preciosAlDia = (articulos) => setCart((c) => {
-    const porId = new Map(articulos.map((a) => [a.id, { precio: Number(a.precio_venta), stock: stockDe(a) }]));
-    return c.some((it) => porId.has(it.id) && (porId.get(it.id).precio !== it.precio || porId.get(it.id).stock !== it.stock))
-      ? c.map((it) => (porId.has(it.id) ? { ...it, ...porId.get(it.id) } : it))
+    const porId = new Map(articulos.map((a) => [a.id, { base: Number(a.precio_venta), stock: stockDe(a) }]));
+    const nuevo = (it) => porId.get(it.articulo_id);
+    return c.some((it) => nuevo(it) && (nuevo(it).base !== it.base || nuevo(it).stock !== it.stock))
+      ? c.map((it) => (nuevo(it) ? { ...it, ...nuevo(it), precio: nuevo(it).base + it.recargo } : it))
       : c;
   });
-  const setCantidad = (id, cantidad) => {
+  const setCantidad = (key, cantidad) => {
     setAviso("");
-    const it = cart.find((x) => x.id === id);
+    const it = cart.find((x) => x.key === key);
     if (it && cantidad > it.cantidad && !tope(it, cantidad)) return;
-    setCart((c) => c.map((x) => (x.id === id ? { ...x, cantidad } : x)).filter((x) => x.cantidad > 0));
+    setCart((c) => c.map((x) => (x.key === key ? { ...x, cantidad } : x)).filter((x) => x.cantidad > 0));
   };
   const limpiar = () => {
     setCart([]);
@@ -178,7 +198,7 @@ export default function Venta() {
   // Si falla, el error se ve en el modal (lo lanza onCobrar).
   const cobrar = async (cobro, { cambio }) => {
     const venta = await api.vender(
-      cart.map((it) => ({ articulo_id: it.id, cantidad: it.cantidad })),
+      cart.map((it) => ({ articulo_id: it.articulo_id, cantidad: it.cantidad, elecciones: it.elecciones })),
       { ...cobro, sesion_id: turno.id, descuento: Number(descuento || 0) },
     );
     setCobrando(false);
@@ -259,6 +279,11 @@ export default function Venta() {
             {panel}
           </section>
         </div>
+      )}
+
+      {eligiendo && (
+        <ElegirCombo combo={eligiendo} onClose={() => setEligiendo(null)}
+          onElegir={(eleccion) => { agregarLinea(eligiendo, eleccion); setEligiendo(null); }} />
       )}
 
       {cobrando && (

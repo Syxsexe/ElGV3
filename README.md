@@ -57,7 +57,7 @@ Pruebas del backend DIAN:
 
 ## Base de datos Postgres (`db/`)
 
-El modelo relacional (63 tablas, Postgres 18) vive en `db/migraciones/` como
+El modelo relacional (67 tablas, Postgres 18) vive en `db/migraciones/` como
 archivos SQL numerados. No hay migración de datos desde la versión SQLite: el
 negocio se carga desde cero en la app.
 
@@ -97,7 +97,7 @@ La fase 3 (la API y la web sobre Postgres) está completa. Módulos:
   de insumos, preparaciones y productos de la tienda (costo calculado, precio a
   mano, sin stock propio: vender descuenta sus ingredientes y se ve para
   cuántos alcanza); insumos con stock y ajuste por conteo; preparaciones que se
-  producen por lotes; combos, adicionales y servicios; Proveedores con compras
+  producen por lotes; combos (productos fijos y grupos para elegir al pedirlo, como la bebida, con recargo opcional; se ve su costo, margen y para cuántos alcanza), adicionales y servicios; Proveedores con compras
   (actualizan stock y último costo) y cuentas por pagar.
 - **Negocio:** Gastos (por categoría, nómina, cruce de cuentas, anulación),
   Torneos (inscripciones, fiado por jugador, premios), Documentos
@@ -110,5 +110,5 @@ La fase 3 (la API y la web sobre Postgres) está completa. Módulos:
 Despliegue: contenedores con podman en el servidor del local, actualización
 automática desde `main` y respaldos diarios (ver [deploy/README.md](deploy/README.md)).
 
-Pendiente: documentos fiscales (integrar `backend/` con `documentos_fiscales`
+Pendiente: combos con opciones en Documentos (hoy solo en caja y cuentas), documentos fiscales (integrar `backend/` con `documentos_fiscales`
 cuando se facture electrónico) y Libros (por definir).

@@ -88,6 +88,9 @@ def test_costo_desde_hasta_alcanza_y_bloqueo(db, f):
     combo = _combo(db, f, fijos=[(papas, 2)], grupos=[("Bebida", 1, [(coca, 0), (cerveza, 2000)])])
     a = _articulo(db, combo)
     assert (a["costo"], a["costo_max"], a["tiene_grupos"], a["bloqueo"]) == (3500, 4500, True, None)
+    # Con Coca-Cola deja 8500 de 12000 (71%); con cerveza 9500 de 14000 (68%):
+    # más plata, menos porcentaje.
+    assert (a["margen_min"], a["margen_max"]) == (68, 71)
     # Papas para 5 combos; bebidas 3 + 1 = 4.
     assert a["alcanza"] == 4
 
@@ -105,6 +108,7 @@ def test_combo_sin_grupos_sigue_igual(db, f):
     combo = _combo(db, f, fijos=[(gaseosa, 2)])
     a = _articulo(db, combo)
     assert (a["costo"], a["costo_max"], a["tiene_grupos"], a["alcanza"], a["bloqueo"]) == (4000, 4000, False, 3, None)
+    assert (a["margen_min"], a["margen_max"]) == (67, 67)
 
 
 def test_elecciones_de_cuenta_solo_con_la_cuenta_abierta(db, f):

@@ -187,6 +187,33 @@ LANGUAGE sql STABLE AS $$
       FROM articulos a WHERE a.id = p_articulo
 $$;
 
+-- Margen del combo en % sobre lo cobrado (precio + recargos), el menor y el
+-- mayor entre todas las combinaciones de opciones activas: con una cerveza
+-- de recargo puede quedar más plata pero menos porcentaje. Los combos tienen
+-- pocos grupos y opciones, así que se recorren todas. NULL si algún grupo no
+-- tiene opciones activas o el combo no cobra nada.
+CREATE FUNCTION margenes_combo(p_combo uuid) RETURNS TABLE (minimo numeric, maximo numeric)
+LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE
+    grupos AS (SELECT id, cantidad, row_number() OVER (ORDER BY orden, nombre) AS n
+                 FROM combo_grupos WHERE combo_id = p_combo),
+    combinaciones (n, recargo, costo) AS (
+        SELECT 0::bigint, 0::numeric, 0::numeric
+        UNION ALL
+        SELECT g.n, c.recargo + op.recargo, c.costo + g.cantidad * p.precio_costo
+          FROM combinaciones c
+          JOIN grupos g ON g.n = c.n + 1
+          JOIN combo_opciones op ON op.grupo_id = g.id
+          JOIN productos p ON p.articulo_id = op.producto_id
+          JOIN articulos pa ON pa.id = op.producto_id
+         WHERE pa.activo),
+    margenes AS (
+        SELECT 100 * (a.precio_venta + c.recargo - costo_combo_fijo(a.id) - c.costo) / (a.precio_venta + c.recargo) AS m
+          FROM combinaciones c JOIN articulos a ON a.id = p_combo
+         WHERE c.n = (SELECT count(*) FROM grupos) AND a.precio_venta + c.recargo > 0)
+    SELECT round(min(m)), round(max(m)) FROM margenes
+$$;
+
 -- Unidades de un producto que hay para vender: el stock en la tienda, los
 -- platos que alcanzan en la cocina; NULL = sin límite (plato sin receta).
 CREATE FUNCTION unidades_disponibles(p_producto uuid) RETURNS numeric
@@ -249,15 +276,19 @@ SELECT a.id, a.tipo, a.nombre, a.activo, a.precio_venta,
             WHEN co.articulo_id IS NOT NULL THEN combos_disponibles(a.id) END AS alcanza,
        CASE WHEN co.articulo_id IS NOT NULL THEN costo_combo(a.id, true) END AS costo_max,
        (co.articulo_id IS NOT NULL AND EXISTS (SELECT 1 FROM combo_grupos g WHERE g.combo_id = a.id)) AS tiene_grupos,
-       CASE WHEN co.articulo_id IS NOT NULL THEN combo_bloqueo(a.id) END AS bloqueo
+       CASE WHEN co.articulo_id IS NOT NULL THEN combo_bloqueo(a.id) END AS bloqueo,
+       mc.minimo AS margen_min, mc.maximo AS margen_max
   FROM articulos a
   JOIN categorias c ON c.id = a.categoria_id
   JOIN impuestos i ON i.id = a.impuesto_id
   LEFT JOIN productos p ON p.articulo_id = a.id
   LEFT JOIN combos co ON co.articulo_id = a.id
-  LEFT JOIN adicionales ad ON ad.articulo_id = a.id;
+  LEFT JOIN adicionales ad ON ad.articulo_id = a.id
+  LEFT JOIN LATERAL margenes_combo(a.id) mc ON co.articulo_id IS NOT NULL;
 COMMENT ON COLUMN v_articulos.alcanza IS
     'Platos de cocina y combos: cuántos alcanzan con el stock de lo que llevan (NULL = sin límite o sin receta).';
 COMMENT ON COLUMN v_articulos.costo IS 'Combos con grupos: el costo con la opción más barata de cada grupo (el "desde").';
 COMMENT ON COLUMN v_articulos.costo_max IS 'Combos: el costo con la opción más cara de cada grupo (igual a costo si no tiene grupos).';
+COMMENT ON COLUMN v_articulos.margen_min IS
+    'Combos: el menor margen (en % sobre precio + recargos) entre las combinaciones de opciones activas; margen_max, el mayor.';
 COMMENT ON COLUMN v_articulos.bloqueo IS 'Combos: por qué no se puede vender (producto fijo desactivado o grupo sin opciones activas).';

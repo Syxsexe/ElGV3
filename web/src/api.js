@@ -114,6 +114,8 @@ export const api = {
   // filtros: {q, tipo, categoria_tipo}
   vendibles: (q, tipo, filtros = {}) =>
     request(`/catalogo/vendibles?${new URLSearchParams(Object.entries({ q, tipo, ...filtros }).filter(([, v]) => v))}`),
+  // Lo que se puede elegir en un combo con grupos (solo opciones activas, sin costos).
+  opcionesCombo: (id) => request(`/catalogo/vendibles/${id}/opciones`),
   categorias: () => request("/catalogo/categorias"),
   crearCategoria: (body) => request("/catalogo/categorias", { method: "POST", body }),
   editarCategoria: (id, body) => request(`/catalogo/categorias/${id}`, { method: "PATCH", body }),
@@ -165,8 +167,9 @@ export const api = {
   cuenta: (id) => request(`/cuentas/${id}`),
   abrirCuenta: (body) => request("/cuentas", { method: "POST", body }),
   editarCuenta: (id, body) => request(`/cuentas/${id}`, { method: "PATCH", body }),
-  agregarACuenta: (id, articuloId, cantidad = 1) =>
-    request(`/cuentas/${id}/items`, { method: "POST", body: { articulo_id: articuloId, cantidad } }),
+  // elecciones: [{grupo_id, producto_id}] en un combo con grupos.
+  agregarACuenta: (id, articuloId, cantidad = 1, elecciones = []) =>
+    request(`/cuentas/${id}/items`, { method: "POST", body: { articulo_id: articuloId, cantidad, elecciones } }),
   cantidadEnCuenta: (id, itemId, cantidad) =>
     request(`/cuentas/${id}/items/${itemId}`, { method: "PATCH", body: { cantidad } }),
   quitarDeCuenta: (id, itemId) => request(`/cuentas/${id}/items/${itemId}`, { method: "DELETE" }),

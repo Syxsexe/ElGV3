@@ -21,8 +21,9 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      <a href="#contenido" className="saltar">Saltar al contenido</a>
       <Sidebar />
-      <main className="app-main">
+      <main id="contenido" tabIndex={-1} className="app-main">
         <Outlet />
       </main>
       <TabBar />

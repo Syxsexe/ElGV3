@@ -5,6 +5,7 @@ import { useAuth } from "../AuthContext";
 import { digitoVerificacion, fmt } from "../format";
 import BuscarMunicipio from "./BuscarMunicipio";
 import Modal, { Campo, ErrorBanner, Seccion } from "./Modal";
+import { unaVez } from "../formularios";
 
 const VACIO = {
   tipo_persona: "natural", nombre: "", tipo_identificacion: "", numero_identificacion: "",
@@ -99,7 +100,7 @@ export default function ModalTercero({ terceroId, rol, onClose, onGuardado }) {
 
   return (
     <Modal titulo={nuevo ? (rol === "cliente" ? "Nuevo cliente" : "Nuevo proveedor") : f.nombre} onClose={onClose} ancho={600}>
-      <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={unaVez(guardar)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 12 }}>
           <Campo etiqueta="Nombre o razón social">
             <input className="inp" required value={f.nombre} onChange={cambiar("nombre")} />

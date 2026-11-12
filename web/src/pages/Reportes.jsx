@@ -119,7 +119,7 @@ function VentasDelRango({ desde, hasta, isMobile }) {
       .finally(() => setCargando(false));
   };
 
-  const columnas = isMobile ? "1fr auto" : "130px 70px minmax(0, 1fr) minmax(0, 1fr) 110px";
+  const columnas = isMobile ? "1fr auto" : "150px 64px minmax(0, 1fr) minmax(0, 1fr) 110px";
   return (
     <Bloque titulo="Ventas del periodo" nota={datos ? `${datos.total} ${Number(datos.total) === 1 ? "venta" : "ventas"} · toca una para ver su detalle` : null}>
       <input className="inp" type="search" aria-label="Buscar venta" placeholder="Buscar por cliente, mesa o número de venta"
@@ -136,7 +136,7 @@ function VentasDelRango({ desde, hasta, isMobile }) {
           {datos.ventas.map((v) => (
             <button key={v.id} type="button" role="row" className="tr" onClick={() => setAbierta(v.id)}
               aria-label={`Venta #${v.numero} por ${fmt(v.total)}`}
-              style={{ gridTemplateColumns: columnas, width: "100%", border: 0, background: "none", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+              style={{ gridTemplateColumns: columnas, width: "100%", border: 0, background: "none", fontFamily: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
               {isMobile ? (
                 <>
                   <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -147,7 +147,7 @@ function VentasDelRango({ desde, hasta, isMobile }) {
                 </>
               ) : (
                 <>
-                  <span className="num muted" style={{ fontSize: 13 }}>{fmtFechaHora(v.creada_en)}</span>
+                  <span className="num muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{fmtFechaHora(v.creada_en)}</span>
                   <span className="num">#{v.numero}</span>
                   <span style={{ overflowWrap: "anywhere" }}>
                     {v.cliente || <span className="muted">Consumidor final</span>}

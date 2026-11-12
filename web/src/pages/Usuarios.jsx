@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import BuscarTercero from "../components/BuscarTercero";
 import Modal, { Campo, ErrorBanner } from "../components/Modal";
+import { unaVez } from "../formularios";
 
 // Agrupa "inventario.editar" bajo "inventario" para mostrar los permisos por módulo.
 function porModulo(permisos) {
@@ -44,7 +45,7 @@ function ModalUsuario({ usuario, roles, onClose, onGuardado }) {
 
   return (
     <Modal titulo={nuevo ? "Nuevo usuario" : `Editar ${usuario.usuario}`} onClose={onClose}>
-      <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={unaVez(guardar)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {nuevo && (
           <Campo etiqueta="Usuario">
             <input className="inp" required autoComplete="off" value={nombre} onChange={(e) => setNombre(e.target.value)} />
@@ -136,7 +137,7 @@ function ModalRol({ rol, permisos, onClose, onGuardado }) {
 
   return (
     <Modal titulo={nuevo ? "Nuevo rol" : `Rol ${rol.nombre}`} onClose={onClose} ancho={520}>
-      <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={unaVez(guardar)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Campo etiqueta="Nombre">
           <input className="inp" required value={nombre} onChange={(e) => setNombre(e.target.value)} />
         </Campo>

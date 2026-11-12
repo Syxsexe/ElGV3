@@ -7,6 +7,7 @@ import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { centavos, fmt, fmtCant, fmtFechaHora } from "../format";
 import { useIsMobile } from "../useMediaQuery";
 import { useTurno } from "../useTurno";
+import { IconoQuitar } from "../components/Iconos";
 
 const FIADO = "fiado";
 const GRATIS = "gratis";
@@ -137,7 +138,7 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
                 {turno && j.cliente_id && <option value={FIADO}>Crédito</option>}
                 <option value={GRATIS}>Gratis</option>
               </select>
-              <button type="button" className="btn btn-g" aria-label={`Quitar a ${j.nombre}`} onClick={() => setJugadores((js) => js.filter((_, k) => k !== i))}>✕</button>
+              <button type="button" className="btn btn-g" aria-label={`Quitar a ${j.nombre}`} onClick={() => setJugadores((js) => js.filter((_, k) => k !== i))}><IconoQuitar /></button>
             </div>
           ))}
         </Seccion>
@@ -156,7 +157,7 @@ function ModalTorneo({ turno, onClose, onRegistrado }) {
               </span>
               <input className="inp num" type="number" min="0" step="any" inputMode="decimal" aria-label={`Cantidad de ${p.nombre}`} value={p.cantidad}
                 onChange={(e) => setPremios((ps) => ps.map((x, k) => (k === i ? { ...x, cantidad: e.target.value } : x)))} />
-              <button type="button" className="btn btn-g" aria-label={`Quitar premio ${p.nombre}`} onClick={() => setPremios((ps) => ps.filter((_, k) => k !== i))}>✕</button>
+              <button type="button" className="btn btn-g" aria-label={`Quitar premio ${p.nombre}`} onClick={() => setPremios((ps) => ps.filter((_, k) => k !== i))}><IconoQuitar /></button>
             </div>
           ))}
           {premios.length > 0 && (

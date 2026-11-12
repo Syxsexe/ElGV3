@@ -5,6 +5,8 @@ import EditorLineas from "../components/EditorLineas";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { fmt, fmtCant, fmtCosto, margen } from "../format";
 import { useIsMobile } from "../useMediaQuery";
+import { IconoQuitar } from "../components/Iconos";
+import { unaVez } from "../formularios";
 
 // Productos de tienda y platos de cocina son el mismo tipo de artículo
 // (producto); los separa el tipo de su categoría.
@@ -126,7 +128,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
   const titulo = `${nuevo ? "Nuevo" : "Editar"} ${nombreTipo}`;
   return (
     <Modal titulo={titulo} onClose={onClose} ancho={560}>
-      <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={unaVez(guardar)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Campo etiqueta="Nombre">
           <input className="inp" required value={f.nombre} onChange={cambiar("nombre")} />
         </Campo>
@@ -271,7 +273,7 @@ function RecetaPlato({ lineas, insumos, productos, precio, onChange }) {
       {lineas.length === 0 && <span className="muted" style={{ fontSize: 13 }}>Sin receta: el costo se escribe a mano.</span>}
       {filas.map((l, i) => (
         <div key={i} style={{ display: "grid", gap: 8, alignItems: "center",
-          gridTemplateColumns: isMobile ? "84px 36px minmax(0, 1fr) 32px" : "minmax(0, 1fr) 84px 36px 90px 32px",
+          gridTemplateColumns: isMobile ? "84px 36px minmax(0, 1fr) auto" : "minmax(0, 1fr) 84px 36px 90px auto",
           ...(isMobile && { paddingBottom: 8, borderBottom: "1px solid var(--border-2)" }) }}>
           <select className="inp" aria-label={`Ingrediente ${i + 1}`} value={l.id} style={{ minWidth: 0, gridColumn: isMobile ? "1 / -1" : undefined }}
             onChange={(e) => cambiar(i, { id: e.target.value, clase: deId.get(e.target.value)?.clase || "insumo" })}>
@@ -290,7 +292,7 @@ function RecetaPlato({ lineas, insumos, productos, precio, onChange }) {
           <span className="num" style={{ textAlign: "right", fontSize: 13 }} title={l.o ? `${fmtCosto(l.o.costoUnit)} por ${l.o.unidad}` : undefined}>
             {fmt(l.subtotal)}
           </span>
-          <button type="button" className="step" aria-label={`Quitar ${l.o?.nombre || "ingrediente"}`} onClick={() => onChange(lineas.filter((_, j) => j !== i))}>×</button>
+          <button type="button" className="step" aria-label={`Quitar ${l.o?.nombre || "ingrediente"}`} onClick={() => onChange(lineas.filter((_, j) => j !== i))}><IconoQuitar /></button>
         </div>
       ))}
       {libre && (
@@ -344,7 +346,7 @@ function ModalInsumo({ insumo, unidades, onClose, onGuardado, onAjustado }) {
   const unidad = unidades.find((u) => u.id === f.unidad_medida_id)?.simbolo || "";
   return (
     <Modal titulo={nuevo ? "Nuevo insumo" : `Editar ${insumo.nombre}`} onClose={onClose}>
-      <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={unaVez(guardar)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Campo etiqueta="Nombre">
           <input className="inp" required value={f.nombre} onChange={cambiar("nombre")} />
         </Campo>

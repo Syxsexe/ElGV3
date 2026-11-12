@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import CambiarContrasena from "../components/CambiarContrasena";
+import { IconoFlecha, IconoNav } from "../components/Iconos";
 import { SIDEBAR_GROUPS } from "../nav";
 
 // En el celular la barra inferior solo tiene los módulos de todos los días;
@@ -20,8 +21,11 @@ export default function Mas() {
           <div key={g.name} className="card" style={{ overflow: "hidden" }}>
             <div className="th" style={{ gridTemplateColumns: "1fr" }}><span>{g.name}</span></div>
             {items.map((it) => (
-              <NavLink key={it.label} to={it.path} end className="tr" style={{ gridTemplateColumns: "1fr", color: "var(--text)" }}>
-                {it.label}
+              <NavLink key={it.label} to={it.path} end className="tr"
+                style={{ gridTemplateColumns: "22px 1fr 16px", color: "var(--text)", fontWeight: 500 }}>
+                <IconoNav d={it.d} size={20} color="var(--accent)" />
+                <span>{it.label}</span>
+                <IconoFlecha color="var(--text-muted)" />
               </NavLink>
             ))}
           </div>

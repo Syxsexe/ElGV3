@@ -6,7 +6,7 @@ export default function TabBar() {
     <nav aria-label="Navegación principal" className="tabbar-nav" style={{
       position: "fixed", left: 0, right: 0, bottom: 0, background: "#FFFFFF",
       borderTop: "1px solid var(--border)", alignItems: "center",
-      padding: "0 8px 8px", zIndex: 10,
+      padding: "0 8px max(8px, env(safe-area-inset-bottom))", zIndex: 10,
     }}>
       {TABBAR_ITEMS.map((it) =>
         it.path ? (

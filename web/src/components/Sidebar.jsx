@@ -3,15 +3,7 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import CambiarContrasena from "./CambiarContrasena";
 import { SIDEBAR_GROUPS } from "../nav";
-
-function Icon({ d }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={d} />
-    </svg>
-  );
-}
+import { IconoNav } from "./Iconos";
 
 export default function Sidebar() {
   const { usuario, logout, puede } = useAuth();
@@ -35,7 +27,7 @@ export default function Sidebar() {
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Punto de venta</div>
         </div>
       </div>
-      <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 10, padding: "4px 12px", overflowY: "auto" }}>
+      <div className="sb-scroll" style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 10, padding: "4px 12px 12px", overflowY: "auto" }}>
         {SIDEBAR_GROUPS.map((g) => (
           <div key={g.name} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", padding: "6px 12px 4px" }}>
@@ -44,11 +36,12 @@ export default function Sidebar() {
             {g.items.filter((it) => puede(it.permiso)).map((it) =>
               it.path ? (
                 <NavLink key={it.label} to={it.path} end className={({ isActive }) => `sb-nav${isActive ? " on" : ""}`}>
-                  <Icon d={it.d} /><span>{it.label}</span>
+                  <IconoNav d={it.d} /><span>{it.label}</span>
                 </NavLink>
               ) : (
-                <span key={it.label} className="sb-nav disabled" title="Próximamente">
-                  <Icon d={it.d} /><span>{it.label}</span>
+                <span key={it.label} className="sb-nav disabled" aria-disabled="true"
+                  title="Este módulo todavía no está disponible">
+                  <IconoNav d={it.d} /><span>{it.label}</span><span className="pronto">Pronto</span>
                 </span>
               )
             )}

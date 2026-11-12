@@ -3,6 +3,7 @@ import { api } from "../api";
 import BuscarMunicipio from "../components/BuscarMunicipio";
 import { Campo, ErrorBanner } from "../components/Modal";
 import { olvidarEmpresa } from "../imprimir";
+import { unaVez } from "../formularios";
 
 const SECCIONES = [
   ["negocio", "Negocio"],
@@ -57,7 +58,7 @@ function Negocio() {
   };
 
   return (
-    <form onSubmit={guardar} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, maxWidth: 640 }}>
+    <form onSubmit={unaVez(guardar)} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, maxWidth: 640 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
         <Campo etiqueta="Nombre o razón social">
           <input className="inp" required value={datos.nombre} onChange={cambiar("nombre")} />

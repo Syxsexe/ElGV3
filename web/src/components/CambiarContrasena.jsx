@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, setToken } from "../api";
 import Modal, { Campo, ErrorBanner } from "./Modal";
+import { unaVez } from "../formularios";
 
 export default function CambiarContrasena({ onClose }) {
   const [actual, setActual] = useState("");
@@ -31,7 +32,7 @@ export default function CambiarContrasena({ onClose }) {
           <button type="button" className="btn btn-p" onClick={onClose}>Cerrar</button>
         </>
       ) : (
-        <form onSubmit={guardar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={unaVez(guardar)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <Campo etiqueta="Contraseña actual">
             <input className="inp" type="password" autoComplete="current-password" required
               value={actual} onChange={(e) => setActual(e.target.value)} />

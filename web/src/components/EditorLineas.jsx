@@ -3,6 +3,7 @@
 // lineas: [{id, cantidad}] con cantidad como texto (se manda tal cual a la API).
 // opciones: [{id, nombre, activo}] con TODOS los elementos: los inactivos solo
 // aparecen en la línea que ya los usa (para no mostrar otro en su lugar).
+import { IconoQuitar } from "./Iconos";
 export default function EditorLineas({ opciones, lineas, onChange, unidad = () => "", etiquetaVacia = "Sin componentes." }) {
   const usados = new Set(lineas.map((l) => l.id));
   const cambiar = (i, campo, valor) => onChange(lineas.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)));
@@ -22,7 +23,7 @@ export default function EditorLineas({ opciones, lineas, onChange, unidad = () =
           <input className="inp num" inputMode="decimal" required value={l.cantidad} style={{ width: 90 }}
             onChange={(e) => cambiar(i, "cantidad", e.target.value)} aria-label="Cantidad" />
           <span className="muted" style={{ width: 32, fontSize: 13 }}>{unidad(l.id)}</span>
-          <button type="button" className="step" aria-label="Quitar" onClick={() => onChange(lineas.filter((_, j) => j !== i))}>×</button>
+          <button type="button" className="step" aria-label="Quitar" onClick={() => onChange(lineas.filter((_, j) => j !== i))}><IconoQuitar /></button>
         </div>
       ))}
       {libre && (

@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import { centavos, fmt } from "../format";
 import BuscarTercero from "./BuscarTercero";
 import Modal, { Campo, ErrorBanner, Seccion } from "./Modal";
+import { IconoQuitar } from "./Iconos";
 
 const num = (v) => centavos(Number(v) || 0);
 
@@ -133,7 +134,7 @@ export default function ModalEgreso({ turno, compra, onClose, onHecho }) {
               <input className="inp num" type="number" min="0" step="any" inputMode="decimal" aria-label={`Monto ${i + 1}`}
                 value={f.monto} onChange={(e) => cambiarFila(i, { monto: e.target.value })} />
               <button type="button" className="btn btn-g" aria-label={`Quitar el método ${i + 1}`} disabled={filas.length === 1}
-                onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}>✕</button>
+                onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}><IconoQuitar /></button>
             </div>
           ))}
           {metodos?.length > 1 && (

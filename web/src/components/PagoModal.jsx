@@ -3,6 +3,7 @@ import { api } from "../api";
 import { centavos, fmt } from "../format";
 import BuscarTercero from "./BuscarTercero";
 import Modal, { Campo, ErrorBanner, Seccion } from "./Modal";
+import { IconoQuitar } from "./Iconos";
 
 const FIADO = "fiado";
 const DIVIDIR = "dividir";
@@ -171,7 +172,7 @@ export default function PagoModal({ total, cliente, cajas, onCobrar, onClose }) 
                 <input className="inp num" type="number" min="0" step="any" inputMode="decimal" aria-label={`Monto del pago ${i + 1}`}
                   value={f.monto} onChange={(e) => cambiarFila(i, { monto: e.target.value })} />
                 <button type="button" className="btn btn-g" aria-label={`Quitar el pago ${i + 1}`} disabled={filas.length === 1}
-                  onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}>✕</button>
+                  onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}><IconoQuitar /></button>
               </div>
             ))}
             <button type="button" className="btn btn-s" style={{ alignSelf: "flex-start" }} disabled={pendiente <= 0}

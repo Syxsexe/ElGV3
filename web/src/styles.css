@@ -23,6 +23,14 @@
   --warn-bg: #FBEFD2;
   --warn-text: #7A4D05;
   --neu-bg: #F1ECE3;
+  /* Borde de campos de texto: 3:1 contra blanco y contra el fondo (WCAG 1.4.11). */
+  --border-input: #978C7E;
+  /* Borde de botones secundarios y controles con texto propio. */
+  --border-control: #D9D1C4;
+  --focus: #1E6E64;
+  /* Texto de algo no disponible: tenue pero legible (3:1 sobre blanco). */
+  --text-disabled: #948B7F;
+  --ease: cubic-bezier(.2, .8, .2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -32,6 +40,21 @@ body {
   background: var(--bg);
   font-family: Figtree, "Segoe UI", system-ui, sans-serif;
   color: var(--text);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Sin el retardo de doble toque en botones y enlaces (pantallas táctiles). */
+a, button, input, select, textarea, label { touch-action: manipulation; }
+
+/* Foco visible para teclado en todo lo interactivo (no al tocar o hacer clic). */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.inp:focus-visible { outline-offset: 0; }
+
+/* Quien pide menos movimiento no ve transiciones ni escalados. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -62,28 +85,35 @@ button { font-family: inherit; }
   text-decoration: none;
   white-space: nowrap;
   box-sizing: border-box;
+  transition: background-color .15s var(--ease), border-color .15s var(--ease), transform .1s var(--ease);
 }
+.btn:active:not(:disabled) { transform: scale(.98); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-p { background: var(--accent); color: #fff; }
 .btn-p:hover:not(:disabled) { background: var(--accent-hover); color: #fff; }
-.btn-s { background: #fff; color: var(--text); border-color: #D9D1C4; }
+.btn-s { background: #fff; color: var(--text); border-color: var(--border-control); }
 .btn-s:hover:not(:disabled) { background: var(--bg); }
 .btn-g { background: var(--neu-bg); color: var(--text); }
+.btn-g:hover:not(:disabled) { background: #E8E1D5; }
 .btn-d { background: #fff; color: var(--danger); border-color: var(--danger-border); }
 .btn-d:hover:not(:disabled) { background: var(--danger-bg); }
 
 .inp {
   font: 400 14px Figtree, sans-serif;
   height: 40px;
-  border: 1px solid #D9D1C4;
+  border: 1px solid var(--border-input);
   border-radius: 10px;
   padding: 0 12px;
   background: #fff;
   color: var(--text);
   box-sizing: border-box;
   width: 100%;
+  transition: border-color .15s var(--ease);
 }
+.inp::placeholder { color: #8A8075; }
+.inp:hover:not(:disabled):not(:focus) { border-color: #7D7366; }
 .inp:focus { outline: 3px solid #BFE0D8; border-color: var(--accent); }
+.inp:disabled { background: var(--surface-2); color: var(--text-muted); cursor: not-allowed; }
 
 .lbl { font-size: 13px; font-weight: 600; color: var(--text-label); }
 .muted { color: var(--text-muted); }
@@ -104,6 +134,8 @@ button { font-family: inherit; }
 .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
 .chip.bad { background: var(--danger-bg); color: #8E2A20; }
 .chip.neu { background: var(--neu-bg); color: var(--text-label); }
+/* Un chip que se toca (interruptor activo/inactivo) necesita más área. */
+button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
 
 .th {
   display: grid;
@@ -128,6 +160,8 @@ button { font-family: inherit; }
 /* Tablas en tarjeta: en pantallas angostas se deslizan de lado en vez de
    cortar columnas. */
 .tabla { overflow-x: auto; }
+.tr:is(a, button) { transition: background-color .12s var(--ease); }
+.tr:is(a, button):hover { background: var(--surface-2); }
 .tabla > .th, .tabla > .tr { min-width: 620px; }
 
 .seg { display: inline-flex; background: var(--neu-bg); border-radius: 12px; padding: 4px; gap: 4px; }
@@ -140,7 +174,9 @@ button { font-family: inherit; }
   padding: 0 14px;
   border-radius: 9px;
   cursor: pointer;
+  transition: background-color .15s var(--ease), color .15s var(--ease);
 }
+.seg button:hover:not(.on) { color: var(--text); }
 .seg button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(42, 38, 34, .14); }
 
 .mesa {
@@ -157,8 +193,10 @@ button { font-family: inherit; }
   color: var(--text);
   box-sizing: border-box;
   width: 100%;
+  transition: border-color .15s var(--ease), transform .1s var(--ease);
 }
 .mesa:hover { border-color: var(--accent); }
+.mesa:active { transform: scale(.985); }
 .mesa.on { border: 2px solid var(--accent); background: #F4FAF8; padding: 15px; }
 
 .prod {
@@ -176,8 +214,10 @@ button { font-family: inherit; }
   min-height: 100px;
   box-sizing: border-box;
   position: relative;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease), transform .1s var(--ease);
 }
 .prod:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(30, 110, 100, .12); }
+.prod:active:not(:disabled) { transform: scale(.98); }
 
 .qty {
   position: absolute;
@@ -200,7 +240,7 @@ button { font-family: inherit; }
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  border: 1px solid #D9D1C4;
+  border: 1px solid var(--border-control);
   background: #fff;
   font: 700 16px Figtree, sans-serif;
   color: var(--text);
@@ -215,11 +255,12 @@ button { font-family: inherit; }
   font: 600 13px Figtree, sans-serif;
   height: 44px;
   border-radius: 10px;
-  border: 1px solid #D9D1C4;
+  border: 1px solid var(--border-control);
   background: #fff;
   color: var(--text);
   cursor: pointer;
 }
+.pay:hover:not(.on) { border-color: var(--accent); }
 .pay.on { border: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent-hover); }
 
 .pill {
@@ -227,12 +268,14 @@ button { font-family: inherit; }
   height: 40px;
   padding: 0 16px;
   border-radius: 999px;
-  border: 1px solid #D9D1C4;
+  border: 1px solid var(--border-control);
   background: #fff;
   color: var(--text-label);
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color .15s var(--ease), border-color .15s var(--ease);
 }
+.pill:hover:not(.on) { border-color: var(--text-muted); }
 .pill.on { background: var(--text); border-color: var(--text); color: #fff; }
 
 /* ── Navegación: Sidebar (desktop) / TabBar (móvil) ─────────────────────── */
@@ -240,17 +283,22 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 34px;
+  height: 36px;
   padding: 0 12px;
   border-radius: 10px;
   color: var(--text-label);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
+  transition: background-color .12s var(--ease);
 }
 .sb-nav:hover { background: #F4EFE7; color: var(--text); }
 .sb-nav.on { background: #DCEFEA; color: var(--accent-hover); font-weight: 700; }
-.sb-nav.disabled { color: #B7AFA3; cursor: default; pointer-events: none; }
+/* Módulo aún no disponible: legible (3:1) y con la etiqueta "Pronto". */
+.sb-nav.disabled { color: var(--text-disabled); cursor: default; }
+.sb-nav.disabled:hover { background: none; color: var(--text-disabled); }
+.sb-nav .pronto { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--text-muted); background: var(--neu-bg); border-radius: 99px; padding: 1px 8px; }
+.sb-scroll { scrollbar-width: thin; scrollbar-color: var(--border-control) transparent; }
 .sb-nav svg { flex-shrink: 0; }
 
 .tb {
@@ -270,9 +318,9 @@ button { font-family: inherit; }
   border: 0;
 }
 .tb.on { color: var(--accent-hover); }
-.tb .ic { width: 52px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; }
+.tb .ic { width: 52px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; transition: background-color .15s var(--ease); }
 .tb.on .ic { background: #DCEFEA; }
-.tb.disabled { color: #C9C1B4; pointer-events: none; }
+.tb.disabled { color: var(--text-disabled); pointer-events: none; }
 
 /* ── Layout responsivo: desktop >=880px con sidebar fija; móvil con tab bar */
 .app-shell { display: flex; min-height: 100vh; }
@@ -292,7 +340,20 @@ button { font-family: inherit; }
   .mobile-only { display: initial; }
   .sidebar-nav { display: none; }
   .tabbar-nav { display: flex; }
-  .app-main { padding: 16px 16px 84px; }
+  .app-main { padding: 16px 16px calc(84px + env(safe-area-inset-bottom)); }
+  /* 16px en los campos: el iPhone no hace zoom al tocarlos. */
+  .inp { font-size: 16px; }
+}
+
+/* Pantallas táctiles (celular, tablet): áreas de toque de 44px como mínimo. */
+@media (pointer: coarse) {
+  .btn, .inp, .pill { min-height: 44px; }
+  .inp:not(textarea) { height: 44px; }
+  .seg button { height: 40px; }
+  .step { width: 44px; height: 44px; }
+  .pay { height: 48px; }
+  button.chip { height: 36px; }
+  .tr:is(a, button) { min-height: 48px; }
 }
 
 /* ── Login ───────────────────────────────────────────────────────────────── */
@@ -324,3 +385,46 @@ button { font-family: inherit; }
 }
 .step:disabled { opacity: .45; cursor: default; }
 .prod:disabled { cursor: not-allowed; background: var(--surface-2); opacity: .7; box-shadow: none; border-color: var(--border-2); }
+
+/* ── Ventanas modales ────────────────────────────────────────────────────── */
+.modal-fondo {
+  position: fixed; inset: 0; z-index: 50; padding: 16px;
+  background: rgba(42, 38, 34, .45);
+  display: flex; align-items: center; justify-content: center;
+  animation: aparecer .15s var(--ease);
+}
+.modal-caja {
+  max-width: 100%; overflow-y: auto; overscroll-behavior: contain;
+  max-height: calc(100vh - 32px);   /* navegadores sin dvh */
+  max-height: calc(100dvh - 32px);  /* celular: descuenta las barras del navegador */
+  padding: 24px; display: flex; flex-direction: column; gap: 16px;
+  box-shadow: 0 12px 40px rgba(42, 38, 34, .18);
+  animation: subir .18s var(--ease);
+}
+.modal-caja:focus { outline: none; }
+.modal-cerrar {
+  flex-shrink: 0; width: 36px; height: 36px; margin: -6px -8px 0 0; border: 0; border-radius: 10px;
+  background: none; color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background-color .12s var(--ease), color .12s var(--ease);
+}
+.modal-cerrar:hover { background: var(--neu-bg); color: var(--text); }
+@media (pointer: coarse) { .modal-cerrar { width: 44px; height: 44px; margin: -10px -12px 0 0; } }
+@media (max-width: 880px) { .modal-caja { padding: 20px; } }
+@keyframes aparecer { from { opacity: 0; } }
+@keyframes subir { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+/* Formulario enviándose (formularios.js): el botón de enviar espera. */
+form[aria-busy="true"] :is([type="submit"], button:not([type])) { opacity: .6; cursor: progress; pointer-events: none; }
+
+/* Título de una sección dentro de una página (Inicio: Hoy, Pendientes). */
+h2.seccion { font-size: 13px; font-family: Figtree, sans-serif; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted); margin: 4px 0 -8px; }
+
+/* Enlace para saltar el menú con el teclado: invisible hasta recibir foco. */
+.saltar {
+  position: fixed; top: 8px; left: 8px; z-index: 100; padding: 10px 16px; border-radius: 10px;
+  background: var(--accent); color: #fff; font-weight: 600; transform: translateY(-200%);
+}
+.saltar:focus { transform: none; color: #fff; }
+.app-main:focus { outline: none; }

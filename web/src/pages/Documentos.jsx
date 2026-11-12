@@ -8,6 +8,7 @@ import PagoModal from "../components/PagoModal";
 import { centavos, fmt, fmtCant, fmtFecha, fmtFechaHora } from "../format";
 import { useIsMobile } from "../useMediaQuery";
 import { useTurno } from "../useTurno";
+import { IconoQuitar } from "../components/Iconos";
 
 const TIPOS = [["cotizacion", "Cotización", "Cotizaciones"], ["orden_pedido", "Orden de pedido", "Órdenes"], ["remision", "Remisión", "Remisiones"]];
 const nombreTipo = (t) => TIPOS.find(([k]) => k === t)?.[1] ?? t;
@@ -117,7 +118,7 @@ function EditorDocumento({ documento, onClose, onGuardado }) {
                   </Campo>
                 </div>
                 <button type="button" className="btn btn-g" style={{ marginTop: 22 }} aria-label={`Quitar línea ${i + 1}`}
-                  onClick={() => setLineas((ls) => ls.filter((_, k) => k !== i))}>✕</button>
+                  onClick={() => setLineas((ls) => ls.filter((_, k) => k !== i))}><IconoQuitar /></button>
               </div>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", alignItems: "end" }}>
                 <Campo etiqueta="Cantidad">

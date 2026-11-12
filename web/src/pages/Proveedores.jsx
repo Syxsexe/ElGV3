@@ -9,6 +9,7 @@ import { centavos, fmt, fmtCant, fmtCosto, fmtFecha, fmtFechaHora } from "../for
 import { useIsMobile } from "../useMediaQuery";
 import { useTurno } from "../useTurno";
 import Terceros from "./Terceros";
+import { IconoQuitar } from "../components/Iconos";
 
 const SOPORTES = [["factura", "Factura"], ["factura_electronica", "Factura electrónica"], ["pos", "Tiquete POS"], ["otro", "Otro / sin soporte"]];
 const nombreSoporte = (c) => SOPORTES.find(([k]) => k === c.tipo_soporte)?.[1] + (c.numero_soporte ? ` ${c.numero_soporte}` : "");
@@ -132,7 +133,7 @@ function ModalCompra({ onClose, onRegistrada }) {
                     {l.tipo === "insumo" ? `Insumo, en ${l.unidad}` : "Producto"} · {fmt((Number(l.cantidad) || 0) * (Number(l.costo) || 0))}
                   </span>
                 </div>
-                <button type="button" className="btn btn-g" aria-label={`Quitar ${l.nombre}`} onClick={() => setLineas((ls) => ls.filter((_, j) => j !== i))}>✕</button>
+                <button type="button" className="btn btn-g" aria-label={`Quitar ${l.nombre}`} onClick={() => setLineas((ls) => ls.filter((_, j) => j !== i))}><IconoQuitar /></button>
               </div>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
                 <Campo etiqueta="Cantidad">
@@ -286,7 +287,7 @@ function Compras({ filtroInicial, turno }) {
           <span className="chip neu">
             {filtros.proveedor.nombre}{" "}
             <button type="button" aria-label="Quitar el filtro de proveedor" onClick={() => setFiltros((f) => ({ ...f, proveedor: null }))}
-              style={{ border: 0, background: "none", cursor: "pointer", font: "inherit", padding: 0 }}>✕</button>
+              style={{ border: 0, background: "none", cursor: "pointer", color: "inherit", padding: 0, width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 99, marginRight: -6 }}><IconoQuitar size={14} /></button>
           </span>
         )}
         <button type="button" className="btn btn-p" style={{ marginLeft: "auto" }} onClick={() => setNueva(true)}>+ Nueva compra</button>

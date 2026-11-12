@@ -4,32 +4,43 @@
 @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap");
 
 :root {
-  --bg: #F7F4EE;
+  /* Paleta "naranja cálido" (perfil de comida de la skill ui-ux-pro-max),
+     adaptada a fondo claro; contrastes verificados (texto ≥4.5:1, bordes de
+     campos ≥3:1). El error es frambuesa para no confundirse con el naranja. */
+  --bg: #FFF7ED;
   --surface: #FFFFFF;
-  --surface-2: #FBF9F5;
-  --border: #E4DDD1;
-  --border-2: #EFE9DF;
-  --text: #2A2622;
-  --text-muted: #6B635A;
-  --text-label: #4A433C;
-  --accent: #1E6E64;
-  --accent-hover: #15524A;
-  --accent-soft: #E8F3F0;
-  --danger: #B83A2E;
-  --danger-border: #EBC3BD;
-  --danger-bg: #F8DEDA;
-  --ok-bg: #DFF1E4;
-  --ok-text: #1F5E39;
-  --warn-bg: #FBEFD2;
-  --warn-text: #7A4D05;
-  --neu-bg: #F1ECE3;
+  --surface-2: #FFFBF5;
+  --border: #EEDFCE;
+  --border-2: #F5EADF;
+  --text: #1C1917;
+  --text-muted: #6B5D52;
+  --text-label: #44403C;
+  --accent: #C2410C;
+  --accent-hover: #9A3412;
+  --accent-soft: #FFEDD5;
+  --accent-ring: #FED7AA;
+  --link: #1D4ED8;
+  --link-hover: #1E40AF;
+  --danger: #BE123C;
+  --danger-border: #FECDD3;
+  --danger-bg: #FFE4E6;
+  --danger-text: #9F1239;
+  --ok-bg: #DCFCE7;
+  --ok-text: #166534;
+  --warn-bg: #FEF3C7;
+  --warn-text: #92400E;
+  --neu-bg: #F5EBDF;
+  --neu-hover: #EDDCC9;
   /* Borde de campos de texto: 3:1 contra blanco y contra el fondo (WCAG 1.4.11). */
-  --border-input: #978C7E;
+  --border-input: #A08B77;
+  --border-input-hover: #857160;
   /* Borde de botones secundarios y controles con texto propio. */
-  --border-control: #D9D1C4;
-  --focus: #1E6E64;
+  --border-control: #E5D3BF;
+  --focus: #1D4ED8;
   /* Texto de algo no disponible: tenue pero legible (3:1 sobre blanco). */
-  --text-disabled: #948B7F;
+  --text-disabled: #9A8877;
+  --nav-hover: #FBF0E3;
+  --sombra: 28, 25, 23;
   --ease: cubic-bezier(.2, .8, .2, 1);
 }
 
@@ -57,8 +68,8 @@ a, button, input, select, textarea, label { touch-action: manipulation; }
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { color: var(--accent-hover); }
+a { color: var(--link); text-decoration: none; }
+a:hover { color: var(--link-hover); text-decoration: underline; }
 
 h1, h2, h3 {
   font-family: "Bricolage Grotesque", Figtree, sans-serif;
@@ -94,7 +105,7 @@ button { font-family: inherit; }
 .btn-s { background: #fff; color: var(--text); border-color: var(--border-control); }
 .btn-s:hover:not(:disabled) { background: var(--bg); }
 .btn-g { background: var(--neu-bg); color: var(--text); }
-.btn-g:hover:not(:disabled) { background: #E8E1D5; }
+.btn-g:hover:not(:disabled) { background: var(--neu-hover); }
 .btn-d { background: #fff; color: var(--danger); border-color: var(--danger-border); }
 .btn-d:hover:not(:disabled) { background: var(--danger-bg); }
 
@@ -110,9 +121,9 @@ button { font-family: inherit; }
   width: 100%;
   transition: border-color .15s var(--ease);
 }
-.inp::placeholder { color: #8A8075; }
-.inp:hover:not(:disabled):not(:focus) { border-color: #7D7366; }
-.inp:focus { outline: 3px solid #BFE0D8; border-color: var(--accent); }
+.inp::placeholder { color: #8C7B6C; }
+.inp:hover:not(:disabled):not(:focus) { border-color: var(--border-input-hover); }
+.inp:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
 .inp:disabled { background: var(--surface-2); color: var(--text-muted); cursor: not-allowed; }
 
 .lbl { font-size: 13px; font-weight: 600; color: var(--text-label); }
@@ -132,7 +143,7 @@ button { font-family: inherit; }
 }
 .chip.ok { background: var(--ok-bg); color: var(--ok-text); }
 .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
-.chip.bad { background: var(--danger-bg); color: #8E2A20; }
+.chip.bad { background: var(--danger-bg); color: var(--danger-text); }
 .chip.neu { background: var(--neu-bg); color: var(--text-label); }
 /* Un chip que se toca (interruptor activo/inactivo) necesita más área. */
 button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
@@ -177,7 +188,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
   transition: background-color .15s var(--ease), color .15s var(--ease);
 }
 .seg button:hover:not(.on) { color: var(--text); }
-.seg button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(42, 38, 34, .14); }
+.seg button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(var(--sombra), .14); }
 
 .mesa {
   font-family: Figtree, sans-serif;
@@ -197,7 +208,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
 }
 .mesa:hover { border-color: var(--accent); }
 .mesa:active { transform: scale(.985); }
-.mesa.on { border: 2px solid var(--accent); background: #F4FAF8; padding: 15px; }
+.mesa.on { border: 2px solid var(--accent); background: var(--surface-2); padding: 15px; }
 
 .prod {
   font-family: Figtree, sans-serif;
@@ -216,7 +227,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
   position: relative;
   transition: border-color .15s var(--ease), box-shadow .15s var(--ease), transform .1s var(--ease);
 }
-.prod:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(30, 110, 100, .12); }
+.prod:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(194, 65, 12, .14); }
 .prod:active:not(:disabled) { transform: scale(.98); }
 
 .qty {
@@ -292,8 +303,8 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
   font-weight: 500;
   transition: background-color .12s var(--ease);
 }
-.sb-nav:hover { background: #F4EFE7; color: var(--text); }
-.sb-nav.on { background: #DCEFEA; color: var(--accent-hover); font-weight: 700; }
+.sb-nav:hover { background: var(--nav-hover); color: var(--text); }
+.sb-nav.on { background: var(--accent-soft); color: var(--accent-hover); font-weight: 700; }
 /* Módulo aún no disponible: legible (3:1) y con la etiqueta "Pronto". */
 .sb-nav.disabled { color: var(--text-disabled); cursor: default; }
 .sb-nav.disabled:hover { background: none; color: var(--text-disabled); }
@@ -319,7 +330,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
 }
 .tb.on { color: var(--accent-hover); }
 .tb .ic { width: 52px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; transition: background-color .15s var(--ease); }
-.tb.on .ic { background: #DCEFEA; }
+.tb.on .ic { background: var(--accent-soft); }
 .tb.disabled { color: var(--text-disabled); pointer-events: none; }
 
 /* ── Layout responsivo: desktop >=880px con sidebar fija; móvil con tab bar */
@@ -379,7 +390,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--danger-bg);
-  color: #8E2A20;
+  color: var(--danger-text);
   font-size: 14px;
   font-weight: 500;
 }
@@ -389,7 +400,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
 /* ── Ventanas modales ────────────────────────────────────────────────────── */
 .modal-fondo {
   position: fixed; inset: 0; z-index: 50; padding: 16px;
-  background: rgba(42, 38, 34, .45);
+  background: rgba(var(--sombra), .45);
   display: flex; align-items: center; justify-content: center;
   animation: aparecer .15s var(--ease);
 }
@@ -398,7 +409,7 @@ button.chip { height: 32px; padding: 0 14px; cursor: pointer; }
   max-height: calc(100vh - 32px);   /* navegadores sin dvh */
   max-height: calc(100dvh - 32px);  /* celular: descuenta las barras del navegador */
   padding: 24px; display: flex; flex-direction: column; gap: 16px;
-  box-shadow: 0 12px 40px rgba(42, 38, 34, .18);
+  box-shadow: 0 12px 40px rgba(var(--sombra), .18);
   animation: subir .18s var(--ease);
 }
 .modal-caja:focus { outline: none; }

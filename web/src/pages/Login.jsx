@@ -37,11 +37,11 @@ export default function Login() {
             display: "flex", alignItems: "center", justifyContent: "center",
             fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 28,
           }}>G</div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "#CDE8E1" }}>Punto de venta</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#FFEDD5" }}>Punto de venta</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
           <h1 style={{ fontSize: 96, lineHeight: 0.95, color: "#FFFFFF" }}>El G</h1>
-          <div style={{ fontSize: 22, color: "#E4F3EF" }}>TCG · Juegos de mesa · Comidas rápidas</div>
+          <div style={{ fontSize: 22, color: "#FFF7ED" }}>TCG · Juegos de mesa · Comidas rápidas</div>
         </div>
       </section>
       <section className="login-form-side">

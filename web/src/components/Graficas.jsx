@@ -91,7 +91,7 @@ export function Columnas({ datos, titulo, alto = 220 }) {
         <div role="status" className="card" style={{
           position: "absolute", top: 0, pointerEvents: "none", padding: "8px 10px", fontSize: 13, whiteSpace: "nowrap",
           left: Math.min(Math.max(izq + activo * banda + banda / 2 - 80, 0), Math.max(ancho - 170, 0)),
-          boxShadow: "0 4px 12px rgba(42,38,34,.12)",
+          boxShadow: "0 4px 12px rgba(28,25,23,.12)",
         }}>
           <strong>{sel.etiqueta}</strong>
           {sel.detalle.map(([n, v]) => (

@@ -50,7 +50,7 @@ export default function Sidebar() {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderTop: "1px solid var(--border-2)" }}>
         <div style={{
-          width: 36, height: 36, borderRadius: 999, background: "#FCE7D6", color: "#9A4A12",
+          width: 36, height: 36, borderRadius: 999, background: "#DBEAFE", color: "#1E40AF",
           display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14,
         }}>{inicial}</div>
         <button type="button" onClick={() => setCambiandoClave(true)} title="Cambiar mi contraseña" style={{

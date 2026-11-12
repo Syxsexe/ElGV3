@@ -60,7 +60,7 @@ function ResumenCaja({ caja }) {
       <Fila etiqueta="Base inicial" valor={fmt(caja.base)} />
       {CONCEPTOS.filter(([c]) => c === "venta" || caja.flujos[c] != null).map(([c, etiqueta]) => (
         <Fila key={c} etiqueta={etiqueta} valor={firmado(caja.flujos[c] || 0)}
-          color={Number(caja.flujos[c]) < 0 ? "#8E2A20" : undefined} />
+          color={Number(caja.flujos[c]) < 0 ? "var(--danger-text)" : undefined} />
       ))}
       <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
       <Fila etiqueta="Esperado" valor={fmt(caja.esperado)} fuerte />
@@ -85,7 +85,7 @@ function ResumenCaja({ caja }) {
 function BannerDiferencia({ etiqueta, contado, esperado }) {
   const dif = contado - esperado;
   const bg = dif === 0 ? "var(--ok-bg)" : dif < 0 ? "var(--danger-bg)" : "var(--warn-bg)";
-  const color = dif === 0 ? "var(--ok-text)" : dif < 0 ? "#8E2A20" : "var(--warn-text)";
+  const color = dif === 0 ? "var(--ok-text)" : dif < 0 ? "var(--danger-text)" : "var(--warn-text)";
   return (
     <div style={{ borderRadius: 12, padding: 14, background: bg, display: "flex", flexDirection: "column", gap: 4 }}>
       <span style={{ fontSize: 13, fontWeight: 600, color }}>{etiqueta}</span>

@@ -228,7 +228,7 @@ export default function Venta() {
           <button type="button" onClick={() => setCarritoMovil(true)} style={{
             width: "100%", height: 58, border: 0, borderRadius: 16, background: "var(--accent)", color: "#fff",
             display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px",
-            font: "600 15px Figtree, sans-serif", cursor: "pointer", boxShadow: "0 6px 18px rgba(30,110,100,.28)",
+            font: "600 15px Figtree, sans-serif", cursor: "pointer", boxShadow: "0 6px 18px rgba(194,65,12,.3)",
           }}>
             <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span className="num" style={{ minWidth: 28, height: 28, borderRadius: 99, background: "#fff", color: "var(--accent-hover)", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
@@ -243,14 +243,14 @@ export default function Venta() {
 
       {isMobile && carritoMovil && (
         <div style={{ position: "fixed", inset: 0, zIndex: 40 }}>
-          <div style={{ position: "absolute", inset: 0, background: "rgba(42,38,34,.4)" }} onClick={() => setCarritoMovil(false)} />
+          <div style={{ position: "absolute", inset: 0, background: "rgba(28,25,23,.4)" }} onClick={() => setCarritoMovil(false)} />
           <section aria-label="Venta actual" className="card" style={{
             position: "absolute", left: 0, right: 0, bottom: 0, borderRadius: "24px 24px 0 0",
             padding: "10px 0 0", display: "flex", flexDirection: "column", maxHeight: "88vh",
           }}>
             <button type="button" aria-label="Cerrar" onClick={() => setCarritoMovil(false)}
               style={{ width: 48, height: 18, border: 0, background: "none", alignSelf: "center", cursor: "pointer", padding: 0 }}>
-              <span style={{ display: "block", width: 40, height: 5, borderRadius: 99, background: "#D9D1C4", margin: "0 auto" }} />
+              <span style={{ display: "block", width: 40, height: 5, borderRadius: 99, background: "var(--border-control)", margin: "0 auto" }} />
             </button>
             {panel}
           </section>

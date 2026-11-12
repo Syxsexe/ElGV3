@@ -18,7 +18,7 @@ CAMPOS_TERCERO_EMPRESA = {
     "tipo_persona", "nombre", "numero_identificacion", "direccion", "municipio_id",
     "telefono", "email", "responsable_iva",
 }
-CAMPOS_EMPRESA = {"regimen_tributario", "responsable_inc", "precios_incluyen_impuestos"}
+CAMPOS_EMPRESA = {"regimen_tributario", "responsable_inc", "precios_incluyen_impuestos", "mensaje_ticket"}
 
 
 def obtener_empresa(conn) -> dict | None:
@@ -27,7 +27,7 @@ def obtener_empresa(conn) -> dict | None:
                   ti.nombre AS tipo_identificacion_nombre, t.numero_identificacion, t.direccion,
                   t.municipio_id, m.nombre AS municipio, d.nombre AS departamento,
                   t.telefono, t.email, t.responsable_iva,
-                  e.regimen_tributario, e.responsable_inc, e.precios_incluyen_impuestos
+                  e.regimen_tributario, e.responsable_inc, e.precios_incluyen_impuestos, e.mensaje_ticket
              FROM empresa e
              JOIN terceros t ON t.id = e.tercero_id
              LEFT JOIN tipos_identificacion ti ON ti.id = t.tipo_identificacion_id

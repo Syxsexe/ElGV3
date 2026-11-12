@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import BuscarMunicipio from "../components/BuscarMunicipio";
 import { Campo, ErrorBanner } from "../components/Modal";
+import { olvidarEmpresa } from "../imprimir";
 
 const SECCIONES = [
   ["negocio", "Negocio"],
@@ -46,8 +47,9 @@ function Negocio() {
     try {
       const campos = ["tipo_persona", "nombre", "tipo_identificacion", "numero_identificacion", "direccion",
         "municipio_id", "telefono", "email", "responsable_iva", "regimen_tributario", "responsable_inc",
-        "precios_incluyen_impuestos"];
+        "precios_incluyen_impuestos", "mensaje_ticket"];
       setDatos(await api.editarEmpresa(Object.fromEntries(campos.map((c) => [c, datos[c]]))));
+      olvidarEmpresa();
       setAviso("Datos del negocio guardados.");
     } catch (err) {
       setError(err.message);
@@ -106,6 +108,10 @@ function Negocio() {
         <input type="checkbox" checked={datos.precios_incluyen_impuestos} onChange={cambiar("precios_incluyen_impuestos")} />
         <span>Los precios de venta ya incluyen impuestos</span>
       </label>
+      <Campo etiqueta="Mensaje del ticket" ayuda={`Va al final del ticket de venta. Déjalo vacío para no poner nada. ${(datos.mensaje_ticket || "").length}/300`}>
+        <textarea className="inp" maxLength={300} value={datos.mensaje_ticket || ""} onChange={cambiar("mensaje_ticket")}
+          placeholder="¡Gracias por su compra! · Síguenos en Instagram" style={{ height: 80, padding: "10px 12px", resize: "none" }} />
+      </Campo>
       <ErrorBanner mensaje={error} />
       <Aviso texto={aviso} />
       <button type="submit" className="btn btn-p" style={{ alignSelf: "flex-start" }}>Guardar</button>

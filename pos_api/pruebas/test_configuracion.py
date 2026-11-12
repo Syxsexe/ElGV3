@@ -35,6 +35,11 @@ def test_empresa(api, sesion, f, bd):
     assert bd.execute("SELECT detalle FROM auditoria WHERE entidad_id = %s ORDER BY id DESC LIMIT 1",
                       (tercero_id,)).fetchone()["detalle"] == "Editó los datos del negocio: nombre=El G S.A.S."
     assert api.patch("/config/empresa", headers=h, json={"tipo_identificacion": "99"}).status_code == 400
+    # Mensaje del ticket: se limpia, vacío = sin mensaje, máximo 300 caracteres.
+    r = api.patch("/config/empresa", headers=h, json={"mensaje_ticket": "  ¡Gracias!\nIG @elg  "})
+    assert r.json()["mensaje_ticket"] == "¡Gracias!\nIG @elg"
+    assert api.patch("/config/empresa", headers=h, json={"mensaje_ticket": " "}).json()["mensaje_ticket"] is None
+    assert api.patch("/config/empresa", headers=h, json={"mensaje_ticket": "x" * 301}).status_code == 422
     assert api.patch("/config/empresa", headers=h, json={"regimen_tributario": "otro"}).status_code == 422
 
 

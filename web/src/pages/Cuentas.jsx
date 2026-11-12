@@ -6,7 +6,7 @@ import Catalogo from "../components/Catalogo";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import PagoModal from "../components/PagoModal";
 import { fmt, fmtCant, fmtFechaHora } from "../format";
-import { imprimirComanda } from "../imprimir";
+import { imprimirComanda, imprimirTicketVenta } from "../imprimir";
 import { useIsMobile } from "../useMediaQuery";
 import { useTurno } from "../useTurno";
 
@@ -279,7 +279,7 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
     try {
       const venta = await api.cobrarCuenta(cuenta.id, { ...cobro, sesion_id: turno.id, descuento: 0 });
       setModal(null);
-      onCerrada(`Cuenta #${cuenta.numero} cobrada: venta #${venta.numero} por ${fmt(venta.total)}`, cambio);
+      onCerrada(`Cuenta #${cuenta.numero} cobrada: venta #${venta.numero} por ${fmt(venta.total)}`, cambio, venta);
     } catch (err) {
       onFallo();
       throw err;
@@ -402,7 +402,7 @@ export default function Cuentas() {
   const [detalle, setDetalle] = useState(null);
   const [abriendo, setAbriendo] = useState(false);
   const [error, setError] = useState("");
-  const [aviso, setAviso] = useState(null); // {texto, cambio}
+  const [aviso, setAviso] = useState(null); // {texto, cambio, venta}
 
   const cargar = useCallback(() => api.cuentas()
     .then((r) => { setError(""); setAbiertas(r); })
@@ -435,9 +435,9 @@ export default function Cuentas() {
     setAbiertas((as) => as && as.map((a) => (a.id === c.id ? { ...a, ...c } : a)));
   };
 
-  const cerrada = (texto, cambio = 0) => {
+  const cerrada = (texto, cambio = 0, venta = null) => {
     setDetalle(null);
-    setAviso({ texto, cambio });
+    setAviso({ texto, cambio, venta });
     cargar();
   };
 
@@ -474,6 +474,12 @@ export default function Cuentas() {
         <div role="status" className="card" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
           <strong>{aviso.texto}</strong>
           {aviso.cambio > 0 && <span className="num" style={{ ...GRANDE, fontSize: 20, color: "var(--accent-hover)" }}>Cambio {fmt(aviso.cambio)}</span>}
+          {aviso.venta && (
+            <button type="button" className="btn btn-s" style={{ marginLeft: "auto" }}
+              onClick={() => imprimirTicketVenta(aviso.venta, { cambio: aviso.cambio }).catch((err) => setError(err.message))}>
+              Imprimir ticket
+            </button>
+          )}
         </div>
       )}
 

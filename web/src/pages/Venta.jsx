@@ -6,6 +6,7 @@ import Catalogo from "../components/Catalogo";
 import { ErrorBanner } from "../components/Modal";
 import PagoModal from "../components/PagoModal";
 import { fmt, fmtCant } from "../format";
+import { imprimirTicketVenta } from "../imprimir";
 import { useIsMobile } from "../useMediaQuery";
 import { useTurno } from "../useTurno";
 
@@ -113,7 +114,7 @@ export default function Venta() {
   const [descuento, setDescuento] = useState("");
   const [cobrando, setCobrando] = useState(false);
   const [carritoMovil, setCarritoMovil] = useState(false);
-  const [hecha, setHecha] = useState(null); // {numero, total, cambio}
+  const [hecha, setHecha] = useState(null); // {venta, cambio}
   const [version, setVersion] = useState(0);
 
   if (!turno) {
@@ -179,7 +180,7 @@ export default function Venta() {
     setCobrando(false);
     setCarritoMovil(false);
     limpiar();
-    setHecha({ numero: venta.numero, total: venta.total, cambio });
+    setHecha({ venta, cambio });
     setVersion((v) => v + 1);
   };
 
@@ -199,8 +200,12 @@ export default function Venta() {
       <ErrorBanner mensaje={aviso} />
       {hecha && (
         <div role="status" className="card" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
-          <strong>Venta #{hecha.numero} registrada · {fmt(hecha.total)}</strong>
+          <strong>Venta #{hecha.venta.numero} registrada · {fmt(hecha.venta.total)}</strong>
           {hecha.cambio > 0 && <span className="num" style={{ ...GRANDE, fontSize: 20, color: "var(--accent-hover)" }}>Cambio {fmt(hecha.cambio)}</span>}
+          <button type="button" className="btn btn-s" style={{ marginLeft: "auto" }}
+            onClick={() => imprimirTicketVenta(hecha.venta, { cambio: hecha.cambio }).catch((err) => setAviso(err.message))}>
+            Imprimir ticket
+          </button>
         </div>
       )}
 

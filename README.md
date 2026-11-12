@@ -82,7 +82,9 @@ La fase 3 (la API y la web sobre Postgres) está completa. Módulos:
 - **Operación:** Inicio (turno, ventas del día, cuentas abiertas, abonos
   del día, créditos vencidos, stock bajo), Nueva venta (catálogo táctil, lector de
   códigos, cobro en uno o varios métodos con cambio, crédito dentro del cupo;
-  no vende por encima del stock), Cuentas por mesa o nombre (con comandas
+  no vende por encima del stock; ticket de venta en tirilla de 80 mm con los
+  datos del negocio, impuestos incluidos y un mensaje editable en
+  Configuración, reimprimible desde Reportes), Cuentas por mesa o nombre (con comandas
   de cocina impresas en tirilla de 80 mm, solo lo nuevo y con comentarios),
   Caja (apertura y cierre contando billetes y monedas, retiros, ingresos y
   traslados, aviso de cuentas abiertas al cerrar, historial) y Consulta de

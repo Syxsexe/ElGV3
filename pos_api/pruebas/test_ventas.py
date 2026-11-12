@@ -70,6 +70,46 @@ def test_venta_mixta_con_fiado(api, sesion, bd, f, turno, producto):
     assert (cupo["limite_credito"], cupo["saldo"], cupo["disponible"]) == (50000, 4000, 46000)
 
 
+def test_detalle_para_el_ticket(api, sesion, bd, f, turno):
+    """Impuestos incluidos por tarifa (el descuento se reparte) y documento del cliente."""
+    h = sesion("vendedor")
+    with bd.transaction():
+        if bd.execute("SELECT count(*) AS n FROM empresa").fetchone()["n"] == 0:
+            bd.execute("INSERT INTO empresa (tercero_id) VALUES (%s)", (f.tercero("El G", documento="900123456"),))
+        bd.execute("UPDATE empresa SET responsable_inc = true")
+        bd.execute("UPDATE terceros SET responsable_iva = true WHERE id = (SELECT tercero_id FROM empresa)")
+        iva = f.producto(precio=11900, impuesto="IVA19")
+        inc = f.producto(precio=10800, impuesto="INC8", tipo_categoria="cocina")
+        exento = f.producto(precio=5000, impuesto="IVA0-EXENTO")
+        cliente = f.cliente(tercero_id=f.tercero("Ana Ticket", documento="1085123456"))
+        empresa_cliente = f.cliente(tercero_id=f.tercero("Distri SAS"))
+        bd.execute("UPDATE terceros SET tipo_identificacion_id = (SELECT id FROM tipos_identificacion WHERE codigo = '31'), "
+                   "numero_identificacion = '811222333' WHERE id = %s", (empresa_cliente,))
+    r = api.post("/ventas", headers=h, json={
+        "sesion_id": str(turno), "cliente_id": str(cliente), "descuento": 2770,
+        "lineas": [{"articulo_id": str(a), "cantidad": 1} for a in (iva, inc, exento)],
+        "pagos": [{"metodo_pago_id": _metodo(f, "efectivo"), "monto": 24930}]})
+    assert r.status_code == 201, r.text
+    venta = r.json()
+    # Descuento del 10 %: IVA sobre 10.710 e INC sobre 9.720; el exento no aparece.
+    assert venta["impuestos"] == [{"tributo": "INC", "tarifa": 8, "base": 9000, "valor": 720},
+                                  {"tributo": "IVA", "tarifa": 19, "base": 9000, "valor": 1710}]
+    assert (venta["cliente"], venta["cliente_tipo_identificacion"], venta["cliente_identificacion"], venta["cliente_dv"]) == (
+        "Ana Ticket", "13", "1085123456", None)
+
+    # Sin responsabilidad de INC, ese impuesto no se discrimina; un NIT lleva su DV.
+    bd.execute("UPDATE empresa SET responsable_inc = false")
+    r = api.post("/ventas", headers=h, json={
+        "sesion_id": str(turno), "cliente_id": str(empresa_cliente),
+        "lineas": [{"articulo_id": str(a), "cantidad": 1} for a in (iva, inc)],
+        "pagos": [{"metodo_pago_id": _metodo(f, "efectivo"), "monto": 22700}]})
+    assert r.status_code == 201, r.text
+    venta = r.json()
+    assert venta["impuestos"] == [{"tributo": "IVA", "tarifa": 19, "base": 10000, "valor": 1900}]
+    assert (venta["cliente_tipo_identificacion"], venta["cliente_dv"]) == ("31", 2)
+    bd.execute("UPDATE empresa SET responsable_inc = true")
+
+
 def test_la_venta_usa_el_precio_actual(api, sesion, bd, f, turno, producto):
     h = sesion("vendedor")
     pid = producto(precio=5000)

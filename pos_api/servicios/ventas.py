@@ -16,7 +16,7 @@ from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
 from pos_api.servicios.caja import exigir_turno_abierto
-from pos_api.servicios.comun import pesos
+from pos_api.servicios.comun import digito_verificacion, pesos
 
 CENTAVO = Decimal("0.01")
 
@@ -31,11 +31,13 @@ def _redondear(monto: Decimal) -> Decimal:
 def detalle_venta(conn, venta_id) -> dict:
     venta = conn.execute(
         """SELECT v.id, v.numero, v.sesion_id, v.creada_en, v.subtotal, v.descuento, v.total, v.pagado,
-                  v.fiado, v.metodo, v.notas, v.cliente_id, t.nombre AS cliente, u.usuario,
-                  cu.id AS cuenta_id, cu.numero AS cuenta_numero, m.nombre AS mesa
+                  v.fiado, v.metodo, v.notas, v.cliente_id, t.nombre AS cliente,
+                  ti.codigo AS cliente_tipo_identificacion, t.numero_identificacion AS cliente_identificacion,
+                  u.usuario, cu.id AS cuenta_id, cu.numero AS cuenta_numero, m.nombre AS mesa
              FROM v_ventas v
              JOIN usuarios u ON u.id = v.usuario_id
              LEFT JOIN terceros t ON t.id = v.cliente_id
+             LEFT JOIN tipos_identificacion ti ON ti.id = t.tipo_identificacion_id
              LEFT JOIN cuentas cu ON cu.venta_id = v.id
              LEFT JOIN mesas m ON m.id = cu.mesa_id
             WHERE v.id = %s""",
@@ -55,7 +57,35 @@ def detalle_venta(conn, venta_id) -> dict:
             WHERE pv.venta_id = %s ORDER BY pv.id""",
         (venta_id,),
     ).fetchall()
+    venta["cliente_dv"] = (digito_verificacion(venta["cliente_identificacion"])
+                           if venta["cliente_tipo_identificacion"] == "31" else None)
+    venta["impuestos"] = _impuestos_incluidos(conn, venta)
     return venta
+
+
+def _impuestos_incluidos(conn, venta: dict) -> list[dict]:
+    """Cuánto de la venta es impuesto, por tarifa. Los precios ya lo incluyen:
+    la base se saca hacia atrás, después de repartir el descuento entre las
+    líneas en proporción a su valor. Solo los tributos de los que el negocio
+    es responsable (los datos actuales del negocio, no los del día de la venta)."""
+    grupos = conn.execute(
+        """SELECT i.tributo, i.tarifa, sum(d.cantidad * d.precio_unit) AS bruto
+             FROM detalle_venta d JOIN impuestos i ON i.id = d.impuesto_id
+             JOIN empresa e ON true JOIN terceros t ON t.id = e.tercero_id
+            WHERE d.venta_id = %s AND i.tarifa > 0
+              AND CASE i.tributo WHEN 'IVA' THEN t.responsable_iva IS TRUE ELSE e.responsable_inc END
+            GROUP BY i.tributo, i.tarifa ORDER BY i.tributo, i.tarifa""",
+        (venta["id"],),
+    ).fetchall()
+    factor = venta["total"] / venta["subtotal"] if venta["subtotal"] else Decimal(0)
+    resultado = []
+    for g in grupos:
+        con_impuesto = _redondear(g["bruto"] * factor)
+        base = _redondear(con_impuesto * 100 / (100 + g["tarifa"]))
+        if con_impuesto > 0:
+            resultado.append({"tributo": g["tributo"], "tarifa": g["tarifa"], "base": base,
+                              "valor": con_impuesto - base})
+    return resultado
 
 
 def exigir_cliente(conn, cliente_id) -> None:

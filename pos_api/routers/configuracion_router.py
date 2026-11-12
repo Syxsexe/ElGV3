@@ -4,10 +4,10 @@ Leer es para cualquier usuario con sesión (las pantallas de venta y caja
 necesitan métodos de pago, mesas, juegos…); cambiar exige configuracion.editar.
 """
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator, Field
 
 from pos_api.db import transaccion
 from pos_api.errores import NoEncontrado
@@ -18,6 +18,11 @@ from pos_api.servicios import configuracion as servicio
 router = APIRouter(prefix="/config", tags=["configuracion"])
 editor = requiere_permiso("configuracion.editar")
 Catalogo = Literal["mesas", "categorias-gasto", "juegos"]
+
+
+# Texto libre al pie del ticket; vacío = sin texto (el límite va después del strip).
+MensajeTicket = Annotated[str | None, Field(max_length=300),
+                          BeforeValidator(lambda v: (v.strip() or None) if isinstance(v, str) else v)]
 
 
 class EditarEmpresa(BaseModel):
@@ -33,6 +38,7 @@ class EditarEmpresa(BaseModel):
     regimen_tributario: Literal["ordinario", "simple"] | None = None
     responsable_inc: bool | None = None
     precios_incluyen_impuestos: bool | None = None
+    mensaje_ticket: MensajeTicket = None
 
 
 # Columnas NOT NULL: un null enviado se ignora en vez de romper la fila.

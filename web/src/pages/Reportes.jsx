@@ -3,6 +3,7 @@ import { api } from "../api";
 import { Barras, Columnas } from "../components/Graficas";
 import Modal, { Campo, ErrorBanner } from "../components/Modal";
 import { fmt, fmtCant, fmtFechaHora, margen } from "../format";
+import { imprimirTicketVenta } from "../imprimir";
 import { useIsMobile } from "../useMediaQuery";
 
 const iso = (d) => d.toLocaleDateString("en-CA");
@@ -74,6 +75,10 @@ function ModalVenta({ id, onClose }) {
             {Number(v.fiado) > 0 && <><span className="muted">Crédito</span><span className="num">{fmt(v.fiado)}</span></>}
           </div>
           {v.notas && <div className="muted" style={{ fontSize: 13 }}>Notas: {v.notas}</div>}
+          <button type="button" className="btn btn-s" style={{ alignSelf: "flex-start" }}
+            onClick={() => imprimirTicketVenta(v, { reimpresion: true }).catch((err) => setError(err.message))}>
+            Reimprimir ticket
+          </button>
         </div>
       )}
     </Modal>

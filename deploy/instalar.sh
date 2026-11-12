@@ -42,7 +42,7 @@ cp quadlet/* "$QUADLETS/"
 cp systemd/elg-respaldo.service systemd/elg-respaldo.timer "$UNIDADES/"
 cp systemd/podman-auto-update.timer.d-elg.conf "$UNIDADES/podman-auto-update.timer.d/elg.conf"
 cp systemd/podman-auto-update.service.d-elg.conf "$UNIDADES/podman-auto-update.service.d/elg.conf"
-install -m 755 respaldo.sh actualizar.sh restaurar.sh "$HOME/elg/"
+install -m 755 respaldo.sh actualizar.sh restaurar.sh configurar-drive.sh "$HOME/elg/"
 echo "✓ Servicios copiados"
 
 # 3. Imágenes (la primera vez tardan) y arranque.

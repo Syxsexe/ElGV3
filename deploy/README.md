@@ -72,12 +72,16 @@ generan la primera vez en `~/.config/elg/` (`db.env`, `api.env`).
   `~/elg/restaurar.sh ~/elg/respaldos/<archivo>.dump`. Uno de Drive se baja
   primero con `rclone copy elg-drive:respaldos/<archivo> ~/elg/respaldos/`.
 
-Configurar Drive (una vez): `sudo apt install rclone` y `rclone config`:
-un remoto `gdrive` de tipo *drive* (la autorización se hace con
-`rclone authorize "drive"` en un equipo con navegador) y encima un remoto
-`elg-drive` de tipo *crypt* apuntando a `gdrive:elg-pos`. **Guarda las dos
-contraseñas del crypt fuera del servidor**: sin ellas los respaldos de Drive
-no se pueden abrir.
+Configurar Drive (una vez, con `rclone` instalado):
+
+1. Autorizar Google Drive desde el PC, con un túnel para que el navegador
+   del PC le responda al servidor:
+   `ssh -L 53682:127.0.0.1:53682 syxs@<servidor> 'rclone config create gdrive drive scope=drive.file'`
+   y abrir en el PC el enlace `http://127.0.0.1:53682/auth?...` que imprime.
+   `drive.file` solo deja ver los archivos que crea rclone.
+2. `~/elg/configurar-drive.sh`: crea el remoto cifrado `elg-drive` sobre
+   `gdrive:elg-pos` (pide las dos contraseñas sin mostrarlas). **Guárdalas
+   fuera del servidor**: sin ellas los respaldos de Drive no se pueden abrir.
 
 ## Comandos útiles en el servidor
 

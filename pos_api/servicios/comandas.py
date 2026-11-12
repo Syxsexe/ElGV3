@@ -7,15 +7,15 @@ comanda nueva trae solo lo pendiente. Si bajan la cantidad por debajo de lo
 enviado, lo enviado baja con ella (cuentas.cambiar_cantidad): lo que se agregue
 después vuelve a quedar pendiente.
 
-La comanda guarda su copia (artículo, cantidad, comentario) para reimprimirla
-aunque la cuenta ya se haya cobrado.
+La comanda guarda su copia (artículo, lo elegido en el combo, cantidad,
+comentario) para reimprimirla aunque la cuenta ya se haya cobrado.
 """
 from decimal import Decimal
 
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
-from pos_api.servicios.cuentas import DE_COCINA, _cant, _nombre, _tomar_abierta
+from pos_api.servicios.cuentas import DE_COCINA, NOMBRE_ITEM, _cant, _nombre, _tomar_abierta
 
 # Lo que lleva de cocina un combo, para que en la comanda se vea qué preparar.
 COMPONENTES = """(SELECT string_agg(trim_scale(cp.cantidad) || ' × ' || pa.nombre, ', ' ORDER BY pa.nombre)
@@ -26,7 +26,8 @@ COMPONENTES = """(SELECT string_agg(trim_scale(cp.cantidad) || ' × ' || pa.nomb
 
 def pendientes(conn, cuenta_id) -> list[dict]:
     return conn.execute(
-        f"""SELECT ci.id, ci.articulo_id, a.nombre, ci.cantidad, ci.enviado,
+        f"""SELECT ci.id, ci.articulo_id, {NOMBRE_ITEM} AS nombre, texto_elecciones(NULL, ci.id) AS elecciones,
+                   ci.cantidad, ci.enviado,
                    ci.cantidad - ci.enviado AS pendiente, {COMPONENTES} AS componentes
               FROM cuenta_items ci
               JOIN articulos a ON a.id = ci.articulo_id
@@ -52,7 +53,8 @@ _COMANDAS = """
 def _con_items(conn, comandas: list[dict]) -> list[dict]:
     """Les pone sus ítems a varias comandas con una sola consulta."""
     items = conn.execute(
-        f"""SELECT ci.comanda_id, ci.id, a.nombre, ci.cantidad, ci.comentario, {COMPONENTES} AS componentes
+        f"""SELECT ci.comanda_id, ci.id, a.nombre || COALESCE(' — ' || ci.elecciones, '') AS nombre,
+                   ci.elecciones, ci.cantidad, ci.comentario, {COMPONENTES} AS componentes
               FROM comanda_items ci JOIN articulos a ON a.id = ci.articulo_id
              WHERE ci.comanda_id = ANY(%s) ORDER BY ci.id""",
         ([c["id"] for c in comandas],),
@@ -100,9 +102,9 @@ def crear_comanda(conn, actor: Usuario, cuenta_id, items: list[dict], notas: str
         (cuenta_id, actor.id, notas),
     ).fetchone()
     conn.cursor().executemany(
-        "INSERT INTO comanda_items (comanda_id, articulo_id, cantidad, comentario) VALUES (%s, %s, %s, %s)",
-        [(comanda["id"], por_id[i["cuenta_item_id"]]["articulo_id"], i["cantidad"], i.get("comentario"))
-         for i in items],
+        "INSERT INTO comanda_items (comanda_id, articulo_id, elecciones, cantidad, comentario) VALUES (%s, %s, %s, %s, %s)",
+        [(comanda["id"], por_id[i["cuenta_item_id"]]["articulo_id"], por_id[i["cuenta_item_id"]]["elecciones"],
+          i["cantidad"], i.get("comentario")) for i in items],
     )
     conn.cursor().executemany(
         "UPDATE cuenta_items SET enviado = enviado + %s WHERE id = %s",

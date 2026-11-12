@@ -14,15 +14,22 @@ from decimal import Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
+from pos_api.servicios import combos
 from pos_api.servicios.comun import pesos
-from pos_api.servicios.ventas import exigir_cliente, registrar_venta
+from pos_api.servicios.ventas import exigir_cliente, exigir_combos_vendibles, registrar_venta
 
-# Va a cocina (comandas): a = articulos, c = su categoría. Un combo va si
-# lleva algún producto de cocina.
+# Va a cocina (comandas): ci = cuenta_items, a = su artículo, c = su categoría.
+# Un combo va si lleva algún producto de cocina, fijo o elegido.
 DE_COCINA = """(c.tipo = 'cocina' OR EXISTS (
     SELECT 1 FROM combo_productos cp JOIN articulos pa ON pa.id = cp.producto_id
       JOIN categorias pc ON pc.id = pa.categoria_id
-     WHERE cp.combo_id = a.id AND pc.tipo = 'cocina'))"""
+     WHERE cp.combo_id = a.id AND pc.tipo = 'cocina') OR EXISTS (
+    SELECT 1 FROM cuenta_item_elecciones e JOIN articulos pa ON pa.id = e.producto_id
+      JOIN categorias pc ON pc.id = pa.categoria_id
+     WHERE e.item_id = ci.id AND pc.tipo = 'cocina'))"""
+
+# Nombre de un ítem con lo elegido: "Combo hamburguesa — Coca-Cola".
+NOMBRE_ITEM = "a.nombre || COALESCE(' — ' || texto_elecciones(NULL, ci.id), '')"
 
 _SELECT = """
     SELECT cu.id, cu.numero, cu.mesa_id, m.nombre AS mesa, cu.cliente_id, t.nombre AS cliente, cu.alias,
@@ -67,7 +74,8 @@ def obtener_cuenta(conn, cuenta_id) -> dict:
     if cuenta is None:
         raise NoEncontrado("La cuenta no existe.")
     cuenta["items"] = conn.execute(
-        f"""SELECT ci.id, ci.articulo_id, a.nombre, ci.cantidad, ci.precio_unit,
+        f"""SELECT ci.id, ci.articulo_id, {NOMBRE_ITEM} AS nombre, texto_elecciones(NULL, ci.id) AS elecciones,
+                  ci.cantidad, ci.precio_unit,
                   round(ci.cantidad * ci.precio_unit, 2) AS subtotal, ci.agregado_en,
                   ci.enviado, {DE_COCINA} AS de_cocina
              FROM cuenta_items ci JOIN articulos a ON a.id = ci.articulo_id
@@ -154,18 +162,23 @@ def editar_cuenta(conn, actor: Usuario, cuenta_id, cambios: dict) -> dict:
 
 # ── Consumos ────────────────────────────────────────────────────────────────
 
-def _exigir_stock(conn, cuenta_id, articulo_id) -> None:
-    """Los productos de tienda que lleva el artículo (él mismo o los de su
-    combo) deben alcanzar para todo lo que la cuenta tiene de ellos. Es un
-    aviso temprano: al cobrar, la base vuelve a exigirlo con bloqueo."""
+def _exigir_stock(conn, cuenta_id, articulos: list) -> None:
+    """Los productos de tienda que llevan los artículos indicados (ellos mismos,
+    los fijos de su combo o lo elegido en él) deben alcanzar para todo lo que
+    la cuenta tiene de ellos. Es un aviso temprano: al cobrar, la base vuelve a
+    exigirlo con bloqueo."""
     falta = conn.execute(
-        """WITH tocados AS (SELECT %(articulo)s::uuid AS producto_id
-                            UNION SELECT producto_id FROM combo_productos WHERE combo_id = %(articulo)s),
+        """WITH tocados AS (SELECT unnest(%(articulos)s::uuid[]) AS producto_id
+                            UNION SELECT producto_id FROM combo_productos WHERE combo_id = ANY(%(articulos)s)),
                 lleva AS (SELECT ci.articulo_id AS producto_id, ci.cantidad
                             FROM cuenta_items ci WHERE ci.cuenta_id = %(cuenta)s
                           UNION ALL
                           SELECT cp.producto_id, cp.cantidad * ci.cantidad
                             FROM cuenta_items ci JOIN combo_productos cp ON cp.combo_id = ci.articulo_id
+                           WHERE ci.cuenta_id = %(cuenta)s
+                          UNION ALL
+                          SELECT e.producto_id, e.cantidad * ci.cantidad
+                            FROM cuenta_items ci JOIN cuenta_item_elecciones e ON e.item_id = ci.id
                            WHERE ci.cuenta_id = %(cuenta)s)
            SELECT a.nombre, p.stock, sum(l.cantidad) AS cantidad
              FROM lleva l
@@ -176,44 +189,54 @@ def _exigir_stock(conn, cuenta_id, articulo_id) -> None:
             GROUP BY a.nombre, p.stock
            HAVING sum(l.cantidad) > p.stock
             ORDER BY a.nombre""",
-        {"cuenta": cuenta_id, "articulo": articulo_id},
+        {"cuenta": cuenta_id, "articulos": articulos},
     ).fetchall()
     if falta:
         raise ErrorNegocio("No hay stock suficiente de " + ", ".join(
             f"{f['nombre']} (hay {_cant(max(f['stock'], 0))}, la cuenta lleva {_cant(f['cantidad'])})" for f in falta))
 
 
-def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal) -> dict:
-    """Agrega al precio actual. Si ya hay una línea del mismo artículo a ese
-    mismo precio, le suma la cantidad en vez de repetirla."""
+def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal,
+                 elecciones: list[dict] | None = None) -> dict:
+    """Agrega al precio actual (más los recargos de lo elegido, en un combo con
+    grupos). Si ya hay una línea del mismo artículo, a ese mismo precio y con
+    lo mismo elegido, le suma la cantidad en vez de repetirla."""
     _tomar_abierta(conn, cuenta_id)
-    articulo = conn.execute("SELECT nombre, activo, precio_venta FROM articulos WHERE id = %s",
-                            (articulo_id,)).fetchone()
+    articulo = conn.execute(
+        """SELECT id, tipo, nombre, activo, precio_venta, CASE WHEN tipo = 'combo' THEN combo_bloqueo(id) END AS bloqueo
+             FROM articulos WHERE id = %s""",
+        (articulo_id,)).fetchone()
     if articulo is None:
         raise NoEncontrado("El artículo no existe.")
     if not articulo["activo"]:
         raise ErrorNegocio(f"{articulo['nombre']} ya no se vende.")
-    sumado = conn.execute(
-        """UPDATE cuenta_items SET cantidad = cantidad + %s
-            WHERE id = (SELECT id FROM cuenta_items
-                         WHERE cuenta_id = %s AND articulo_id = %s AND precio_unit = %s
-                         ORDER BY id LIMIT 1)
-        RETURNING id""",
-        (cantidad, cuenta_id, articulo_id, articulo["precio_venta"]),
-    ).fetchone()
-    if sumado is None:
-        conn.execute(
-            "INSERT INTO cuenta_items (cuenta_id, articulo_id, cantidad, precio_unit) VALUES (%s, %s, %s, %s)",
-            (cuenta_id, articulo_id, cantidad, articulo["precio_venta"]),
-        )
-    _exigir_stock(conn, cuenta_id, articulo_id)
+    exigir_combos_vendibles([articulo])
+    foto = combos.resolver(conn, articulo, elecciones)
+    precio = articulo["precio_venta"] + combos.recargo(foto)
+
+    iguales = [r["id"] for r in conn.execute(
+        """SELECT id FROM cuenta_items WHERE cuenta_id = %s AND articulo_id = %s AND precio_unit = %s ORDER BY id""",
+        (cuenta_id, articulo_id, precio))]
+    fotos = combos.fotos_de_items(conn, "cuenta_item_elecciones", "item_id", iguales) if iguales else {}
+    igual = next((i for i in iguales if combos.firma(fotos[i]) == combos.firma(foto)), None)
+    if igual is not None:
+        conn.execute("UPDATE cuenta_items SET cantidad = cantidad + %s WHERE id = %s", (cantidad, igual))
+    else:
+        item_id = conn.execute(
+            "INSERT INTO cuenta_items (cuenta_id, articulo_id, cantidad, precio_unit) VALUES (%s, %s, %s, %s) RETURNING id",
+            (cuenta_id, articulo_id, cantidad, precio),
+        ).fetchone()["id"]
+        combos.insertar_fotos(conn, "cuenta_item_elecciones", "item_id", {item_id: foto})
+    _exigir_stock(conn, cuenta_id, [articulo_id] + [e["producto_id"] for e in foto])
     return obtener_cuenta(conn, cuenta_id)
 
 
 def _item(conn, cuenta_id, item_id) -> dict:
     item = conn.execute(
-        """SELECT ci.articulo_id, ci.cantidad, ci.precio_unit, a.nombre FROM cuenta_items ci JOIN articulos a ON a.id = ci.articulo_id
-            WHERE ci.id = %s AND ci.cuenta_id = %s""",
+        f"""SELECT ci.articulo_id, ci.cantidad, ci.precio_unit, {NOMBRE_ITEM} AS nombre,
+                   ARRAY(SELECT e.producto_id FROM cuenta_item_elecciones e WHERE e.item_id = ci.id) AS elegidos
+              FROM cuenta_items ci JOIN articulos a ON a.id = ci.articulo_id
+             WHERE ci.id = %s AND ci.cuenta_id = %s""",
         (item_id, cuenta_id),
     ).fetchone()
     if item is None:
@@ -229,7 +252,7 @@ def cambiar_cantidad(conn, actor: Usuario, cuenta_id, item_id, cantidad: Decimal
     conn.execute("UPDATE cuenta_items SET cantidad = %s, enviado = LEAST(enviado, %s) WHERE id = %s",
                  (cantidad, cantidad, item_id))
     if cantidad > item["cantidad"]:
-        _exigir_stock(conn, cuenta_id, item["articulo_id"])
+        _exigir_stock(conn, cuenta_id, [item["articulo_id"], *item["elegidos"]])
     if cantidad < item["cantidad"]:
         auditar(conn, actor.id, "cuenta",
                 f"Bajó {item['nombre']} de {_cant(item['cantidad'])} a {_cant(cantidad)} en {_nombre(cuenta)}",
@@ -257,11 +280,15 @@ def cobrar_cuenta(conn, actor: Usuario, cuenta_id, sesion_id, *, descuento: Deci
     cobraba, falla con el total nuevo en vez de cobrar de menos."""
     cuenta = _tomar_abierta(conn, cuenta_id)
     items = conn.execute(
-        "SELECT articulo_id, cantidad, precio_unit FROM cuenta_items WHERE cuenta_id = %s ORDER BY agregado_en, id",
+        "SELECT id, articulo_id, cantidad, precio_unit FROM cuenta_items WHERE cuenta_id = %s ORDER BY agregado_en, id",
         (cuenta_id,),
     ).fetchall()
     if not items:
         raise ErrorNegocio(f"La cuenta #{cuenta['numero']} no tiene consumos: cancélala si ya no se usa.")
+    # Lo elegido en cada combo pasa a la venta tal como se pidió (con su recargo).
+    fotos = combos.fotos_de_items(conn, "cuenta_item_elecciones", "item_id", [i["id"] for i in items])
+    items = [{"articulo_id": i["articulo_id"], "cantidad": i["cantidad"], "precio_unit": i["precio_unit"],
+              "foto_elecciones": fotos[i["id"]]} for i in items]
     venta = registrar_venta(conn, actor, sesion_id, items, descuento=descuento, pagos=pagos, fiado=fiado,
                             cliente_id=cliente_id or cuenta["cliente_id"], notas=notas, origen=_nombre(cuenta),
                             exigir_activos=False)

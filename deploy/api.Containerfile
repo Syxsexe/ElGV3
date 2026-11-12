@@ -18,6 +18,7 @@ COPY db/migrar.py db/migrar.py
 COPY db/migraciones/ db/migraciones/
 COPY pos_api/ pos_api/
 COPY deploy/api-entrypoint.sh /usr/local/bin/elg-api
+COPY deploy/api-salud /usr/local/bin/elg-salud
 
 # Sin root dentro del contenedor.
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin elg

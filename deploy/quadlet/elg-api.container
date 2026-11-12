@@ -13,7 +13,7 @@ AutoUpdate=registry
 Network=elg.network
 # ELG_DATABASE_URL, ELG_JWT_SECRET… (los crea instalar.sh).
 EnvironmentFile=%h/.config/elg/api.env
-HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=4)"
+HealthCmd=/usr/local/bin/elg-salud
 HealthInterval=15s
 HealthTimeout=5s
 HealthRetries=3

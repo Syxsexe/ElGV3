@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Chequeo de salud del contenedor de la API (HealthCmd del quadlet): la API
+responde y llega a la base. Va en un script para no pelear con las comillas
+de quadlet/systemd."""
+import sys
+import urllib.request
+
+try:
+    urllib.request.urlopen("http://127.0.0.1:8000/salud", timeout=4)
+except Exception as err:  # noqa: BLE001
+    print(err)
+    sys.exit(1)

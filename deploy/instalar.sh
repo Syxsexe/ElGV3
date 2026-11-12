@@ -3,7 +3,8 @@
 # sudo). Se corre desde esta carpeta deploy/ copiada al servidor:
 #   ./instalar.sh
 # Es seguro repetirlo: no toca la base ni las claves que ya existan.
-# Antes, una sola vez: sudo ./preparar-root.sh y el login en ghcr.io (README).
+# Antes, una sola vez: sudo ./preparar-root.sh (y el login en ghcr.io solo si
+# las imágenes son privadas; ver README).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -26,6 +27,13 @@ if [[ ! -f "$CONF/db.env" ]]; then
         "$clave_db" "$(aleatorio 32)" >"$CONF/api.env"
     umask 022
     echo "✓ Claves nuevas en $CONF"
+fi
+
+# Credenciales de ghcr.io: con el repo público no hacen falta, pero los
+# servicios apuntan a este archivo y podman falla si no existe.
+if [[ ! -f "$REGISTRY_AUTH_FILE" ]]; then
+    mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
+    (umask 077; echo '{"auths": {}}' >"$REGISTRY_AUTH_FILE")
 fi
 
 # 2. Servicios (quadlets), temporizadores y scripts.

@@ -48,12 +48,12 @@ cd ~/elg-deploy
 sudo ./preparar-root.sh        # puerto 80 para podman sin root + firewall
 ```
 
-Si el repo es privado, las imágenes también: el servidor necesita un token de
-GitHub (classic) con solo el permiso `read:packages`:
+Las imágenes son públicas (como el repo), así que no hace falta login. Si
+algún día el repo pasa a privado, el servidor necesitará un token de GitHub
+(classic) con solo `read:packages`:
+`podman login ghcr.io -u Syxsexe --authfile ~/.config/containers/auth.json`.
 
 ```sh
-podman login ghcr.io -u Syxsexe --authfile ~/.config/containers/auth.json
-# contraseña: el token
 ./instalar.sh
 podman exec -it elg-api python -m pos_api.configurar   # negocio + primer admin
 ```

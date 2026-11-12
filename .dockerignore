@@ -6,6 +6,7 @@
 !db/migraciones/
 !web/
 !deploy/api-entrypoint.sh
+!deploy/api-salud
 !deploy/Caddyfile
 **/__pycache__
 **/pruebas

@@ -124,7 +124,7 @@ export default function Inicio() {
       {datos && (
         <>
           <h2 className="seccion">Hoy</h2>
-          <div style={REJILLA}>
+          <div className="escalonado" style={REJILLA}>
             <Tarjeta titulo="Turno de caja" enlace={["/caja", "Ir a Caja"]}>
               {t ? (
                 <>
@@ -181,7 +181,7 @@ export default function Inicio() {
           </div>
 
           <h2 className="seccion">Pendientes</h2>
-          {conDatos.length > 0 && <div style={REJILLA}>{conDatos.map((x) => x.tarjeta)}</div>}
+          {conDatos.length > 0 && <div className="escalonado" style={REJILLA}>{conDatos.map((x) => x.tarjeta)}</div>}
           {alDia.length > 0 && (
             <div className="card" style={{ padding: "12px 16px", display: "flex", gap: "8px 18px", flexWrap: "wrap", alignItems: "center" }}>
               {alDia.map((x) => (

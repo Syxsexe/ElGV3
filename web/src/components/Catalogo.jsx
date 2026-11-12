@@ -98,7 +98,7 @@ export default function Catalogo({ onElegir, onCargados, cantidades = {}, versio
           return (
             <button key={a.id} type="button" className="prod" onClick={() => onElegir(a)} disabled={sinStock}
               aria-label={sinStock ? `${a.nombre}, agotado` : `Agregar ${a.nombre}`}>
-              {n > 0 && <span className="qty num">{fmtCant(n)}</span>}
+              {n > 0 && <span key={n} className="qty num">{fmtCant(n)}</span>}
               <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, paddingRight: n > 0 ? 26 : 0, overflowWrap: "anywhere" }}>
                 {a.nombre}
               </span>

@@ -32,6 +32,10 @@ export function SinTurno({ turno, error, recargar, que = "vender" }) {
   );
 }
 
+// Solo la línea que se acaba de agregar se anima (no las que ya estaban cada
+// vez que se abre el carrito del celular).
+const recienAgregada = (it) => Date.now() - (it.agregada || 0) < 600;
+
 function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuento, total, subtotal, onCobrar, onLimpiar }) {
   const [buscando, setBuscando] = useState(false);
   const descuentoInvalido = Number(descuento) > subtotal;
@@ -73,7 +77,7 @@ function Carrito({ cart, setCantidad, cliente, setCliente, descuento, setDescuen
             Toca un artículo para agregarlo.
           </div>
         ) : cart.map((it) => (
-          <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border-2)" }}>
+          <div key={it.id} className={recienAgregada(it) ? "linea-entrar" : undefined} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border-2)" }}>
             <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.nombre}</span>
               <span className="muted num" style={{ fontSize: 12 }}>{fmt(it.precio)} c/u</span>
@@ -148,7 +152,7 @@ export default function Venta() {
     if (!tope({ nombre: a.nombre, stock }, (actual?.cantidad || 0) + 1)) return;
     setCart((c) => (c.some((it) => it.id === a.id)
       ? c.map((it) => (it.id === a.id ? { ...it, precio, stock, cantidad: it.cantidad + 1 } : it))
-      : [...c, { id: a.id, nombre: a.nombre, precio, stock, cantidad: 1 }]));
+      : [...c, { id: a.id, nombre: a.nombre, precio, stock, cantidad: 1, agregada: Date.now() }]));
   };
   // El servidor cobra el precio actual: si cambió, la línea se pone al día
   // cada vez que el catálogo trae ese artículo.
@@ -199,7 +203,7 @@ export default function Venta() {
       <ErrorBanner mensaje={errorTurno} />
       <ErrorBanner mensaje={aviso} />
       {hecha && (
-        <div role="status" className="card" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
+        <div key={hecha.venta.id} role="status" className="card aviso-entrar" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
           <strong>Venta #{hecha.venta.numero} registrada · {fmt(hecha.venta.total)}</strong>
           {hecha.cambio > 0 && <span className="num" style={{ ...GRANDE, fontSize: 20, color: "var(--accent-hover)" }}>Cambio {fmt(hecha.cambio)}</span>}
           <button type="button" className="btn btn-s" style={{ marginLeft: "auto" }}
@@ -243,8 +247,8 @@ export default function Venta() {
 
       {isMobile && carritoMovil && (
         <div style={{ position: "fixed", inset: 0, zIndex: 40 }}>
-          <div style={{ position: "absolute", inset: 0, background: "rgba(28,25,23,.4)" }} onClick={() => setCarritoMovil(false)} />
-          <section aria-label="Venta actual" className="card" style={{
+          <div className="velo" onClick={() => setCarritoMovil(false)} />
+          <section aria-label="Venta actual" className="card hoja" style={{
             position: "absolute", left: 0, right: 0, bottom: 0, borderRadius: "24px 24px 0 0",
             padding: "10px 0 0", display: "flex", flexDirection: "column", maxHeight: "88vh",
           }}>

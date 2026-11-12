@@ -42,6 +42,10 @@
   --nav-hover: #FBF0E3;
   --sombra: 28, 25, 23;
   --ease: cubic-bezier(.2, .8, .2, 1);
+  /* Movimiento: entrar ~200ms, salir/feedback más rápido. */
+  --dur-rapida: 140ms;
+  --dur: 200ms;
+  --dur-lenta: 260ms;
 }
 
 * { box-sizing: border-box; }
@@ -65,7 +69,7 @@ a, button, input, select, textarea, label { touch-action: manipulation; }
 
 /* Quien pide menos movimiento no ve transiciones ni escalados. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-delay: 0s !important; }
 }
 
 a { color: var(--link); text-decoration: none; }
@@ -439,3 +443,37 @@ h2.seccion { font-size: 13px; font-family: Figtree, sans-serif; font-weight: 700
 }
 .saltar:focus { transform: none; color: #fff; }
 .app-main:focus { outline: none; }
+
+/* ── Animaciones (sutiles; solo transform y opacity; prefers-reduced-motion
+   las anula arriba). Cada una explica algo: qué llegó, de dónde sale. ───── */
+@keyframes entrar { from { opacity: 0; transform: translateY(6px); } }
+@keyframes bajar { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes hoja-subir { from { transform: translateY(100%); } }
+@keyframes pop { 40% { transform: scale(1.22); } }
+@keyframes crecer-y { from { transform: scaleY(0); } }
+@keyframes crecer-x { from { transform: scaleX(0); } }
+
+/* Tarjetas de una lista que llegan en cascada (30ms entre una y otra, con
+   tope para que una lista larga no tarde). */
+.escalonado > * { animation: entrar var(--dur) var(--ease) backwards; }
+.escalonado > :nth-child(2) { animation-delay: 30ms; }
+.escalonado > :nth-child(3) { animation-delay: 60ms; }
+.escalonado > :nth-child(4) { animation-delay: 90ms; }
+.escalonado > :nth-child(5) { animation-delay: 120ms; }
+.escalonado > :nth-child(6) { animation-delay: 150ms; }
+.escalonado > :nth-child(7) { animation-delay: 180ms; }
+.escalonado > :nth-child(n+8) { animation-delay: 210ms; }
+
+/* Un aviso nuevo (venta registrada, cuenta cobrada) baja a su lugar. */
+.aviso-entrar { animation: bajar var(--dur) var(--ease); }
+/* Una línea nueva en el carrito. */
+.linea-entrar { animation: entrar var(--dur-rapida) var(--ease); }
+/* La cantidad en un producto del catálogo "salta" al cambiar. */
+.qty { animation: pop .2s var(--ease); }
+/* Carrito del celular: sube desde abajo; el velo aparece. */
+.hoja { animation: hoja-subir var(--dur-lenta) var(--ease); }
+.velo { position: absolute; inset: 0; background: rgba(var(--sombra), .4); animation: aparecer var(--dur) var(--ease); }
+/* Barras de las gráficas: crecen desde la base. */
+.barra-y { transform-box: fill-box; transform-origin: bottom; animation: crecer-y .35s var(--ease) backwards; }
+.barra-x { transform-origin: left; animation: crecer-x .35s var(--ease) backwards; }
+.tb.on .ic { animation: pop .22s var(--ease); }

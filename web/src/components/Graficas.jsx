@@ -73,7 +73,7 @@ export function Columnas({ datos, titulo, alto = 220 }) {
             const x = izq + i * banda + (banda - anchoBarra) / 2;
             return (
               <g key={d.etiqueta}>
-                {h > 0 && <path d={barra(x, arriba + plotH - h, anchoBarra, h)} fill={i === activo ? COLOR_ACTIVO : COLOR} />}
+                {h > 0 && <path className="barra-y" style={{ animationDelay: `${Math.min(i * 15, 300)}ms` }} d={barra(x, arriba + plotH - h, anchoBarra, h)} fill={i === activo ? COLOR_ACTIVO : COLOR} />}
                 {i % cadaCuanto === 0 && (
                   <text x={izq + i * banda + banda / 2} y={alto - 8} textAnchor="middle" fontSize="11" fill="var(--text-muted)">{d.corta}</text>
                 )}
@@ -119,7 +119,7 @@ export function Barras({ datos, titulo, formato = fmt }) {
           </span>
           {/* El carril es el 100 %: el largo de la barra es proporcional al valor. */}
           <span style={{ display: "block", minWidth: 0 }}>
-            <span style={{
+            <span className="barra-x" style={{
               display: "block", height: 14, borderRadius: "0 4px 4px 0", background: COLOR,
               width: `${max > 0 ? (d.valor / max) * 100 : 0}%`, minWidth: d.valor > 0 ? 2 : 0,
             }} />

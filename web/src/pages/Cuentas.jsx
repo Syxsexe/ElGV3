@@ -471,7 +471,7 @@ export default function Cuentas() {
         </div>
       )}
       {aviso && (
-        <div role="status" className="card" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
+        <div role="status" className="card aviso-entrar" style={{ padding: "12px 16px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", borderColor: "var(--accent)" }}>
           <strong>{aviso.texto}</strong>
           {aviso.cambio > 0 && <span className="num" style={{ ...GRANDE, fontSize: 20, color: "var(--accent-hover)" }}>Cambio {fmt(aviso.cambio)}</span>}
           {aviso.venta && (
@@ -491,7 +491,7 @@ export default function Cuentas() {
               {abiertas && <span className="chip neu num">{abiertas.length}</span>}
             </div>
             {!abiertas && !error && <div className="muted">Cargando…</div>}
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+            <div className="escalonado" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 10 }}>
               {(abiertas || []).map((c) => {
                 const [titulo, subtitulo] = titulos(c);
                 return (

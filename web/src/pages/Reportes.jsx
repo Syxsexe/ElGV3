@@ -240,16 +240,16 @@ export default function Reportes() {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))", gap: 12 }}>
             <Bloque titulo="Ventas por categoría" nota="Antes de descuentos · margen sobre el precio">
-              <Barras titulo="Ventas por categoría" datos={rep.por_categoria.map((c) => ({
+              <Barras key={rango.join("|")} titulo="Ventas por categoría" datos={rep.por_categoria.map((c) => ({
                 etiqueta: c.categoria, valor: Number(c.ventas),
                 nota: `${c.tipo === "cocina" ? "Cocina" : "Tienda"} · margen ${margen(c.ventas, c.costo)}`,
               }))} />
             </Bloque>
             <Bloque titulo="Cómo pagaron">
-              <Barras titulo="Ventas por método de pago" datos={rep.por_metodo.map((m) => ({ etiqueta: m.metodo, valor: Number(m.monto) }))} />
+              <Barras key={rango.join("|")} titulo="Ventas por método de pago" datos={rep.por_metodo.map((m) => ({ etiqueta: m.metodo, valor: Number(m.monto) }))} />
             </Bloque>
             <Bloque titulo="Gastos por categoría" nota="Sin anulados ni pagos de compras">
-              <Barras titulo="Gastos por categoría" datos={rep.gastos_por_categoria.map((g) => ({ etiqueta: g.categoria, valor: Number(g.monto) }))} />
+              <Barras key={rango.join("|")} titulo="Gastos por categoría" datos={rep.gastos_por_categoria.map((g) => ({ etiqueta: g.categoria, valor: Number(g.monto) }))} />
             </Bloque>
             <Bloque titulo="Torneos">
               {Number(rep.torneos.cantidad) === 0 ? <span className="muted" style={{ fontSize: 14 }}>Sin torneos en el rango.</span> : (

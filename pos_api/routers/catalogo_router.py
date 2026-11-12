@@ -16,6 +16,7 @@ from pos_api.modelos import (Cantidad, CantidadNoNegativa, CostoUnitario, Dinero
                              TextoOpcional, cambios_enviados)
 from pos_api.seguridad import Usuario, requiere_alguno, requiere_permiso, usuario_actual
 from pos_api.servicios import catalogo as servicio
+from pos_api.servicios import importacion
 
 router = APIRouter(prefix="/catalogo", tags=["catalogo"])
 inventario = requiere_permiso(servicio.PERMISO_INVENTARIO)
@@ -107,6 +108,12 @@ _ARTICULO_OPCIONALES = {"codigo", "descripcion"}
 class AjusteStock(BaseModel):
     contado: Stock
     motivo: Texto
+
+
+class Importacion(BaseModel):
+    """El texto del CSV (la web lo lee del archivo). Sin confirmar es la vista previa."""
+    contenido: Annotated[str, Field(min_length=1, max_length=3_000_000)]
+    confirmar: bool = False
 
 
 class CrearCategoria(BaseModel):
@@ -250,6 +257,14 @@ def patch_articulo(articulo_id: uuid.UUID, body: EditarArticulo, actor: Usuario 
 def post_ajuste_stock(articulo_id: uuid.UUID, body: AjusteStock, actor: Usuario = Depends(inventario)):
     with transaccion() as conn:
         return servicio.ajustar_stock(conn, actor, articulo_id, body.contado, body.motivo)
+
+
+@router.post("/importar/{tipo}")
+def post_importar(tipo: Literal["productos", "insumos"], body: Importacion, actor: Usuario = Depends(inventario)):
+    """Crea o actualiza productos o insumos desde un CSV: vista previa o, con
+    confirmar, todo o nada (no guarda si alguna fila tiene error)."""
+    with transaccion() as conn:
+        return importacion.importar(conn, actor, tipo, body.contenido, body.confirmar)
 
 
 # ── Insumos y preparaciones ─────────────────────────────────────────────────

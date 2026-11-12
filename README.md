@@ -97,7 +97,7 @@ La fase 3 (la API y la web sobre Postgres) está completa. Módulos:
   de insumos, preparaciones y productos de la tienda (costo calculado, precio a
   mano, sin stock propio: vender descuenta sus ingredientes y se ve para
   cuántos alcanza); insumos con stock y ajuste por conteo; preparaciones que se
-  producen por lotes; combos (productos fijos y grupos para elegir al pedirlo, como la bebida, con recargo opcional; se ve su costo, margen y para cuántos alcanza), adicionales y servicios; Proveedores con compras
+  producen por lotes; importación de productos e insumos desde CSV (con vista previa; todo o nada); combos (productos fijos y grupos para elegir al pedirlo, como la bebida, con recargo opcional; se ve su costo, margen y para cuántos alcanza), adicionales y servicios; Proveedores con compras
   (actualizan stock y último costo) y cuentas por pagar.
 - **Negocio:** Gastos (por categoría, nómina, cruce de cuentas, anulación),
   Torneos (inscripciones, fiado por jugador, premios), Documentos

@@ -129,6 +129,9 @@ export const api = {
   editarArticulo: (id, body) => request(`/catalogo/articulos/${id}`, { method: "PATCH", body }),
   ajustarStock: (id, contado, motivo) =>
     request(`/catalogo/articulos/${id}/ajuste-stock`, { method: "POST", body: { contado, motivo } }),
+  // CSV de productos o insumos: sin confirmar es la vista previa (no guarda nada).
+  importarCsv: (tipo, contenido, confirmar) =>
+    request(`/catalogo/importar/${tipo}`, { method: "POST", body: { contenido, confirmar } }),
   insumos: (q) => request(`/catalogo/insumos${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   crearInsumo: (body) => request("/catalogo/insumos", { method: "POST", body }),
   editarInsumo: (id, body) => request(`/catalogo/insumos/${id}`, { method: "PATCH", body }),

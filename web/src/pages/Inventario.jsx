@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import EditorCombo from "../components/EditorCombo";
+import ImportarCsv from "../components/ImportarCsv";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { fmt, fmtCant, fmtCosto, margen } from "../format";
 import { useIsMobile } from "../useMediaQuery";
@@ -491,6 +492,7 @@ export default function Inventario() {
   const [articulos, setArticulos] = useState([]);
   const [catalogos, setCatalogos] = useState({ categorias: [], impuestos: [], insumos: [], productos: [], unidades: [] });
   const [editando, setEditando] = useState(null); // {id} | {nuevo: true}
+  const [importando, setImportando] = useState(false);
   const [error, setError] = useState("");
 
   const cargarCatalogos = useCallback(() => Promise.all([
@@ -548,8 +550,13 @@ export default function Inventario() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input className="inp" placeholder="Buscar por nombre o código" value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)} style={{ maxWidth: 360 }} />
+          {puede("inventario.editar") && ["tienda", "cocina", "insumos"].includes(pestana) && (
+            <button type="button" className="btn btn-s" style={{ marginLeft: "auto" }} onClick={() => setImportando(true)}>
+              Importar CSV
+            </button>
+          )}
           {puedeCrear && (
-            <button type="button" className="btn btn-p" style={{ marginLeft: "auto" }} disabled={sinCategoria}
+            <button type="button" className="btn btn-p" style={{ marginLeft: ["tienda", "cocina", "insumos"].includes(pestana) && puede("inventario.editar") ? 0 : "auto" }} disabled={sinCategoria}
               onClick={() => setEditando({ nuevo: true })}>
               {{ tienda: "+ Nuevo producto", cocina: "+ Nuevo plato" }[pestana] || "+ Nuevo"}
             </button>
@@ -720,6 +727,10 @@ export default function Inventario() {
         <ModalArticulo tipo={editando.tipo || tipoDePestana(pestana)} articuloId={editando.id} catalogos={catalogos}
           categoriaTipo={["tienda", "cocina"].includes(pestana) ? pestana : undefined}
           onClose={() => setEditando(null)} onGuardado={alGuardar} onStockAjustado={cargarArticulos} />
+      )}
+      {importando && (
+        <ImportarCsv tipoInicial={pestana === "insumos" ? "insumos" : "productos"} onClose={() => setImportando(false)}
+          onImportado={() => { cargarArticulos(); cargarCatalogos(); }} />
       )}
       {editando && pestana === "insumos" && (
         <ModalInsumo insumo={editando.insumo} unidades={catalogos.unidades} onClose={() => setEditando(null)} onGuardado={alGuardar}

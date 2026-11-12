@@ -18,9 +18,19 @@ from pos_api.servicios import comandas, cuentas, ventas
 router = APIRouter(tags=["ventas"])
 
 
+class Eleccion(BaseModel):
+    """La opción elegida en un grupo de un combo."""
+    grupo_id: uuid.UUID
+    producto_id: uuid.UUID
+
+
+Elecciones = Annotated[list[Eleccion], Field(max_length=20)]
+
+
 class Linea(BaseModel):
     articulo_id: uuid.UUID
     cantidad: Cantidad
+    elecciones: Elecciones = []
 
 
 class Pago(BaseModel):
@@ -53,6 +63,7 @@ class DatosCuenta(BaseModel):
 class NuevoItem(BaseModel):
     articulo_id: uuid.UUID
     cantidad: Cantidad = 1
+    elecciones: Elecciones = []
 
 
 class CambiarItem(BaseModel):
@@ -130,7 +141,8 @@ def patch_cuenta(cuenta_id: uuid.UUID, body: DatosCuenta, actor: Usuario = Depen
 @router.post("/cuentas/{cuenta_id}/items", status_code=status.HTTP_201_CREATED)
 def post_item(cuenta_id: uuid.UUID, body: NuevoItem, actor: Usuario = Depends(usuario_actual)):
     with transaccion() as conn:
-        return cuentas.agregar_item(conn, actor, cuenta_id, body.articulo_id, body.cantidad)
+        return cuentas.agregar_item(conn, actor, cuenta_id, body.articulo_id, body.cantidad,
+                                    [e.model_dump() for e in body.elecciones])
 
 
 @router.patch("/cuentas/{cuenta_id}/items/{item_id}")

@@ -5,10 +5,11 @@ y no muestra costos. El catálogo completo, con costos, es para quien edita
 inventario, combos o preparaciones.
 """
 import uuid
-from typing import Literal
+from decimal import Decimal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from pos_api.db import transaccion
 from pos_api.modelos import (Cantidad, CantidadNoNegativa, CostoUnitario, Dinero, Stock, Texto,
@@ -29,6 +30,18 @@ TipoArticulo = Literal["producto", "combo", "adicional", "servicio"]
 class Componente(BaseModel):
     producto_id: uuid.UUID
     cantidad: Cantidad
+
+
+class OpcionCombo(BaseModel):
+    producto_id: uuid.UUID
+    recargo: Dinero = Decimal(0)
+
+
+class GrupoCombo(BaseModel):
+    """Un grupo del que se elige una opción al vender (ej. "Bebida")."""
+    nombre: Texto
+    cantidad: Cantidad = Decimal(1)
+    opciones: Annotated[list[OpcionCombo], Field(min_length=1, max_length=100)]
 
 
 class LineaPreparacion(BaseModel):
@@ -64,6 +77,7 @@ class CrearArticulo(BaseModel):
     # combo
     descripcion: TextoOpcional = None
     productos: list[Componente] | None = None
+    grupos: Annotated[list[GrupoCombo], Field(max_length=20)] | None = None
     # adicional
     insumo_id: uuid.UUID | None = None
     cantidad: Cantidad | None = None
@@ -81,6 +95,7 @@ class EditarArticulo(BaseModel):
     receta: list[LineaReceta] | None = None
     descripcion: TextoOpcional = None
     productos: list[Componente] | None = None
+    grupos: Annotated[list[GrupoCombo], Field(max_length=20)] | None = None
     insumo_id: uuid.UUID | None = None
     cantidad: Cantidad | None = None
 
@@ -149,6 +164,13 @@ def get_vendibles(q: str | None = None, tipo: TipoArticulo | None = None,
         return servicio.vendibles(conn, q, tipo, limite, categoria_tipo)
 
 
+@router.get("/vendibles/{articulo_id}/opciones")
+def get_opciones_combo(articulo_id: uuid.UUID, _: Usuario = Depends(usuario_actual)):
+    """Lo que se puede elegir en un combo al venderlo (solo opciones activas, sin costos)."""
+    with transaccion() as conn:
+        return servicio.opciones_para_vender(conn, articulo_id)
+
+
 @router.get("/categorias")
 def get_categorias(_: Usuario = Depends(usuario_actual)):
     with transaccion() as conn:
@@ -209,6 +231,7 @@ def get_articulo(articulo_id: uuid.UUID, _: Usuario = Depends(lector)):
 def post_articulo(body: CrearArticulo, actor: Usuario = Depends(editor_articulos)):
     datos = body.model_dump()
     datos["receta"], datos["productos"] = _lineas(body.receta), _lineas(body.productos)
+    datos["grupos"] = _lineas(body.grupos)
     with transaccion() as conn:
         return servicio.crear_articulo(conn, actor, datos)
 
@@ -216,7 +239,7 @@ def post_articulo(body: CrearArticulo, actor: Usuario = Depends(editor_articulos
 @router.patch("/articulos/{articulo_id}")
 def patch_articulo(articulo_id: uuid.UUID, body: EditarArticulo, actor: Usuario = Depends(editor_articulos)):
     cambios = cambios_enviados(body, obligatorios=set(EditarArticulo.model_fields) - _ARTICULO_OPCIONALES)
-    for campo in ("receta", "productos"):
+    for campo in ("receta", "productos", "grupos"):
         if campo in cambios:
             cambios[campo] = _lineas(getattr(body, campo))
     with transaccion() as conn:

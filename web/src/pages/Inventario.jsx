@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
-import EditorLineas from "../components/EditorLineas";
+import EditorCombo from "../components/EditorCombo";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { fmt, fmtCant, fmtCosto, margen } from "../format";
 import { useIsMobile } from "../useMediaQuery";
@@ -48,7 +48,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
   // Nuevo: el formulario arranca vacío; editar: se llena con el detalle del servidor.
   const [f, setF] = useState(() => (nuevo ? {
     nombre: "", categoria_id: categorias[0]?.id || "", impuesto_id: "", precio_venta: "", activo: true,
-    codigo: "", precio_costo: "", stock: "", stock_minimo: "", receta: [], descripcion: "", productos: [],
+    codigo: "", precio_costo: "", stock: "", stock_minimo: "", receta: [], descripcion: "", productos: [], grupos: [],
     insumo_id: insumos.find((i) => i.activo)?.id || "", cantidad: "",
   } : null));
   const [error, setError] = useState("");
@@ -64,6 +64,10 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       insumo_id: a.adicional_insumo_id || "", cantidad: a.adicional_cantidad ?? "",
       receta: (a.receta || []).map((r) => ({ id: r.insumo_id || r.producto_id, clase: r.insumo_id ? "insumo" : "producto", cantidad: String(r.cantidad) })),
       productos: (a.productos || []).map((p) => ({ id: p.producto_id, cantidad: String(p.cantidad) })),
+      grupos: (a.grupos || []).map((g) => ({
+        nombre: g.nombre, cantidad: String(g.cantidad),
+        opciones: g.opciones.map((o) => ({ id: o.producto_id, recargo: Number(o.recargo) ? String(o.recargo) : "" })),
+      })),
     })).catch((err) => setError(err.message));
   }, [articuloId, nuevo]);
 
@@ -100,6 +104,10 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
     if (tipo === "combo") {
       body.descripcion = opcional(f.descripcion);
       body.productos = f.productos.map((p) => ({ producto_id: p.id, cantidad: p.cantidad }));
+      body.grupos = f.grupos.map((g) => ({
+        nombre: g.nombre, cantidad: g.cantidad,
+        opciones: g.opciones.map((o) => ({ producto_id: o.id, recargo: o.recargo || "0" })),
+      }));
     }
     if (tipo === "adicional") Object.assign(body, { insumo_id: f.insumo_id, cantidad: f.cantidad });
     try {
@@ -186,10 +194,9 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
             <Campo etiqueta="Descripción (opcional)">
               <input className="inp" value={f.descripcion} onChange={cambiar("descripcion")} />
             </Campo>
-            <Seccion etiqueta="Productos del combo">
-              <EditorLineas opciones={productos} lineas={f.productos} unidad={() => "und"}
-                onChange={(lista) => setF((x) => ({ ...x, productos: lista }))} />
-            </Seccion>
+            <EditorCombo productos={productos} fijos={f.productos} grupos={f.grupos} precio={Number(f.precio_venta) || 0}
+              onFijos={(lista) => setF((x) => ({ ...x, productos: lista }))}
+              onGrupos={(lista) => setF((x) => ({ ...x, grupos: lista }))} />
           </>
         )}
 
@@ -208,7 +215,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
           </div>
         )}
 
-        {!nuevo && (
+        {!nuevo && tipo !== "combo" && (
           <div className="muted" style={{ fontSize: 13 }}>
             Costo actual {fmt(f.costo || 0)} · margen {margen(f.precio_venta, f.costo || 0)}
           </div>
@@ -598,7 +605,43 @@ export default function Inventario() {
         </div>
       )}
 
-      {(pestana === "combo" || pestana === "adicional" || pestana === "servicio") && (
+      {pestana === "combo" && (
+        <div className="card tabla">
+          <div className="th" style={{ gridTemplateColumns: "1fr 100px 130px 90px 90px 80px" }}>
+            <span>Nombre</span><span className="r">Precio</span><span className="r">Costo</span>
+            <span className="r">Margen</span><span className="r">Alcanza</span><span>Estado</span>
+          </div>
+          {articulos.map((a) => {
+            const conRango = a.costo_max != null && Number(a.costo_max) !== Number(a.costo);
+            return (
+              <Fila key={a.id} columnas="1fr 100px 130px 90px 90px 80px" onClick={puede(permisoDe(a.tipo)) ? () => abrir(a) : undefined}>
+                <span>
+                  <strong>{a.nombre}</strong>
+                  {a.tiene_grupos && <span className="chip neu" style={{ marginLeft: 6 }}>Con opciones</span>}
+                  {a.descripcion && <span className="muted" style={{ display: "block", fontSize: 12 }}>{a.descripcion}</span>}
+                  {a.bloqueo && (
+                    <span className="chip bad" style={{ display: "inline-flex", marginTop: 4, height: "auto", padding: "2px 8px", whiteSpace: "normal" }}>
+                      No se puede vender: {a.bloqueo}
+                    </span>
+                  )}
+                </span>
+                <span className="r num">{fmt(a.precio_venta)}</span>
+                <span className="r num">{conRango ? `${fmt(a.costo)} – ${fmt(a.costo_max)}` : fmt(a.costo)}</span>
+                <span className="r num">
+                  {a.margen_min == null ? "—" : a.margen_min === a.margen_max ? `${a.margen_min}%` : `${a.margen_min}% – ${a.margen_max}%`}
+                </span>
+                <span className="r">
+                  {a.alcanza == null ? <span className="muted">—</span> : (
+                    <span className={`chip num ${Number(a.alcanza) === 0 ? "bad" : Number(a.alcanza) <= 3 ? "warn" : "neu"}`}>{fmtCant(a.alcanza)}</span>
+                  )}
+                </span>
+                <span><Estado activo={a.activo} /></span>
+              </Fila>
+            );
+          })}
+        </div>
+      )}
+      {(pestana === "adicional" || pestana === "servicio") && (
         <div className="card tabla">
           <div className="th" style={{ gridTemplateColumns: "1fr 140px 100px 100px 70px 80px" }}>
             <span>Nombre</span><span>Impuesto</span><span className="r">Precio</span><span className="r">Costo</span>

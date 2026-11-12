@@ -14,6 +14,7 @@ from decimal import Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado, SinPermiso
 from pos_api.seguridad import Usuario
+from pos_api.servicios import combos
 from pos_api.servicios.comun import actualizar, condicion_busqueda, literal_like
 
 PERMISO_INVENTARIO = "inventario.editar"
@@ -119,7 +120,7 @@ def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: i
     categoria_tipo: "tienda" o "cocina" (las pestañas de la venta)."""
     return conn.execute(
         """SELECT id, tipo, nombre, precio_venta, categoria_id, categoria, categoria_tipo,
-                  impuesto, codigo, stock, stock_minimo, alcanza
+                  impuesto, codigo, stock, stock_minimo, alcanza, tiene_grupos, bloqueo
              FROM v_articulos
             WHERE activo
               AND (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
@@ -138,13 +139,16 @@ def obtener_articulo(conn, articulo_id) -> dict:
         raise NoEncontrado("El artículo no existe.")
     if fila["tipo"] == "combo":
         fila["productos"] = conn.execute(
-            """SELECT cp.producto_id, a.nombre, cp.cantidad, p.precio_costo AS costo_unit
+            """SELECT cp.producto_id, a.nombre, cp.cantidad, p.precio_costo AS costo_unit, a.activo,
+                      p.stock, c.tipo AS categoria_tipo, unidades_disponibles(cp.producto_id) AS disponibles
                  FROM combo_productos cp
                  JOIN articulos a ON a.id = cp.producto_id
                  JOIN productos p ON p.articulo_id = cp.producto_id
+                 JOIN categorias c ON c.id = a.categoria_id
                 WHERE cp.combo_id = %s ORDER BY a.nombre""",
             (articulo_id,),
         ).fetchall()
+        fila["grupos"] = combos.grupos(conn, articulo_id)
     if fila["tipo"] == "producto":
         # Receta: insumos (o preparaciones) y productos de tienda, cada uno con
         # su costo unitario, su subtotal y su stock (para ver qué limita el plato).
@@ -165,17 +169,84 @@ def obtener_articulo(conn, articulo_id) -> dict:
     return fila
 
 
-def _guardar_componentes_combo(conn, combo_id, productos: list[dict]) -> None:
-    if not productos:
-        raise ErrorNegocio("Un combo necesita al menos un producto.")
+def opciones_para_vender(conn, articulo_id) -> dict:
+    """Un combo activo con sus grupos y las opciones activas de cada uno, para
+    elegir al venderlo. Sin costos: lo ve cualquier usuario con sesión."""
+    combo = conn.execute(
+        """SELECT id, nombre, precio_venta, activo, bloqueo FROM v_articulos WHERE id = %s AND tipo = 'combo'""",
+        (articulo_id,),
+    ).fetchone()
+    if combo is None:
+        raise NoEncontrado("El combo no existe.")
+    if not combo["activo"]:
+        raise ErrorNegocio(f"{combo['nombre']} ya no se vende.")
+    if combo["bloqueo"]:
+        raise ErrorNegocio(f"{combo['nombre']} no se puede vender: {combo['bloqueo']}.")
+    combo["grupos"] = [
+        {**g, "opciones": [{k: o[k] for k in ("producto_id", "nombre", "recargo", "categoria_tipo", "disponibles")}
+                           for o in g["opciones"]]}
+        for g in combos.grupos(conn, articulo_id, solo_activas=True)
+    ]
+    return combo
+
+
+def _guardar_productos_combo(conn, combo_id, productos: list[dict]) -> None:
     _sin_duplicados(productos, "producto_id", "El combo")
     conn.execute("DELETE FROM combo_productos WHERE combo_id = %s", (combo_id,))
-    conn.execute(
-        """INSERT INTO combo_productos (combo_id, producto_id, cantidad)
-           SELECT %s, x.producto_id, x.cantidad
-             FROM unnest(%s::uuid[], %s::numeric[]) AS x(producto_id, cantidad)""",
-        (combo_id, [p["producto_id"] for p in productos], [p["cantidad"] for p in productos]),
-    )
+    if productos:
+        conn.execute(
+            """INSERT INTO combo_productos (combo_id, producto_id, cantidad)
+               SELECT %s, x.producto_id, x.cantidad
+                 FROM unnest(%s::uuid[], %s::numeric[]) AS x(producto_id, cantidad)""",
+            (combo_id, [p["producto_id"] for p in productos], [p["cantidad"] for p in productos]),
+        )
+
+
+def _validar_grupos(grupos: list[dict]) -> None:
+    nombres = [g["nombre"].strip().lower() for g in grupos]
+    if len(nombres) != len(set(nombres)):
+        raise ErrorNegocio("Dos grupos del combo se llaman igual: cada grupo necesita su propio nombre.")
+    for g in grupos:
+        if not g["opciones"]:
+            raise ErrorNegocio(f"El grupo {g['nombre']} necesita al menos una opción.")
+        _sin_duplicados(g["opciones"], "producto_id", f"El grupo {g['nombre']}")
+
+
+def _grupos_actuales(conn, combo_id) -> list:
+    """Los grupos guardados, en la misma forma que llegan, para saber si cambiaron."""
+    return [(g["nombre"], g["cantidad"], {o["producto_id"]: o["recargo"] for o in g["opciones"]})
+            for g in combos.grupos(conn, combo_id)]
+
+
+def _grupos_pedidos(grupos: list[dict]) -> list:
+    return [(g["nombre"], Decimal(g["cantidad"]), {o["producto_id"]: Decimal(o["recargo"]) for o in g["opciones"]})
+            for g in grupos]
+
+
+def _guardar_grupos_combo(conn, combo_id, grupos: list[dict]) -> None:
+    """Reemplaza los grupos. Lo ya vendido no cambia: guarda su propia foto."""
+    _validar_grupos(grupos)
+    conn.execute("DELETE FROM combo_grupos WHERE combo_id = %s", (combo_id,))
+    for orden, g in enumerate(grupos):
+        grupo_id = conn.execute(
+            "INSERT INTO combo_grupos (combo_id, nombre, cantidad, orden) VALUES (%s, %s, %s, %s) RETURNING id",
+            (combo_id, g["nombre"], g["cantidad"], orden),
+        ).fetchone()["id"]
+        conn.execute(
+            """INSERT INTO combo_opciones (grupo_id, producto_id, recargo)
+               SELECT %s, x.producto_id, x.recargo FROM unnest(%s::uuid[], %s::numeric[]) AS x(producto_id, recargo)""",
+            (grupo_id, [o["producto_id"] for o in g["opciones"]], [Decimal(o["recargo"]) for o in g["opciones"]]),
+        )
+
+
+def _exigir_contenido_combo(conn, combo_id) -> None:
+    lleva = conn.execute(
+        """SELECT EXISTS (SELECT 1 FROM combo_productos WHERE combo_id = %(c)s)
+               OR EXISTS (SELECT 1 FROM combo_grupos WHERE combo_id = %(c)s) AS algo""",
+        {"c": combo_id},
+    ).fetchone()["algo"]
+    if not lleva:
+        raise ErrorNegocio("Un combo necesita al menos un producto fijo o un grupo para elegir.")
 
 
 def _clave_receta(linea: dict) -> tuple:
@@ -234,7 +305,7 @@ def _lineas_actuales(conn, tabla: str, columna_padre: str, columna_hijo: str, pa
 def crear_articulo(conn, actor: Usuario, datos: dict) -> dict:
     """datos: tipo, nombre, categoria_id, precio_venta, impuesto_id (opcional) y
     lo del subtipo: producto (codigo, precio_costo, stock_minimo, stock inicial,
-    receta), combo (descripcion, productos), adicional (insumo_id, cantidad)."""
+    receta), combo (descripcion, productos, grupos), adicional (insumo_id, cantidad)."""
     tipo = datos["tipo"]
     _exigir_permiso_tipo(actor, tipo)
     impuesto_id = datos.get("impuesto_id") or _impuesto_por_defecto(conn, tipo, datos["categoria_id"])
@@ -256,7 +327,10 @@ def crear_articulo(conn, actor: Usuario, datos: dict) -> dict:
     elif tipo == "combo":
         conn.execute("INSERT INTO combos (articulo_id, descripcion) VALUES (%s, %s)",
                      (articulo_id, datos.get("descripcion")))
-        _guardar_componentes_combo(conn, articulo_id, datos.get("productos") or [])
+        _guardar_productos_combo(conn, articulo_id, datos.get("productos") or [])
+        if datos.get("grupos"):
+            _guardar_grupos_combo(conn, articulo_id, datos["grupos"])
+        _exigir_contenido_combo(conn, articulo_id)
     elif tipo == "adicional":
         if not datos.get("insumo_id") or not datos.get("cantidad"):
             raise ErrorNegocio("Un adicional necesita el insumo y la cantidad de la porción.")
@@ -273,7 +347,7 @@ def crear_articulo(conn, actor: Usuario, datos: dict) -> dict:
 
 def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
     """cambios: campos del artículo y de su subtipo (el tipo no cambia), y
-    `productos` (combo) o `receta` (producto) para reemplazarlos."""
+    `productos` y `grupos` (combo) o `receta` (producto) para reemplazarlos."""
     # Primero el bloqueo, después la lectura: así el "antes" con el que se
     # compara y se audita no lo puede cambiar otra edición en paralelo.
     if conn.execute("SELECT 1 FROM articulos WHERE id = %s FOR UPDATE", (articulo_id,)).fetchone() is None:
@@ -293,12 +367,16 @@ def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
         _receta_sin_duplicados(cambios["receta"])
     if cambios.get("productos"):
         _sin_duplicados(cambios["productos"], "producto_id", "El combo")
+    if cambios.get("grupos"):
+        _validar_grupos(cambios["grupos"])
     # La pantalla manda la receta / los productos completos: solo cuentan si cambian.
     receta_nueva = (tipo == "producto" and "receta" in cambios
                     and _receta_actual(conn, articulo_id) != {_clave_receta(r): r["cantidad"] for r in cambios["receta"]})
     combo_nuevo = (tipo == "combo" and "productos" in cambios
                    and _lineas_actuales(conn, "combo_productos", "combo_id", "producto_id", articulo_id)
                    != {p["producto_id"]: p["cantidad"] for p in cambios["productos"]})
+    grupos_nuevos = (tipo == "combo" and "grupos" in cambios
+                     and _grupos_actuales(conn, articulo_id) != _grupos_pedidos(cambios["grupos"]))
     if "precio_costo" in subtipo and antes["tiene_receta"] and not (receta_nueva and not cambios["receta"]):
         raise ErrorNegocio("El costo de un plato con receta se calcula solo: edita la receta o quítala.")
 
@@ -308,8 +386,13 @@ def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
     detalle = [f"{k}: {antes.get(k) if k in antes else antes.get('adicional_' + k)} → {v}"
                for k, v in {**articulo, **subtipo}.items()]
     if combo_nuevo:
-        _guardar_componentes_combo(conn, articulo_id, cambios["productos"])
+        _guardar_productos_combo(conn, articulo_id, cambios["productos"])
         detalle.append("productos del combo")
+    if grupos_nuevos:
+        _guardar_grupos_combo(conn, articulo_id, cambios["grupos"])
+        detalle.append("opciones para elegir" if cambios["grupos"] else "quitó las opciones para elegir")
+    if combo_nuevo or grupos_nuevos:
+        _exigir_contenido_combo(conn, articulo_id)
     if receta_nueva:
         _guardar_receta(conn, articulo_id, cambios["receta"])
         detalle.append("receta" if cambios["receta"] else "quitó la receta")

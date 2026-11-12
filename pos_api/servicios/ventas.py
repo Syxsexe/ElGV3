@@ -10,11 +10,13 @@ confirmar; aquí se revisa antes para dar un mensaje claro.
 Va al turno que el cajero tiene en pantalla (sesion_id): si se cerró mientras
 tanto, la venta falla en vez de caer en el turno siguiente.
 """
+import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
+from pos_api.servicios import combos
 from pos_api.servicios.caja import exigir_turno_abierto
 from pos_api.servicios.comun import digito_verificacion, pesos
 
@@ -46,8 +48,10 @@ def detalle_venta(conn, venta_id) -> dict:
     if venta is None:
         raise NoEncontrado("La venta no existe.")
     venta["lineas"] = conn.execute(
-        """SELECT d.articulo_id, a.nombre, d.cantidad, d.precio_unit, round(d.cantidad * d.precio_unit, 2) AS subtotal
+        """SELECT d.articulo_id, a.nombre || COALESCE(' — ' || el.texto, '') AS nombre, el.texto AS elecciones,
+                  d.cantidad, d.precio_unit, round(d.cantidad * d.precio_unit, 2) AS subtotal
              FROM detalle_venta d JOIN articulos a ON a.id = d.articulo_id
+             LEFT JOIN LATERAL (SELECT texto_elecciones(d.id, NULL) AS texto) el ON true
             WHERE d.venta_id = %s ORDER BY d.id""",
         (venta_id,),
     ).fetchall()
@@ -116,14 +120,25 @@ def cupo_cliente(conn, cliente_id, bloquear: bool = False) -> dict:
 
 def _articulos(conn, ids: list, exigir_activos: bool) -> dict:
     filas = {a["id"]: a for a in conn.execute(
-        "SELECT id, nombre, activo, precio_venta FROM articulos WHERE id = ANY(%s)", (ids,))}
+        """SELECT id, tipo, nombre, activo, precio_venta, CASE WHEN tipo = 'combo' THEN combo_bloqueo(id) END AS bloqueo
+             FROM articulos WHERE id = ANY(%s)""", (ids,))}
     if len(filas) != len(set(ids)):
         raise NoEncontrado("Uno de los artículos no existe.")
     if exigir_activos:
         inactivos = sorted(a["nombre"] for a in filas.values() if not a["activo"])
         if inactivos:
             raise ErrorNegocio(f"Ya no se vende: {', '.join(inactivos)}.")
+        exigir_combos_vendibles(filas.values())
     return filas
+
+
+def exigir_combos_vendibles(articulos) -> None:
+    """Un combo con un producto fijo desactivado (o un grupo sin opciones
+    activas) no se vende hasta que lo arreglen en Inventario."""
+    bloqueados = sorted((a for a in articulos if a.get("bloqueo")), key=lambda a: a["nombre"])
+    if bloqueados:
+        raise ErrorNegocio("No se puede vender " + "; ".join(f"{a['nombre']}: {a['bloqueo']}" for a in bloqueados)
+                           + ". Corrígelo en Inventario.")
 
 
 def nombres_metodos(conn, ids: list) -> dict:
@@ -154,18 +169,26 @@ def exigir_cupo(conn, cliente_id, fiado: Decimal) -> dict:
 def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, descuento: Decimal = Decimal(0),
                     pagos: list[dict] = (), fiado: Decimal = Decimal(0), cliente_id=None, notas: str | None = None,
                     origen: str | None = None, exigir_activos: bool = True) -> dict:
-    """lineas = [{articulo_id, cantidad, precio_unit?, impuesto_id?}]: sin
-    precio_unit se usa el precio actual (venta directa); una cuenta o un
-    documento mandan el que fotografiaron, y no exigen que el artículo siga
-    activo. Sin impuesto_id va el del artículo.
+    """lineas = [{articulo_id, cantidad, precio_unit?, impuesto_id?,
+    elecciones?, foto_elecciones?}]: sin precio_unit se usa el precio actual
+    más los recargos de lo elegido (venta directa); una cuenta o un documento
+    mandan el que fotografiaron, y no exigen que el artículo siga activo. Sin
+    impuesto_id va el del artículo. En un combo con grupos, elecciones =
+    [{grupo_id, producto_id}] (se validan) o foto_elecciones (la de la cuenta).
     pagos = [{metodo_pago_id, monto}]. origen describe de dónde viene (ej. "la
     cuenta #4") para la auditoría. Retorna el detalle."""
     numero_turno = exigir_turno_abierto(conn, sesion_id)
     if not lineas:
         raise ErrorNegocio("La venta no tiene productos.")
     articulos = _articulos(conn, [l["articulo_id"] for l in lineas], exigir_activos)
+    # Lo elegido en cada combo: la foto de la cuenta o lo que se tocó en caja.
+    fotos = [l["foto_elecciones"] if l.get("foto_elecciones")
+             else combos.resolver(conn, articulos[l["articulo_id"]], l.get("elecciones"),
+                                  desde_cuenta=l.get("precio_unit") is not None)
+             for l in lineas]
     precios = [l.get("precio_unit") if l.get("precio_unit") is not None
-               else articulos[l["articulo_id"]]["precio_venta"] for l in lineas]
+               else articulos[l["articulo_id"]]["precio_venta"] + combos.recargo(foto)
+               for l, foto in zip(lineas, fotos)]
     subtotal = _redondear(sum((Decimal(l["cantidad"]) * p for l, p in zip(lineas, precios)), Decimal(0)))
     if descuento > subtotal:
         raise ErrorNegocio(f"El descuento ({pesos(descuento)}) supera el subtotal ({pesos(subtotal)}).")
@@ -188,16 +211,28 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
            VALUES (%s, %s, %s, %s, %s) RETURNING id, numero""",
         (sesion_id, actor.id, cliente_id, descuento, notas),
     ).fetchone()
-    # Todas las líneas en UN solo INSERT: el trigger de stock es por sentencia
-    # y bloquea los productos en orden (ver 0015).
+    # Lo elegido va antes que su línea (FK diferida, 0024) y todas las líneas
+    # en UN solo INSERT: el trigger de stock es por sentencia, mueve lo fijo y
+    # lo elegido juntos y bloquea los productos en orden (ver 0015). El costo
+    # de un combo es el de sus fijos más el de lo que se eligió.
+    ids = [uuid.uuid7() for _ in lineas]
+    combos.insertar_fotos(conn, "detalle_venta_elecciones", "detalle_id",
+                          {i: foto for i, foto in zip(ids, fotos) if foto})
     conn.execute(
-        """INSERT INTO detalle_venta (venta_id, articulo_id, cantidad, precio_unit, costo_unit, impuesto_id)
-           SELECT %s, a.id, x.cantidad, x.precio, COALESCE(costo_articulo(a.id), 0), COALESCE(x.impuesto, a.impuesto_id)
-             FROM unnest(%s::uuid[], %s::numeric[], %s::numeric[], %s::uuid[])
-                  WITH ORDINALITY AS x(articulo, cantidad, precio, impuesto, n)
+        """INSERT INTO detalle_venta (id, venta_id, articulo_id, cantidad, precio_unit, costo_unit, impuesto_id)
+           SELECT x.id, %s, a.id, x.cantidad, x.precio,
+                  CASE WHEN a.tipo = 'combo'
+                       THEN costo_combo_fijo(a.id) + COALESCE((
+                                SELECT round(sum(e.cantidad * p.precio_costo), 2)
+                                  FROM detalle_venta_elecciones e JOIN productos p ON p.articulo_id = e.producto_id
+                                 WHERE e.detalle_id = x.id), 0)
+                       ELSE COALESCE(costo_articulo(a.id), 0) END,
+                  COALESCE(x.impuesto, a.impuesto_id)
+             FROM unnest(%s::uuid[], %s::uuid[], %s::numeric[], %s::numeric[], %s::uuid[])
+                  WITH ORDINALITY AS x(id, articulo, cantidad, precio, impuesto, n)
              JOIN articulos a ON a.id = x.articulo
             ORDER BY x.n""",
-        (venta["id"], [l["articulo_id"] for l in lineas], [l["cantidad"] for l in lineas], precios,
+        (venta["id"], ids, [l["articulo_id"] for l in lineas], [l["cantidad"] for l in lineas], precios,
          [l.get("impuesto_id") for l in lineas]),
     )
     if pagos:

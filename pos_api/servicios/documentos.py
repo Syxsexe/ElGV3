@@ -128,9 +128,15 @@ def _preparar_items(conn, items: list[dict]) -> tuple[list[tuple], Decimal]:
         raise ErrorNegocio("El documento no tiene líneas.")
     ids = [i["articulo_id"] for i in items if i.get("articulo_id")]
     articulos = {a["id"]: a for a in conn.execute(
-        "SELECT id, nombre, activo, precio_venta, impuesto_id FROM articulos WHERE id = ANY(%s)", (ids,))}
+        """SELECT id, nombre, activo, precio_venta, impuesto_id, tiene_grupos FROM v_articulos WHERE id = ANY(%s)""",
+        (ids,))}
     if len(articulos) != len(set(ids)):
         raise NoEncontrado("Uno de los artículos no existe.")
+    con_opciones = sorted(a["nombre"] for a in articulos.values() if a["tiene_grupos"])
+    if con_opciones:
+        # Pendiente: guardar lo elegido en el documento y pasarlo a la venta.
+        raise ErrorNegocio(f"{', '.join(con_opciones)} tiene opciones para elegir: por ahora esos combos "
+                           "se venden en caja o en cuentas, no en documentos.")
     inactivos = sorted(a["nombre"] for a in articulos.values() if not a["activo"])
     if inactivos:
         raise ErrorNegocio(f"Ya no se vende: {', '.join(inactivos)}. Quítalo del documento o usa otro artículo.")

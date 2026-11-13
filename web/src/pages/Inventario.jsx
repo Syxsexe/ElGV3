@@ -70,7 +70,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       receta: (a.receta || []).map((r) => ({ id: r.insumo_id || r.producto_id, clase: r.insumo_id ? "insumo" : "producto", cantidad: String(r.cantidad) })),
       productos: (a.productos || []).map((p) => ({ id: p.producto_id, cantidad: String(p.cantidad) })),
       grupos: (a.grupos || []).map((g) => ({
-        nombre: g.nombre, cantidad: String(g.cantidad),
+        clave: g.id, nombre: g.nombre, cantidad: String(g.cantidad),
         opciones: g.opciones.map((o) => ({ id: o.producto_id, recargo: Number(o.recargo) ? String(o.recargo) : "" })),
       })),
     })).catch((err) => setError(err.message));

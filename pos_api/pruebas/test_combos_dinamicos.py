@@ -73,8 +73,9 @@ def test_armar_combo_con_grupos(api, admin, armar, f):
     ]:
         r = api.patch(f"/catalogo/articulos/{combo['id']}", headers=admin, json={"grupos": grupos})
         assert r.status_code == 400 and mensaje in r.json()["detail"], r.text
-    assert api.patch(f"/catalogo/articulos/{combo['id']}", headers=admin,
-                     json={"grupos": [{"nombre": "Bebida", "opciones": []}]}).status_code == 422
+    # Un grupo vacío se rechaza con un mensaje claro (no el 422 genérico de validación).
+    r = api.patch(f"/catalogo/articulos/{combo['id']}", headers=admin, json={"grupos": [{"nombre": "Bebida", "opciones": []}]})
+    assert r.status_code == 400 and "Bebida necesita al menos una opción" in r.json()["detail"], r.text
     # Sin fijos ni grupos queda vacío.
     r = api.patch(f"/catalogo/articulos/{combo['id']}", headers=admin, json={"productos": [], "grupos": []})
     assert r.status_code == 400 and "al menos un producto fijo o un grupo" in r.json()["detail"]

@@ -43,7 +43,8 @@ class GrupoCombo(BaseModel):
     """Un grupo del que se elige una opción al vender (ej. "Bebida")."""
     nombre: Texto
     cantidad: Cantidad = Decimal(1)
-    opciones: Annotated[list[OpcionCombo], Field(min_length=1, max_length=100)]
+    # Sin min_length: un grupo vacío lo rechaza _validar_grupos con un mensaje claro.
+    opciones: Annotated[list[OpcionCombo], Field(max_length=100)]
 
 
 class LineaPreparacion(BaseModel):

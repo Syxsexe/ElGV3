@@ -1,5 +1,6 @@
-// Lista editable de componentes (receta de un plato o preparación, productos
-// de un combo): cada línea es un elemento de `opciones` y una cantidad.
+// Lista editable de componentes (la receta de una preparación): cada línea es
+// un elemento de `opciones` y una cantidad. Los combos usan su propio editor
+// con buscador (EditorCombo).
 // lineas: [{id, cantidad}] con cantidad como texto (se manda tal cual a la API).
 // opciones: [{id, nombre, activo}] con TODOS los elementos: los inactivos solo
 // aparecen en la línea que ya los usa (para no mostrar otro en su lugar).

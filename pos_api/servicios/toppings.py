@@ -74,8 +74,9 @@ def resolver(conn, articulo: dict, pedidos: list | None) -> list[dict]:
     if len(set(pedidos)) != len(pedidos):
         raise ErrorNegocio(f"En {articulo['nombre']} un topping se pidió dos veces.")
     aceptados = {t["adicional_id"]: t for t in conn.execute(
-        """SELECT pt.adicional_id, a.nombre, a.precio_venta AS precio, a.activo
+        """SELECT pt.adicional_id, a.nombre, a.precio_venta AS precio, a.activo, p.toppings_incluidos
              FROM plato_toppings pt JOIN articulos a ON a.id = pt.adicional_id
+             JOIN productos p ON p.articulo_id = pt.plato_id
             WHERE pt.plato_id = %s ORDER BY pt.orden, a.nombre""", (articulo["id"],))}
     if not aceptados:
         raise ErrorNegocio(f"{articulo['nombre']} no lleva toppings.")
@@ -88,7 +89,25 @@ def resolver(conn, articulo: dict, pedidos: list | None) -> list[dict]:
         foto.append({"adicional_id": t["adicional_id"], "nombre": t["nombre"], "precio": t["precio"]})
     if len(foto) != len(pedidos):
         raise ErrorNegocio(f"Uno de los toppings ya no está en {articulo['nombre']}: vuelve a elegirlos.")
-    return foto
+    return aplicar_incluidos(foto, next(iter(aceptados.values()))["toppings_incluidos"])
+
+
+def exigir_incluidos(conn, plato_id) -> None:
+    """Los toppings incluidos no pueden ser más que los que acepta el plato
+    (un producto sin toppings queda con 0)."""
+    fila = conn.execute(
+        """SELECT p.toppings_incluidos AS incluidos, (SELECT count(*) FROM plato_toppings WHERE plato_id = p.articulo_id) AS n
+             FROM productos p WHERE p.articulo_id = %s""", (plato_id,)).fetchone()
+    if fila and fila["incluidos"] > fila["n"]:
+        raise ErrorNegocio(f"Van {fila['incluidos']} toppings incluidos y el plato solo acepta {fila['n']}: "
+                           "baja los incluidos o agrega toppings.")
+
+
+def aplicar_incluidos(foto: list[dict], incluidos: int) -> list[dict]:
+    """Los `incluidos` toppings más baratos van sin costo (precio 0 en la foto);
+    los demás se cobran. A igual precio, gana el orden del plato."""
+    gratis = sorted(range(len(foto)), key=lambda i: (Decimal(foto[i]["precio"]), i))[:incluidos]
+    return [{**t, "precio": Decimal(0)} if i in gratis else t for i, t in enumerate(foto)]
 
 
 def total(foto: list[dict]) -> Decimal:

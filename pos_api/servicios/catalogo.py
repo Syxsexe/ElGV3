@@ -24,7 +24,7 @@ PERMISO_PREPARACIONES = "preparaciones.editar"
 TABLA_SUBTIPO = {"producto": "productos", "combo": "combos", "adicional": "adicionales", "servicio": "servicios"}
 CAMPOS_ARTICULO = {"nombre", "categoria_id", "impuesto_id", "precio_venta", "activo"}
 CAMPOS_SUBTIPO = {
-    "producto": {"codigo", "precio_costo", "stock_minimo"},
+    "producto": {"codigo", "precio_costo", "stock_minimo", "toppings_incluidos"},
     "combo": {"descripcion"},
     "adicional": {"insumo_id", "cantidad"},
     "servicio": set(),
@@ -176,7 +176,7 @@ def toppings_para_vender(conn, articulo_id) -> dict:
     """Un plato activo con los toppings activos que acepta, para elegirlos al
     venderlo. Sin costos: lo ve cualquier usuario con sesión."""
     plato = conn.execute(
-        "SELECT id, nombre, precio_venta, activo FROM v_articulos WHERE id = %s AND tipo = 'producto'", (articulo_id,),
+        "SELECT id, nombre, precio_venta, activo, toppings_incluidos FROM v_articulos WHERE id = %s AND tipo = 'producto'", (articulo_id,),
     ).fetchone()
     if plato is None:
         raise NoEncontrado("El plato no existe.")
@@ -335,15 +335,16 @@ def crear_articulo(conn, actor: Usuario, datos: dict) -> dict:
 
     if tipo == "producto":
         conn.execute(
-            """INSERT INTO productos (articulo_id, codigo, precio_costo, stock, stock_minimo)
-               VALUES (%s, %s, %s, %s, %s)""",
+            """INSERT INTO productos (articulo_id, codigo, precio_costo, stock, stock_minimo, toppings_incluidos)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (articulo_id, datos.get("codigo"), datos.get("precio_costo") or 0,
-             datos.get("stock") or 0, datos.get("stock_minimo") or 0),
+             datos.get("stock") or 0, datos.get("stock_minimo") or 0, datos.get("toppings_incluidos") or 0),
         )
         if datos.get("receta"):
             _guardar_receta(conn, articulo_id, datos["receta"])
         if datos.get("toppings"):
             toppings.guardar_del_plato(conn, articulo_id, datos["toppings"])
+        toppings.exigir_incluidos(conn, articulo_id)
     elif tipo == "combo":
         conn.execute("INSERT INTO combos (articulo_id, descripcion) VALUES (%s, %s)",
                      (articulo_id, datos.get("descripcion")))
@@ -427,6 +428,8 @@ def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
         detalle.append("receta" if cambios["receta"] else "quitó la receta")
     if toppings_nuevos:
         detalle.append("toppings" if cambios["toppings"] else "quitó los toppings")
+    if tipo == "producto" and (toppings_nuevos or "toppings_incluidos" in subtipo):
+        toppings.exigir_incluidos(conn, articulo_id)
     if detalle:
         auditar(conn, actor.id, "inventario", f"Editó {antes['nombre']}: {'; '.join(detalle)}", "articulos", articulo_id)
     return obtener_articulo(conn, articulo_id)

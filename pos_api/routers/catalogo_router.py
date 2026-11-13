@@ -79,6 +79,7 @@ class CrearArticulo(BaseModel):
     receta: list[LineaReceta] | None = None
     # plato de cocina: los adicionales que acepta como toppings
     toppings: Annotated[list[uuid.UUID], Field(max_length=50)] | None = None
+    toppings_incluidos: Annotated[int, Field(ge=0, le=50)] | None = None  # sin costo; de más se cobran los más caros
     # combo
     descripcion: TextoOpcional = None
     productos: list[Componente] | None = None
@@ -99,6 +100,7 @@ class EditarArticulo(BaseModel):
     stock_minimo: CantidadNoNegativa | None = None
     receta: list[LineaReceta] | None = None
     toppings: Annotated[list[uuid.UUID], Field(max_length=50)] | None = None
+    toppings_incluidos: Annotated[int, Field(ge=0, le=50)] | None = None
     descripcion: TextoOpcional = None
     productos: list[Componente] | None = None
     grupos: Annotated[list[GrupoCombo], Field(max_length=20)] | None = None

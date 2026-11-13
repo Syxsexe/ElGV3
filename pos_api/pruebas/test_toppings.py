@@ -167,3 +167,65 @@ def test_reglas_de_los_toppings(api, sesion, admin, ramen, bd, f, turno):
                   json={"toppings": [], "categoria_id": str(f.categoria("tienda"))})
     assert r.status_code == 200, r.text
     assert r.json()["toppings"] == [] and r.json()["categoria_tipo"] == "tienda"
+
+
+def test_toppings_incluidos_se_cobran_los_mas_caros(api, sesion, admin, ramen, bd, f, turno):
+    """Ramen con 2 toppings incluidos: con 1 o 2 vale lo del plato; con 3 van
+    incluidos los 2 más baratos (huevo $2.000 y maíz $1.500) y se cobra el queso."""
+    plato, tops, _ = ramen()
+    with bd.transaction():
+        maiz_insumo = f.insumo(costo=8)
+    r = api.post("/catalogo/articulos", headers=admin, json={
+        "tipo": "adicional", "nombre": _u("Topping maíz"), "categoria_id": str(f.categoria("cocina")),
+        "precio_venta": 1500, "insumo_id": str(maiz_insumo), "cantidad": 30})
+    maiz = r.json()["id"]
+    r = api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin,
+                  json={"toppings": [tops["huevo"], tops["queso"], maiz], "toppings_incluidos": 2})
+    assert r.status_code == 200 and r.json()["toppings_incluidos"] == 2, r.text
+    assert "toppings_incluidos: 0 → 2" in bd.execute(
+        "SELECT detalle FROM auditoria WHERE entidad_id = %s ORDER BY id DESC LIMIT 1", (plato["id"],)).fetchone()["detalle"]
+    h = sesion("vendedor")
+    assert api.get(f"/catalogo/vendibles/{plato['id']}/toppings", headers=h).json()["toppings_incluidos"] == 2
+
+    r = api.post("/ventas", headers=h, json={
+        "sesion_id": str(turno), "pagos": [{"metodo_pago_id": _efectivo(f), "monto": 48000}],
+        "lineas": [{"articulo_id": plato["id"], "cantidad": 1, "toppings": [tops["queso"]]},
+                   {"articulo_id": plato["id"], "cantidad": 1, "toppings": [tops["huevo"], tops["queso"]]},
+                   {"articulo_id": plato["id"], "cantidad": 1, "toppings": [tops["huevo"], tops["queso"], maiz]}]})
+    assert r.status_code == 201, r.text
+    assert [l["precio_unit"] for l in r.json()["lineas"]] == [15000, 15000, 18000]
+    cobrados = bd.execute(
+        """SELECT a.nombre, t.precio FROM detalle_venta_toppings t JOIN detalle_venta d ON d.id = t.detalle_id
+             JOIN articulos a ON a.id = t.adicional_id WHERE d.venta_id = %s AND t.precio > 0""",
+        (r.json()["id"],)).fetchall()
+    assert [c["precio"] for c in cobrados] == [3000] and cobrados[0]["nombre"].startswith("Topping queso")
+
+    # En una cuenta igual, y al cobrarla se respeta lo fotografiado.
+    cuenta = api.post("/cuentas", headers=h, json={"alias": _u("Mesa")}).json()
+    c = api.post(f"/cuentas/{cuenta['id']}/items", headers=h,
+                 json={"articulo_id": plato["id"], "toppings": [maiz, tops["huevo"], tops["queso"]]}).json()
+    assert c["items"][0]["precio_unit"] == 18000
+    api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin, json={"toppings_incluidos": 0})
+    r = api.post(f"/cuentas/{cuenta['id']}/cobrar", headers=h, json={
+        "sesion_id": str(turno), "pagos": [{"metodo_pago_id": _efectivo(f), "monto": 18000}]})
+    assert r.status_code == 201 and r.json()["total"] == 18000, r.text
+
+
+def test_incluidos_a_igual_precio_gana_el_orden_del_plato():
+    from decimal import Decimal
+    from pos_api.servicios.toppings import aplicar_incluidos
+    foto = [{"adicional_id": "a", "precio": 2000}, {"adicional_id": "b", "precio": 1000}, {"adicional_id": "c", "precio": 2000}]
+    assert [t["precio"] for t in aplicar_incluidos(foto, 2)] == [Decimal(0), Decimal(0), 2000]
+    assert [t["precio"] for t in aplicar_incluidos(foto, 0)] == [2000, 1000, 2000]
+    assert [t["precio"] for t in aplicar_incluidos(foto, 5)] == [0, 0, 0]
+
+
+def test_incluidos_no_pasan_de_los_toppings_del_plato(api, admin, ramen):
+    plato, tops, _ = ramen()
+    r = api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin, json={"toppings_incluidos": 3})
+    assert r.status_code == 400 and "solo acepta 2" in r.json()["detail"]
+    api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin, json={"toppings_incluidos": 2})
+    r = api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin, json={"toppings": [tops["huevo"]]})
+    assert r.status_code == 400 and "solo acepta 1" in r.json()["detail"]
+    r = api.patch(f"/catalogo/articulos/{plato['id']}", headers=admin, json={"toppings": [], "toppings_incluidos": 0})
+    assert r.status_code == 200 and r.json()["toppings_incluidos"] == 0

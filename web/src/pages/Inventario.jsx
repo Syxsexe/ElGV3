@@ -53,7 +53,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
   // Nuevo: el formulario arranca vacío; editar: se llena con el detalle del servidor.
   const [f, setF] = useState(() => (nuevo ? {
     nombre: "", categoria_id: categorias[0]?.id || "", impuesto_id: "", precio_venta: "", activo: true,
-    codigo: "", precio_costo: "", stock: "", stock_minimo: "", receta: [], toppings: [], descripcion: "", productos: [], grupos: [],
+    codigo: "", precio_costo: "", stock: "", stock_minimo: "", receta: [], toppings: [], toppings_incluidos: "0", descripcion: "", productos: [], grupos: [],
     insumo_id: insumos.find((i) => i.activo)?.id || "", cantidad: "",
   } : null));
   const [error, setError] = useState("");
@@ -70,6 +70,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       receta: (a.receta || []).map((r) => ({ id: r.insumo_id || r.producto_id, clase: r.insumo_id ? "insumo" : "producto", cantidad: String(r.cantidad) })),
       productos: (a.productos || []).map((p) => ({ id: p.producto_id, cantidad: String(p.cantidad) })),
       toppings: (a.toppings || []).map((t) => t.adicional_id),
+      toppings_incluidos: String(a.toppings_incluidos ?? 0),
       grupos: (a.grupos || []).map((g) => ({
         clave: g.id, nombre: g.nombre, cantidad: String(g.cantidad),
         opciones: g.opciones.map((o) => ({ id: o.producto_id, recargo: Number(o.recargo) ? String(o.recargo) : "" })),
@@ -108,6 +109,8 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       if (esCocina) { delete body.codigo; body.stock_minimo = "0"; }
       // Si pasa a tienda, se le quitan los toppings (solo los platos de cocina los llevan).
       body.toppings = esCocina ? f.toppings : [];
+      // Entero entre 0 y los toppings marcados.
+      body.toppings_incluidos = esCocina ? Math.min(Math.max(Math.trunc(Number(f.toppings_incluidos)) || 0, 0), f.toppings.length) : 0;
     }
     if (tipo === "combo") {
       body.descripcion = opcional(f.descripcion);
@@ -200,7 +203,8 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
         {tipo === "producto" && esCocina && (
           <Seccion etiqueta="Toppings (el cliente los agrega o no al pedirlo)">
             <ToppingsPlato adicionales={adicionales} insumos={insumos} elegidos={f.toppings}
-              onChange={(toppings) => setF((x) => ({ ...x, toppings }))} />
+              onChange={(toppings) => setF((x) => ({ ...x, toppings }))}
+              incluidos={f.toppings_incluidos} onIncluidos={cambiar("toppings_incluidos")} />
           </Seccion>
         )}
 
@@ -266,8 +270,9 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
 }
 
 // Toppings que acepta un plato: los adicionales activos (insumo + porción +
-// precio), marcados o no. Un topping no se vende suelto en Extras.
-function ToppingsPlato({ adicionales, insumos, elegidos, onChange }) {
+// precio), marcados o no, y cuántos van incluidos en el precio del plato. Un
+// topping no se vende suelto en Extras.
+function ToppingsPlato({ adicionales, insumos, elegidos, onChange, incluidos, onIncluidos }) {
   const insumo = new Map(insumos.map((i) => [i.id, i]));
   const marcados = new Set(elegidos);
   // Los ya elegidos se muestran aunque estén inactivos (para poder quitarlos).
@@ -304,6 +309,18 @@ function ToppingsPlato({ adicionales, insumos, elegidos, onChange }) {
           );
         })}
       </div>
+      {elegidos.length > 0 && (
+        <label style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+          <span className="lbl" style={{ margin: 0 }}>Incluidos en el precio</span>
+          <input className="inp num" type="number" min="0" max={elegidos.length} step="1" inputMode="numeric"
+            value={incluidos} onChange={onIncluidos} style={{ width: 80 }} aria-label="Toppings incluidos en el precio" />
+          <span className="muted" style={{ fontSize: 12 }}>
+            {Number(incluidos) > 0
+              ? `${Number(incluidos) === 1 ? "Va incluido 1" : `Van incluidos ${incluidos}`}: si el cliente marca más, se cobran los más caros.`
+              : "Cada topping marcado se cobra."}
+          </span>
+        </label>
+      )}
       <span className="muted" style={{ fontSize: 12 }}>
         {elegidos.length ? `${elegidos.length} ${elegidos.length === 1 ? "topping" : "toppings"}: al vender este plato se ofrecen para marcar.`
           : "Sin toppings: el plato se agrega directo al vender."} Los toppings dejan de salir sueltos en Extras.

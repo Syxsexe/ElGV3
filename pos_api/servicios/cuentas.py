@@ -14,7 +14,7 @@ from decimal import Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
-from pos_api.servicios import combos
+from pos_api.servicios import combos, toppings
 from pos_api.servicios.comun import pesos
 from pos_api.servicios.ventas import exigir_cliente, exigir_combos_vendibles, registrar_venta
 
@@ -197,10 +197,11 @@ def _exigir_stock(conn, cuenta_id, articulos: list) -> None:
 
 
 def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal,
-                 elecciones: list[dict] | None = None) -> dict:
+                 elecciones: list[dict] | None = None, toppings_pedidos: list | None = None) -> dict:
     """Agrega al precio actual (más los recargos de lo elegido, en un combo con
-    grupos). Si ya hay una línea del mismo artículo, a ese mismo precio y con
-    lo mismo elegido, le suma la cantidad en vez de repetirla."""
+    grupos, y los toppings, en un plato). Si ya hay una línea del mismo
+    artículo, a ese mismo precio y con lo mismo elegido y los mismos toppings,
+    le suma la cantidad en vez de repetirla."""
     _tomar_abierta(conn, cuenta_id)
     articulo = conn.execute(
         """SELECT id, tipo, nombre, activo, precio_venta, CASE WHEN tipo = 'combo' THEN combo_bloqueo(id) END AS bloqueo
@@ -211,14 +212,19 @@ def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal
     if not articulo["activo"]:
         raise ErrorNegocio(f"{articulo['nombre']} ya no se vende.")
     exigir_combos_vendibles([articulo])
+    if toppings.es_topping_suelto(conn, [articulo_id]):
+        raise ErrorNegocio(f"{articulo['nombre']} es un topping: se agrega dentro de un plato, no suelto.")
     foto = combos.resolver(conn, articulo, elecciones)
-    precio = articulo["precio_venta"] + combos.recargo(foto)
+    tops = toppings.resolver(conn, articulo, toppings_pedidos)
+    precio = articulo["precio_venta"] + combos.recargo(foto) + toppings.total(tops)
 
     iguales = [r["id"] for r in conn.execute(
         """SELECT id FROM cuenta_items WHERE cuenta_id = %s AND articulo_id = %s AND precio_unit = %s ORDER BY id""",
         (cuenta_id, articulo_id, precio))]
     fotos = combos.fotos_de_items(conn, "cuenta_item_elecciones", "item_id", iguales) if iguales else {}
-    igual = next((i for i in iguales if combos.firma(fotos[i]) == combos.firma(foto)), None)
+    fotos_tops = toppings.fotos_de_items(conn, "cuenta_item_toppings", "item_id", iguales) if iguales else {}
+    igual = next((i for i in iguales if combos.firma(fotos[i]) == combos.firma(foto)
+                  and toppings.firma(fotos_tops[i]) == toppings.firma(tops)), None)
     if igual is not None:
         conn.execute("UPDATE cuenta_items SET cantidad = cantidad + %s WHERE id = %s", (cantidad, igual))
     else:
@@ -227,6 +233,7 @@ def agregar_item(conn, actor: Usuario, cuenta_id, articulo_id, cantidad: Decimal
             (cuenta_id, articulo_id, cantidad, precio),
         ).fetchone()["id"]
         combos.insertar_fotos(conn, "cuenta_item_elecciones", "item_id", {item_id: foto})
+        toppings.insertar_fotos(conn, "cuenta_item_toppings", "item_id", {item_id: tops})
     _exigir_stock(conn, cuenta_id, [articulo_id] + [e["producto_id"] for e in foto])
     return obtener_cuenta(conn, cuenta_id)
 
@@ -285,10 +292,13 @@ def cobrar_cuenta(conn, actor: Usuario, cuenta_id, sesion_id, *, descuento: Deci
     ).fetchall()
     if not items:
         raise ErrorNegocio(f"La cuenta #{cuenta['numero']} no tiene consumos: cancélala si ya no se usa.")
-    # Lo elegido en cada combo pasa a la venta tal como se pidió (con su recargo).
-    fotos = combos.fotos_de_items(conn, "cuenta_item_elecciones", "item_id", [i["id"] for i in items])
+    # Lo elegido en cada combo y los toppings de cada plato pasan a la venta
+    # tal como se pidieron (con su recargo y su precio).
+    ids = [i["id"] for i in items]
+    fotos = combos.fotos_de_items(conn, "cuenta_item_elecciones", "item_id", ids)
+    fotos_tops = toppings.fotos_de_items(conn, "cuenta_item_toppings", "item_id", ids)
     items = [{"articulo_id": i["articulo_id"], "cantidad": i["cantidad"], "precio_unit": i["precio_unit"],
-              "foto_elecciones": fotos[i["id"]]} for i in items]
+              "foto_elecciones": fotos[i["id"]], "foto_toppings": fotos_tops[i["id"]]} for i in items]
     venta = registrar_venta(conn, actor, sesion_id, items, descuento=descuento, pagos=pagos, fiado=fiado,
                             cliente_id=cliente_id or cuenta["cliente_id"], notas=notas, origen=_nombre(cuenta),
                             exigir_activos=False)

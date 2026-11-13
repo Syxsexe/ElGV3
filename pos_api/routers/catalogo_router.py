@@ -77,6 +77,8 @@ class CrearArticulo(BaseModel):
     stock: Stock | None = None
     stock_minimo: CantidadNoNegativa | None = None
     receta: list[LineaReceta] | None = None
+    # plato de cocina: los adicionales que acepta como toppings
+    toppings: Annotated[list[uuid.UUID], Field(max_length=50)] | None = None
     # combo
     descripcion: TextoOpcional = None
     productos: list[Componente] | None = None
@@ -96,6 +98,7 @@ class EditarArticulo(BaseModel):
     precio_costo: Dinero | None = None
     stock_minimo: CantidadNoNegativa | None = None
     receta: list[LineaReceta] | None = None
+    toppings: Annotated[list[uuid.UUID], Field(max_length=50)] | None = None
     descripcion: TextoOpcional = None
     productos: list[Componente] | None = None
     grupos: Annotated[list[GrupoCombo], Field(max_length=20)] | None = None
@@ -189,6 +192,13 @@ def get_opciones_combo(articulo_id: uuid.UUID, _: Usuario = Depends(usuario_actu
     """Lo que se puede elegir en un combo al venderlo (solo opciones activas, sin costos)."""
     with transaccion() as conn:
         return servicio.opciones_para_vender(conn, articulo_id)
+
+
+@router.get("/vendibles/{articulo_id}/toppings")
+def get_toppings_plato(articulo_id: uuid.UUID, _: Usuario = Depends(usuario_actual)):
+    """Los toppings activos que acepta un plato, para elegirlos al venderlo (sin costos)."""
+    with transaccion() as conn:
+        return servicio.toppings_para_vender(conn, articulo_id)
 
 
 @router.get("/categorias")

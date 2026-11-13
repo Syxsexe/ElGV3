@@ -4,6 +4,7 @@ import { api } from "../api";
 import BuscarTercero from "../components/BuscarTercero";
 import Catalogo from "../components/Catalogo";
 import ElegirCombo from "../components/ElegirCombo";
+import ElegirToppings from "../components/ElegirToppings";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import PagoModal from "../components/PagoModal";
 import { fmt, fmtCant, fmtFechaHora } from "../format";
@@ -266,6 +267,7 @@ function ModalComanda({ cuenta, onClose, onEnviada }) {
 function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver, onFallo, abiertas }) {
   const [modal, setModal] = useState(null); // "agregar" | "editar" | "cancelar" | "cobrar" | "comanda"
   const [eligiendo, setEligiendo] = useState(null); // combo con grupos esperando que elijan
+  const [conToppings, setConToppings] = useState(null); // plato con toppings esperando que los marquen
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [titulo, subtitulo] = titulos(cuenta);
@@ -384,12 +386,20 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
         <Modal titulo={`Agregar a ${titulo}`} onClose={() => setModal(null)} ancho={860}>
           <ErrorBanner mensaje={error} />
           <Catalogo autoFocus cantidades={cantidades}
-            onElegir={(a) => (a.tipo === "combo" && a.tiene_grupos ? setEligiendo(a) : accion(api.agregarACuenta(cuenta.id, a.id)))} />
+            onElegir={(a) => (a.tipo === "combo" && a.tiene_grupos ? setEligiendo(a)
+              : a.tiene_toppings ? setConToppings(a) : accion(api.agregarACuenta(cuenta.id, a.id)))} />
           {eligiendo && (
             <ElegirCombo combo={eligiendo} onClose={() => setEligiendo(null)}
               onElegir={({ elecciones }) => {
                 setEligiendo(null);
                 accion(api.agregarACuenta(cuenta.id, eligiendo.id, 1, elecciones));
+              }} />
+          )}
+          {conToppings && (
+            <ElegirToppings plato={conToppings} onClose={() => setConToppings(null)}
+              onElegir={(eleccion) => {
+                setConToppings(null);
+                accion(api.agregarACuenta(cuenta.id, conToppings.id, 1, [], eleccion?.toppings || []));
               }} />
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, position: "sticky", bottom: -24, background: "#fff", padding: "12px 0", borderTop: "1px solid var(--border-2)" }}>

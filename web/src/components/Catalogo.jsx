@@ -110,6 +110,7 @@ export default function Catalogo({ onElegir, onCargados, cantidades = {}, versio
               <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, paddingRight: n > 0 ? 26 : 0, overflowWrap: "anywhere" }}>
                 {a.nombre}
                 {a.tiene_grupos && <span className="muted" style={{ display: "block", fontSize: 12, fontWeight: 500 }}>Con opciones</span>}
+                {a.tiene_toppings && <span className="muted" style={{ display: "block", fontSize: 12, fontWeight: 500 }}>Con toppings</span>}
               </span>
               <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: "auto", flexWrap: "wrap" }}>
                 <span className="num" style={{ fontFamily: "'Bricolage Grotesque', Figtree, sans-serif", fontSize: 17, fontWeight: 700, color: "var(--accent-hover)", whiteSpace: "nowrap" }}>

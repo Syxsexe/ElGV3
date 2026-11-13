@@ -47,13 +47,13 @@ function Estado({ activo }) {
 
 // categoriaTipo (al crear un producto): "tienda" o "cocina", según la pestaña.
 function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, onGuardado, onStockAjustado }) {
-  const { impuestos, insumos, productos } = catalogos;
+  const { impuestos, insumos, productos, adicionales = [] } = catalogos;
   const nuevo = !articuloId;
   const categorias = nuevo && categoriaTipo ? catalogos.categorias.filter((c) => c.tipo === categoriaTipo) : catalogos.categorias;
   // Nuevo: el formulario arranca vacío; editar: se llena con el detalle del servidor.
   const [f, setF] = useState(() => (nuevo ? {
     nombre: "", categoria_id: categorias[0]?.id || "", impuesto_id: "", precio_venta: "", activo: true,
-    codigo: "", precio_costo: "", stock: "", stock_minimo: "", receta: [], descripcion: "", productos: [], grupos: [],
+    codigo: "", precio_costo: "", stock: "", stock_minimo: "", receta: [], toppings: [], descripcion: "", productos: [], grupos: [],
     insumo_id: insumos.find((i) => i.activo)?.id || "", cantidad: "",
   } : null));
   const [error, setError] = useState("");
@@ -69,6 +69,7 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       insumo_id: a.adicional_insumo_id || "", cantidad: a.adicional_cantidad ?? "",
       receta: (a.receta || []).map((r) => ({ id: r.insumo_id || r.producto_id, clase: r.insumo_id ? "insumo" : "producto", cantidad: String(r.cantidad) })),
       productos: (a.productos || []).map((p) => ({ id: p.producto_id, cantidad: String(p.cantidad) })),
+      toppings: (a.toppings || []).map((t) => t.adicional_id),
       grupos: (a.grupos || []).map((g) => ({
         clave: g.id, nombre: g.nombre, cantidad: String(g.cantidad),
         opciones: g.opciones.map((o) => ({ id: o.producto_id, recargo: Number(o.recargo) ? String(o.recargo) : "" })),
@@ -105,6 +106,8 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
       }
       if (nuevo && !esCocina) body.stock = opcional(f.stock);
       if (esCocina) { delete body.codigo; body.stock_minimo = "0"; }
+      // Si pasa a tienda, se le quitan los toppings (solo los platos de cocina los llevan).
+      body.toppings = esCocina ? f.toppings : [];
     }
     if (tipo === "combo") {
       body.descripcion = opcional(f.descripcion);
@@ -194,6 +197,13 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
           </Seccion>
         )}
 
+        {tipo === "producto" && esCocina && (
+          <Seccion etiqueta="Toppings (el cliente los agrega o no al pedirlo)">
+            <ToppingsPlato adicionales={adicionales} insumos={insumos} elegidos={f.toppings}
+              onChange={(toppings) => setF((x) => ({ ...x, toppings }))} />
+          </Seccion>
+        )}
+
         {tipo === "combo" && (
           <>
             <Campo etiqueta="Descripción (opcional)">
@@ -252,6 +262,53 @@ function ModalArticulo({ tipo, articuloId, categoriaTipo, catalogos, onClose, on
         </div>
       </form>
     </Modal>
+  );
+}
+
+// Toppings que acepta un plato: los adicionales activos (insumo + porción +
+// precio), marcados o no. Un topping no se vende suelto en Extras.
+function ToppingsPlato({ adicionales, insumos, elegidos, onChange }) {
+  const insumo = new Map(insumos.map((i) => [i.id, i]));
+  const marcados = new Set(elegidos);
+  // Los ya elegidos se muestran aunque estén inactivos (para poder quitarlos).
+  const lista = adicionales.filter((a) => a.activo || marcados.has(a.id)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  if (!lista.length) {
+    return (
+      <span className="muted" style={{ fontSize: 13 }}>
+        Aún no hay adicionales. Crea cada topping en la pestaña Adicionales (insumo, porción y precio) y vuelve aquí.
+      </span>
+    );
+  }
+  const cambiar = (id) => onChange(marcados.has(id) ? elegidos.filter((x) => x !== id) : [...elegidos, id]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 230px), 1fr))" }}>
+        {lista.map((a) => {
+          const ins = insumo.get(a.adicional_insumo_id);
+          return (
+            <label key={a.id} style={{
+              display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 10, cursor: "pointer",
+              border: `1px solid ${marcados.has(a.id) ? "var(--accent)" : "var(--border-2)"}`,
+              background: marcados.has(a.id) ? "var(--accent-soft)" : "#fff",
+            }}>
+              <input type="checkbox" checked={marcados.has(a.id)} onChange={() => cambiar(a.id)} style={{ marginTop: 3 }} />
+              <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "break-word" }}>
+                  {a.nombre}{!a.activo && <span className="chip bad" style={{ marginLeft: 6 }}>Inactivo</span>}
+                </span>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  + {fmt(a.precio_venta)}{ins && ` · ${fmtCant(a.adicional_cantidad)} ${ins.unidad} de ${ins.nombre}`} · costo {fmt(a.costo)}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <span className="muted" style={{ fontSize: 12 }}>
+        {elegidos.length ? `${elegidos.length} ${elegidos.length === 1 ? "topping" : "toppings"}: al vender este plato se ofrecen para marcar.`
+          : "Sin toppings: el plato se agrega directo al vender."} Los toppings dejan de salir sueltos en Extras.
+      </span>
+    </div>
   );
 }
 
@@ -494,15 +551,16 @@ export default function Inventario() {
   const [pestana, setPestana] = useState("tienda");
   const [busqueda, setBusqueda] = useState("");
   const [articulos, setArticulos] = useState([]);
-  const [catalogos, setCatalogos] = useState({ categorias: [], impuestos: [], insumos: [], productos: [], unidades: [] });
+  const [catalogos, setCatalogos] = useState({ categorias: [], impuestos: [], insumos: [], productos: [], unidades: [], adicionales: [] });
   const [editando, setEditando] = useState(null); // {id} | {nuevo: true}
   const [importando, setImportando] = useState(false);
   const [error, setError] = useState("");
 
   const cargarCatalogos = useCallback(() => Promise.all([
     api.categorias(), api.impuestos(), api.insumos(), api.articulos({ tipo: "producto" }), api.unidades(),
-  ]).then(([categorias, impuestos, insumos, productos, unidades]) => {
-    setCatalogos({ categorias, impuestos, insumos, productos, unidades });
+    api.articulos({ tipo: "adicional" }),
+  ]).then(([categorias, impuestos, insumos, productos, unidades, adicionales]) => {
+    setCatalogos({ categorias, impuestos, insumos, productos, unidades, adicionales });
   }).catch((err) => setError(err.message)), []);
 
   // Cada búsqueda lleva un número: si una respuesta vieja llega tarde (otra
@@ -662,6 +720,7 @@ export default function Inventario() {
             <Fila key={a.id} columnas="1fr 140px 100px 100px 70px 80px" onClick={puede(permisoDe(a.tipo)) ? () => abrir(a) : undefined}>
               <span>
                 <strong>{a.nombre}</strong>
+                {a.es_topping && <span className="chip neu" style={{ marginLeft: 6 }} title="Se vende solo dentro de los platos que lo aceptan, no suelto en Extras">Topping</span>}
                 {a.descripcion && <span className="muted" style={{ display: "block", fontSize: 12 }}>{a.descripcion}</span>}
               </span>
               <span className="muted">{a.impuesto}</span>

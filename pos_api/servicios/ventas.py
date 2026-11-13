@@ -16,7 +16,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado
 from pos_api.seguridad import Usuario
-from pos_api.servicios import combos
+from pos_api.servicios import combos, toppings
 from pos_api.servicios.caja import exigir_turno_abierto
 from pos_api.servicios.comun import digito_verificacion, pesos
 
@@ -170,25 +170,35 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
                     pagos: list[dict] = (), fiado: Decimal = Decimal(0), cliente_id=None, notas: str | None = None,
                     origen: str | None = None, exigir_activos: bool = True) -> dict:
     """lineas = [{articulo_id, cantidad, precio_unit?, impuesto_id?,
-    elecciones?, foto_elecciones?}]: sin precio_unit se usa el precio actual
-    más los recargos de lo elegido (venta directa); una cuenta o un documento
+    elecciones?, foto_elecciones?, toppings?, foto_toppings?}]: sin precio_unit
+    se usa el precio actual más los recargos de lo elegido y los toppings
+    (venta directa); una cuenta o un documento
     mandan el que fotografiaron, y no exigen que el artículo siga activo. Sin
     impuesto_id va el del artículo. En un combo con grupos, elecciones =
     [{grupo_id, producto_id}] (se validan) o foto_elecciones (la de la cuenta).
+    En un plato, toppings = [adicional_id] (se validan) o foto_toppings.
     pagos = [{metodo_pago_id, monto}]. origen describe de dónde viene (ej. "la
     cuenta #4") para la auditoría. Retorna el detalle."""
     numero_turno = exigir_turno_abierto(conn, sesion_id)
     if not lineas:
         raise ErrorNegocio("La venta no tiene productos.")
     articulos = _articulos(conn, [l["articulo_id"] for l in lineas], exigir_activos)
+    if exigir_activos:
+        suelto = toppings.es_topping_suelto(conn, [l["articulo_id"] for l in lineas])
+        if suelto:
+            raise ErrorNegocio(f"{suelto} es un topping: se agrega dentro de un plato, no suelto.")
     # Lo elegido en cada combo: la foto de la cuenta o lo que se tocó en caja.
     fotos = [l["foto_elecciones"] if l.get("foto_elecciones")
              else combos.resolver(conn, articulos[l["articulo_id"]], l.get("elecciones"),
                                   desde_cuenta=l.get("precio_unit") is not None)
              for l in lineas]
+    # Los toppings de cada plato: la foto de la cuenta o lo que se marcó en caja.
+    tops = [l["foto_toppings"] if l.get("foto_toppings")
+            else toppings.resolver(conn, articulos[l["articulo_id"]], l.get("toppings"))
+            for l in lineas]
     precios = [l.get("precio_unit") if l.get("precio_unit") is not None
-               else articulos[l["articulo_id"]]["precio_venta"] + combos.recargo(foto)
-               for l, foto in zip(lineas, fotos)]
+               else articulos[l["articulo_id"]]["precio_venta"] + combos.recargo(foto) + toppings.total(top)
+               for l, foto, top in zip(lineas, fotos, tops)]
     subtotal = _redondear(sum((Decimal(l["cantidad"]) * p for l, p in zip(lineas, precios)), Decimal(0)))
     if descuento > subtotal:
         raise ErrorNegocio(f"El descuento ({pesos(descuento)}) supera el subtotal ({pesos(subtotal)}).")
@@ -218,6 +228,8 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
     ids = [uuid.uuid7() for _ in lineas]
     combos.insertar_fotos(conn, "detalle_venta_elecciones", "detalle_id",
                           {i: foto for i, foto in zip(ids, fotos) if foto})
+    toppings.insertar_fotos(conn, "detalle_venta_toppings", "detalle_id",
+                            {i: top for i, top in zip(ids, tops) if top})
     conn.execute(
         """INSERT INTO detalle_venta (id, venta_id, articulo_id, cantidad, precio_unit, costo_unit, impuesto_id)
            SELECT x.id, %s, a.id, x.cantidad, x.precio,
@@ -226,7 +238,9 @@ def registrar_venta(conn, actor: Usuario, sesion_id, lineas: list[dict], *, desc
                                 SELECT round(sum(e.cantidad * p.precio_costo), 2)
                                   FROM detalle_venta_elecciones e JOIN productos p ON p.articulo_id = e.producto_id
                                  WHERE e.detalle_id = x.id), 0)
-                       ELSE COALESCE(costo_articulo(a.id), 0) END,
+                       ELSE COALESCE(costo_articulo(a.id), 0) END
+                  + COALESCE((SELECT sum(costo_articulo(t.adicional_id))
+                                FROM detalle_venta_toppings t WHERE t.detalle_id = x.id), 0),
                   COALESCE(x.impuesto, a.impuesto_id)
              FROM unnest(%s::uuid[], %s::uuid[], %s::numeric[], %s::numeric[], %s::uuid[])
                   WITH ORDINALITY AS x(id, articulo, cantidad, precio, impuesto, n)

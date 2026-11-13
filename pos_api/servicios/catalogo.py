@@ -14,7 +14,7 @@ from decimal import Decimal
 from pos_api.auditoria import auditar
 from pos_api.errores import ErrorNegocio, NoEncontrado, SinPermiso
 from pos_api.seguridad import Usuario
-from pos_api.servicios import combos
+from pos_api.servicios import combos, toppings
 from pos_api.servicios.comun import actualizar, condicion_busqueda, literal_like
 
 PERMISO_INVENTARIO = "inventario.editar"
@@ -120,9 +120,11 @@ def vendibles(conn, texto: str | None = None, tipo: str | None = None, limite: i
     categoria_tipo: "tienda" o "cocina" (las pestañas de la venta)."""
     return conn.execute(
         """SELECT id, tipo, nombre, precio_venta, categoria_id, categoria, categoria_tipo,
-                  impuesto, codigo, stock, stock_minimo, alcanza, tiene_grupos, bloqueo
+                  impuesto, codigo, stock, stock_minimo, alcanza, tiene_grupos, bloqueo, tiene_toppings
              FROM v_articulos
             WHERE activo
+              -- Un adicional que es topping de algún plato se vende solo dentro del plato.
+              AND NOT es_topping
               AND (%(tipo)s::text IS NULL OR tipo = %(tipo)s)
               AND (%(categoria_tipo)s::text IS NULL OR categoria_tipo = %(categoria_tipo)s)
               AND (%(patron)s::text IS NULL OR """ + BUSCAR_NOMBRE + """ OR codigo = %(texto)s)
@@ -150,6 +152,7 @@ def obtener_articulo(conn, articulo_id) -> dict:
         ).fetchall()
         fila["grupos"] = combos.grupos(conn, articulo_id)
     if fila["tipo"] == "producto":
+        fila["toppings"] = toppings.del_plato(conn, articulo_id)
         # Receta: insumos (o preparaciones) y productos de tienda, cada uno con
         # su costo unitario, su subtotal y su stock (para ver qué limita el plato).
         fila["receta"] = conn.execute(
@@ -167,6 +170,21 @@ def obtener_articulo(conn, articulo_id) -> dict:
             {"id": articulo_id},
         ).fetchall()
     return fila
+
+
+def toppings_para_vender(conn, articulo_id) -> dict:
+    """Un plato activo con los toppings activos que acepta, para elegirlos al
+    venderlo. Sin costos: lo ve cualquier usuario con sesión."""
+    plato = conn.execute(
+        "SELECT id, nombre, precio_venta, activo FROM v_articulos WHERE id = %s AND tipo = 'producto'", (articulo_id,),
+    ).fetchone()
+    if plato is None:
+        raise NoEncontrado("El plato no existe.")
+    if not plato["activo"]:
+        raise ErrorNegocio(f"{plato['nombre']} ya no se vende.")
+    plato["toppings"] = [{k: t[k] for k in ("adicional_id", "nombre", "precio")}
+                         for t in toppings.del_plato(conn, articulo_id, solo_activos=True)]
+    return plato
 
 
 def opciones_para_vender(conn, articulo_id) -> dict:
@@ -324,6 +342,8 @@ def crear_articulo(conn, actor: Usuario, datos: dict) -> dict:
         )
         if datos.get("receta"):
             _guardar_receta(conn, articulo_id, datos["receta"])
+        if datos.get("toppings"):
+            toppings.guardar_del_plato(conn, articulo_id, datos["toppings"])
     elif tipo == "combo":
         conn.execute("INSERT INTO combos (articulo_id, descripcion) VALUES (%s, %s)",
                      (articulo_id, datos.get("descripcion")))
@@ -380,7 +400,16 @@ def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
     if "precio_costo" in subtipo and antes["tiene_receta"] and not (receta_nueva and not cambios["receta"]):
         raise ErrorNegocio("El costo de un plato con receta se calcula solo: edita la receta o quítala.")
 
+    # Los toppings van antes que la categoría: quitarlos y pasar el plato a
+    # tienda en la misma edición debe poder hacerse (0025 lo protege).
+    toppings_nuevos = (tipo == "producto" and "toppings" in cambios
+                       and toppings.actuales(conn, articulo_id) != list(cambios["toppings"]))
+    if toppings_nuevos and not cambios["toppings"]:
+        toppings.guardar_del_plato(conn, articulo_id, [])
     actualizar(conn, "articulos", articulo_id, articulo)
+    # Con toppings, después de la categoría y el impuesto nuevos (deben coincidir).
+    if toppings_nuevos and cambios["toppings"]:
+        toppings.guardar_del_plato(conn, articulo_id, cambios["toppings"])
     if subtipo:
         actualizar(conn, TABLA_SUBTIPO[tipo], articulo_id, subtipo, pk="articulo_id")
     detalle = [f"{k}: {antes.get(k) if k in antes else antes.get('adicional_' + k)} → {v}"
@@ -396,6 +425,8 @@ def editar_articulo(conn, actor: Usuario, articulo_id, cambios: dict) -> dict:
     if receta_nueva:
         _guardar_receta(conn, articulo_id, cambios["receta"])
         detalle.append("receta" if cambios["receta"] else "quitó la receta")
+    if toppings_nuevos:
+        detalle.append("toppings" if cambios["toppings"] else "quitó los toppings")
     if detalle:
         auditar(conn, actor.id, "inventario", f"Editó {antes['nombre']}: {'; '.join(detalle)}", "articulos", articulo_id)
     return obtener_articulo(conn, articulo_id)

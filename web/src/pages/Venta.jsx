@@ -4,6 +4,7 @@ import { api } from "../api";
 import BuscarTercero from "../components/BuscarTercero";
 import Catalogo from "../components/Catalogo";
 import ElegirCombo from "../components/ElegirCombo";
+import ElegirToppings from "../components/ElegirToppings";
 import { ErrorBanner } from "../components/Modal";
 import PagoModal from "../components/PagoModal";
 import { fmt, fmtCant } from "../format";
@@ -118,6 +119,7 @@ export default function Venta() {
   // de tienda; elecciones y recargo en combos con grupos (key = artículo + lo elegido).
   const [cart, setCart] = useState([]);
   const [eligiendo, setEligiendo] = useState(null); // combo con grupos esperando que elijan
+  const [conToppings, setConToppings] = useState(null); // plato con toppings esperando que los marquen
   const [aviso, setAviso] = useState("");
   const [cliente, setCliente] = useState(null);
   const [descuento, setDescuento] = useState("");
@@ -148,7 +150,8 @@ export default function Venta() {
     setAviso(it.stock > 0 ? `De ${it.nombre} solo hay ${fmtCant(it.stock)} en stock.` : `${it.nombre} está agotado.`);
     return false;
   };
-  // eleccion (combo con grupos): {elecciones, recargo, texto, firma} de ElegirCombo.
+  // eleccion: {elecciones, recargo, texto, firma} de ElegirCombo (combo con
+  // grupos) o {toppings, recargo, texto, firma} de ElegirToppings (plato).
   const agregarLinea = (a, eleccion = null) => {
     setHecha(null);
     setAviso("");
@@ -162,13 +165,17 @@ export default function Venta() {
       ? c.map((it) => (it.key === key ? { ...it, base, precio: base + it.recargo, stock, cantidad: it.cantidad + 1 } : it))
       : [...c, {
         key, articulo_id: a.id, nombre: a.nombre, detalle: eleccion?.texto || "",
-        base, recargo, precio: base + recargo, stock, cantidad: 1, elecciones: eleccion?.elecciones || [], agregada: Date.now(),
+        base, recargo, precio: base + recargo, stock, cantidad: 1, elecciones: eleccion?.elecciones || [],
+        toppings: eleccion?.toppings || [], agregada: Date.now(),
       }]));
   };
   const agregar = (a) => {
     if (a.tipo === "combo" && a.tiene_grupos) {
       setAviso("");
       setEligiendo(a);
+    } else if (a.tiene_toppings) {
+      setAviso("");
+      setConToppings(a);
     } else {
       agregarLinea(a);
     }
@@ -198,7 +205,7 @@ export default function Venta() {
   // Si falla, el error se ve en el modal (lo lanza onCobrar).
   const cobrar = async (cobro, { cambio }) => {
     const venta = await api.vender(
-      cart.map((it) => ({ articulo_id: it.articulo_id, cantidad: it.cantidad, elecciones: it.elecciones })),
+      cart.map((it) => ({ articulo_id: it.articulo_id, cantidad: it.cantidad, elecciones: it.elecciones, toppings: it.toppings })),
       { ...cobro, sesion_id: turno.id, descuento: Number(descuento || 0) },
     );
     setCobrando(false);
@@ -284,6 +291,10 @@ export default function Venta() {
       {eligiendo && (
         <ElegirCombo combo={eligiendo} onClose={() => setEligiendo(null)}
           onElegir={(eleccion) => { agregarLinea(eligiendo, eleccion); setEligiendo(null); }} />
+      )}
+      {conToppings && (
+        <ElegirToppings plato={conToppings} onClose={() => setConToppings(null)}
+          onElegir={(eleccion) => { agregarLinea(conToppings, eleccion); setConToppings(null); }} />
       )}
 
       {cobrando && (

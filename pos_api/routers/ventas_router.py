@@ -25,12 +25,15 @@ class Eleccion(BaseModel):
 
 
 Elecciones = Annotated[list[Eleccion], Field(max_length=20)]
+# Toppings de un plato: los adicionales marcados (una vez cada uno).
+Toppings = Annotated[list[uuid.UUID], Field(max_length=50)]
 
 
 class Linea(BaseModel):
     articulo_id: uuid.UUID
     cantidad: Cantidad
     elecciones: Elecciones = []
+    toppings: Toppings = []
 
 
 class Pago(BaseModel):
@@ -64,6 +67,7 @@ class NuevoItem(BaseModel):
     articulo_id: uuid.UUID
     cantidad: Cantidad = 1
     elecciones: Elecciones = []
+    toppings: Toppings = []
 
 
 class CambiarItem(BaseModel):
@@ -142,7 +146,7 @@ def patch_cuenta(cuenta_id: uuid.UUID, body: DatosCuenta, actor: Usuario = Depen
 def post_item(cuenta_id: uuid.UUID, body: NuevoItem, actor: Usuario = Depends(usuario_actual)):
     with transaccion() as conn:
         return cuentas.agregar_item(conn, actor, cuenta_id, body.articulo_id, body.cantidad,
-                                    [e.model_dump() for e in body.elecciones])
+                                    [e.model_dump() for e in body.elecciones], body.toppings)
 
 
 @router.patch("/cuentas/{cuenta_id}/items/{item_id}")

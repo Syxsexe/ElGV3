@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import EditorCombo from "../components/EditorCombo";
+import Conteo from "../components/Conteo";
 import ImportarCsv from "../components/ImportarCsv";
 import Modal, { Campo, ErrorBanner, Seccion } from "../components/Modal";
 import { fmt, fmtCant, fmtCosto, margen } from "../format";
@@ -19,7 +20,10 @@ const PESTANAS = [
   ["servicio", "Servicios"],
   ["insumos", "Insumos"],
   ["categorias", "Categorías"],
+  ["conteo", "Conteo"],
 ];
+// Pestañas sin lista de artículos ni buscador propio.
+const SIN_LISTA = ["categorias", "conteo"];
 const PERMISO_TIPO = { combo: "combos.editar" };
 const tipoDePestana = (p) => (p === "tienda" || p === "cocina" ? "producto" : p);
 const permisoDe = (tipo) => PERMISO_TIPO[tipo] || "inventario.editar";
@@ -505,7 +509,7 @@ export default function Inventario() {
   // pestaña u otro texto), se descarta en vez de pisar la lista actual.
   const ultimaBusqueda = useRef(0);
   const cargarArticulos = useCallback(() => {
-    if (pestana === "categorias") return Promise.resolve();
+    if (SIN_LISTA.includes(pestana)) return Promise.resolve();
     const mia = ++ultimaBusqueda.current;
     const pedido = pestana === "insumos" ? api.insumos(busqueda.trim())
       : api.articulos({ tipo: tipoDePestana(pestana), q: busqueda.trim(), categoria_tipo: ["tienda", "cocina"].includes(pestana) ? pestana : undefined });
@@ -541,12 +545,12 @@ export default function Inventario() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <h1 style={{ fontSize: 28 }}>Inventario</h1>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {PESTANAS.map(([clave, etiqueta]) => (
+        {PESTANAS.filter(([clave]) => clave !== "conteo" || puede("inventario.editar")).map(([clave, etiqueta]) => (
           <button key={clave} type="button" className={`pill${pestana === clave ? " on" : ""}`}
             onClick={() => { setPestana(clave); setArticulos([]); }}>{etiqueta}</button>
         ))}
       </div>
-      {pestana !== "categorias" && (
+      {!SIN_LISTA.includes(pestana) && (
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input className="inp" placeholder="Buscar por nombre o código" value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)} style={{ maxWidth: 360 }} />
@@ -669,7 +673,8 @@ export default function Inventario() {
           ))}
         </div>
       )}
-      {pestana !== "categorias" && articulos.length === 0 && <div className="muted">Nada que mostrar.</div>}
+      {!SIN_LISTA.includes(pestana) && articulos.length === 0 && <div className="muted">Nada que mostrar.</div>}
+      {pestana === "conteo" && <Conteo />}
 
       {pestana === "insumos" && (
         <div className="card tabla">

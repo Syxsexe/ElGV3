@@ -477,3 +477,7 @@ h2.seccion { font-size: 13px; font-family: Figtree, sans-serif; font-weight: 700
 .barra-y { transform-box: fill-box; transform-origin: bottom; animation: crecer-y .35s var(--ease) backwards; }
 .barra-x { transform-origin: left; animation: crecer-x .35s var(--ease) backwards; }
 .tb.on .ic { animation: pop .22s var(--ease); }
+
+/* Campo con un valor que no sirve (aria-invalid): borde de error. */
+.inp[aria-invalid="true"] { border-color: var(--danger); }
+.inp[aria-invalid="true"]:focus { outline-color: var(--danger-border); }

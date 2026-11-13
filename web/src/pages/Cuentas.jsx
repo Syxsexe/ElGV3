@@ -15,6 +15,20 @@ const GRANDE = { fontFamily: "'Bricolage Grotesque', Figtree, sans-serif", fontW
 const REFRESCO_MS = 20000; // otras pantallas (el celular del mesero) también cambian las cuentas
 
 const hora = (iso) => new Date(iso).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+// La hora si es de hoy; si no, "ayer …" o la fecha: una cuenta de anoche no
+// debe verse igual que una de hace un rato.
+function cuando(iso) {
+  const d = new Date(iso);
+  const ayer = new Date();
+  ayer.setDate(ayer.getDate() - 1);
+  if (d.toDateString() === new Date().toDateString()) return hora(iso);
+  if (d.toDateString() === ayer.toDateString()) return `ayer ${hora(iso)}`;
+  const anio = d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {};
+  return `${d.toLocaleDateString("es-CO", { day: "numeric", month: "short", ...anio })} ${hora(iso)}`;
+}
+// Una cuenta abierta más de estas horas probablemente quedó sin cobrar.
+const HORAS_AVISO = 6;
+const horasAbierta = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
 
 // "Mesa 3" arriba y el nombre abajo; sin mesa, el nombre arriba. Si el nombre
 // es el de la mesa (se abrió sin escribir otro), no se repite.
@@ -300,7 +314,7 @@ function DetalleCuenta({ cuenta, turno, isMobile, onCambio, onCerrada, onVolver,
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             <h2 style={{ fontSize: isMobile ? 20 : 24, overflowWrap: "anywhere" }}>{titulo}</h2>
             {subtitulo && <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{subtitulo}</span>}
-            <span className="muted" style={{ fontSize: 13 }}>Cuenta #{cuenta.numero} · desde las {hora(cuenta.abierta_en)} · {cuenta.abierta_por}</span>
+            <span className="muted" style={{ fontSize: 13 }}>Cuenta #{cuenta.numero} · abierta {cuando(cuenta.abierta_en)} · {cuenta.abierta_por}</span>
           </div>
         </div>
         <button type="button" className="btn btn-g" style={{ flexShrink: 0 }} onClick={() => setModal("editar")}>Editar</button>
@@ -505,11 +519,18 @@ export default function Cuentas() {
                 const [titulo, subtitulo] = titulos(c);
                 return (
                   <button key={c.id} type="button" className={`mesa${c.id === detalle?.id ? " on" : ""}`} onClick={() => elegir(c.id)}>
-                    <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, width: "100%" }}>
-                      <span style={{ ...GRANDE, fontSize: 18, overflowWrap: "anywhere" }}>{titulo}</span>
-                      <span className="muted num" style={{ fontSize: 12, flexShrink: 0 }}>{hora(c.abierta_en)}</span>
+                    <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "2px 8px", width: "100%", flexWrap: "wrap" }}>
+                      <span style={{ ...GRANDE, fontSize: 18, overflowWrap: "break-word", minWidth: 0 }}>{titulo}</span>
+                      <span className="muted num" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{cuando(c.abierta_en)}</span>
                     </span>
                     <span style={{ fontSize: 14, color: "var(--text-label)", minHeight: 18, overflowWrap: "anywhere" }}>{subtitulo}</span>
+                    {horasAbierta(c.abierta_en) >= HORAS_AVISO && (
+                      <span className="chip warn" style={{ alignSelf: "flex-start" }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                        Abierta hace {horasAbierta(c.abierta_en)} h
+                      </span>
+                    )}
                     <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: 8 }}>
                       <span className="chip neu num">{c.lineas} {Number(c.lineas) === 1 ? "ítem" : "ítems"}</span>
                       <span className="num" style={{ fontWeight: 700, fontSize: 16, whiteSpace: "nowrap" }}>{fmt(c.total)}</span>

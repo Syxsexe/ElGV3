@@ -16,6 +16,7 @@ from pos_api.modelos import (Cantidad, CantidadNoNegativa, CostoUnitario, Dinero
                              TextoOpcional, cambios_enviados)
 from pos_api.seguridad import Usuario, requiere_alguno, requiere_permiso, usuario_actual
 from pos_api.servicios import catalogo as servicio
+from pos_api.servicios import conteo
 from pos_api.servicios import importacion
 
 router = APIRouter(prefix="/catalogo", tags=["catalogo"])
@@ -108,6 +109,17 @@ _ARTICULO_OPCIONALES = {"codigo", "descripcion"}
 class AjusteStock(BaseModel):
     contado: Stock
     motivo: Texto
+
+
+class FilaConteo(BaseModel):
+    id: uuid.UUID
+    stock_visto: Stock  # el que se veía al contar: si cambió, la fila no se ajusta
+    contado: CantidadNoNegativa | None = None
+    stock_minimo: CantidadNoNegativa | None = None
+
+
+class Conteo(BaseModel):
+    filas: Annotated[list[FilaConteo], Field(min_length=1, max_length=1000)]
 
 
 class Importacion(BaseModel):
@@ -257,6 +269,12 @@ def patch_articulo(articulo_id: uuid.UUID, body: EditarArticulo, actor: Usuario 
 def post_ajuste_stock(articulo_id: uuid.UUID, body: AjusteStock, actor: Usuario = Depends(inventario)):
     with transaccion() as conn:
         return servicio.ajustar_stock(conn, actor, articulo_id, body.contado, body.motivo)
+
+
+@router.post("/conteo/{tipo}")
+def post_conteo(tipo: Literal["productos", "insumos"], body: Conteo, actor: Usuario = Depends(inventario)):
+    with transaccion() as conn:
+        return conteo.registrar_conteo(conn, actor, tipo, [f.model_dump() for f in body.filas])
 
 
 @router.post("/importar/{tipo}")

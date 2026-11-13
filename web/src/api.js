@@ -132,7 +132,10 @@ export const api = {
   // CSV de productos o insumos: sin confirmar es la vista previa (no guarda nada).
   importarCsv: (tipo, contenido, confirmar) =>
     request(`/catalogo/importar/${tipo}`, { method: "POST", body: { contenido, confirmar } }),
-  insumos: (q) => request(`/catalogo/insumos${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  insumos: (q, activos) =>
+    request(`/catalogo/insumos?${new URLSearchParams(Object.entries({ q, activos }).filter(([, v]) => v))}`),
+  // Conteo físico: filas [{id, stock_visto, contado, stock_minimo}].
+  conteo: (tipo, filas) => request(`/catalogo/conteo/${tipo}`, { method: "POST", body: { filas } }),
   crearInsumo: (body) => request("/catalogo/insumos", { method: "POST", body }),
   editarInsumo: (id, body) => request(`/catalogo/insumos/${id}`, { method: "PATCH", body }),
   ajustarStockInsumo: (id, contado, motivo) =>
